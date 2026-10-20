@@ -992,6 +992,33 @@ body:not(.authed) .app { display: none; }
 }
 body.authed .gate { display: none; }
 body:not(.role-admin) .admin-only { display: none !important; }
+#accountPanel summary {
+  cursor: pointer;
+  font-size: 0.72rem;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--ui-muted);
+  font-weight: 700;
+}
+#accountPanel summary:focus-visible {
+  outline: 2px solid #fff;
+  outline-offset: 3px;
+}
+.account-actions {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 8px;
+  margin-top: 10px;
+}
+.account-actions > button,
+.account-actions > a.btn {
+  display: block;
+  width: 100%;
+  text-align: center;
+  text-decoration: none;
+  box-sizing: border-box;
+}
 #printTheseBtn { margin: 16px auto; }
 #checkinView input, #accountPanel input, #accountPanel select, .roster-admin input, .roster-admin select {
   font: inherit;

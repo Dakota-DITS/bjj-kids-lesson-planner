@@ -25,48 +25,6 @@
         <button type="button" data-view="checkin">Check-in</button>
       </div>
 
-      <section class="panel" id="accountPanel">
-        <h2>Account</h2>
-        <p id="whoami" class="hint"></p>
-        <div class="btn-row">
-          <button class="ghost" id="logoutBtn" type="button">Log out</button>
-          <a class="ghost" href="/">Welcome page</a>
-        </div>
-        <form id="passwordForm">
-          <div class="field">
-            <label for="currentPassword">Current password</label>
-            <input id="currentPassword" type="password" autocomplete="current-password" />
-          </div>
-          <div class="field">
-            <label for="nextPassword">New password</label>
-            <input id="nextPassword" type="password" autocomplete="new-password" minlength="10" />
-          </div>
-          <button class="ghost" type="submit">Change password</button>
-        </form>
-        <div id="userAdmin" class="admin-only">
-          <form id="userForm">
-            <div class="field">
-              <label for="newUsername">New login</label>
-              <input id="newUsername" autocomplete="off" maxlength="32" />
-            </div>
-            <div class="field">
-              <label for="newUserPassword">Password</label>
-              <input id="newUserPassword" type="password" autocomplete="new-password" minlength="10" />
-            </div>
-            <div class="field">
-              <label for="newUserRole">Role</label>
-              <select id="newUserRole">
-                <option value="teacher">Teacher</option>
-                <option value="admin">Admin</option>
-              </select>
-            </div>
-            <button class="ghost" type="submit">Add login</button>
-          </form>
-          <div id="userList"></div>
-          <button class="ghost" id="exportServerBtn" type="button">Download attendance backup</button>
-        </div>
-      </section>
-
       <p id="importBanner" class="panel hint hidden">
         This browser still has a roster from before the server.
         <button class="primary" id="importLocalBtn" type="button">Import it to the server</button>
@@ -292,6 +250,48 @@
         <p class="hint" id="sheetMeta"></p>
         <div class="library-list" id="sheetList"></div>
       </section>
+
+      <details class="panel" id="accountPanel">
+        <summary>Account</summary>
+        <p id="whoami" class="hint"></p>
+        <div class="account-actions">
+          <button class="ghost" id="logoutBtn" type="button">Log out</button>
+          <a class="btn" href="/">Welcome page</a>
+        </div>
+        <form id="passwordForm">
+          <div class="field">
+            <label for="currentPassword">Current password</label>
+            <input id="currentPassword" type="password" autocomplete="current-password" />
+          </div>
+          <div class="field">
+            <label for="nextPassword">New password</label>
+            <input id="nextPassword" type="password" autocomplete="new-password" minlength="10" />
+          </div>
+          <button class="ghost" type="submit">Change password</button>
+        </form>
+        <div id="userAdmin" class="admin-only">
+          <form id="userForm">
+            <div class="field">
+              <label for="newUsername">New login</label>
+              <input id="newUsername" autocomplete="off" maxlength="32" />
+            </div>
+            <div class="field">
+              <label for="newUserPassword">Password</label>
+              <input id="newUserPassword" type="password" autocomplete="new-password" minlength="10" />
+            </div>
+            <div class="field">
+              <label for="newUserRole">Role</label>
+              <select id="newUserRole">
+                <option value="teacher">Teacher</option>
+                <option value="admin">Admin</option>
+              </select>
+            </div>
+            <button class="ghost" type="submit">Add login</button>
+          </form>
+          <div id="userList"></div>
+          <button class="ghost" id="exportServerBtn" type="button">Download attendance backup</button>
+        </div>
+      </details>
     </aside>
 
     <main class="stage">
