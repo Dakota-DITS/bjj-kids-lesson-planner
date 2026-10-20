@@ -3,233 +3,102 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Kids BJJ Lesson Planner</title>
-  <link rel="stylesheet" href="css/styles.css" />
+  <title>Grace BJJ Kids</title>
+  <link rel="icon" href="/img/logo/grace-icon-gjj.png" />
+  <link rel="stylesheet" href="/css/splash.css" />
 </head>
 <body>
-  <div class="app">
-    <aside class="sidebar">
-      <div class="brand">
-        <h1>Kids BJJ</h1>
-        <small>Lesson planner</small>
-      </div>
-      <p class="lede">
-        Same structure as the printed class plan. Randomize warm-ups, lessons, and games. Add your own so they go into the pool.
-      </p>
-
-      <section class="panel">
-        <h2>Class</h2>
-        <div class="grid-2">
-          <div class="field grow">
-            <label for="title">Title</label>
-            <input id="title" value="FIRST BJJ CLASS" />
-          </div>
-          <div class="field">
-            <label>Role</label>
-            <div class="seg" id="leadRole" role="group" aria-label="Instructor or Coach">
-              <button type="button" data-role="Instructor" class="on">Instructor</button>
-              <button type="button" data-role="Coach">Coach</button>
-            </div>
-          </div>
-          <div class="field">
-            <label for="instructor">Name</label>
-            <input id="instructor" value="Dakota" />
-          </div>
-          <div class="field">
-            <label for="helper">Helper / supervisor</label>
-            <input id="helper" placeholder="name" value="" />
-          </div>
-          <div class="field">
-            <label for="ages">Ages</label>
-            <input id="ages" value="3–5" />
-          </div>
-          <div class="field">
-            <label for="kids">Kids</label>
-            <input id="kids" value="3–4" />
-          </div>
-          <div class="field">
-            <label for="date">Date</label>
-            <input id="date" type="date" />
-          </div>
-        </div>
-        <label class="check">
-          <input type="checkbox" id="firstClass" checked />
-          First class opening (gi, wash feet, bow)
-        </label>
-        <div class="field grow">
-          <label>Warm-up volume</label>
-          <div class="seg three" id="warmupPace" role="group" aria-label="Warm-up volume">
-            <button type="button" data-pace="younger">Younger 3–4</button>
-            <button type="button" data-pace="mixed" class="on">Mixed 3–5</button>
-            <button type="button" data-pace="older">Older 5+</button>
-          </div>
-          <p class="hint">3–4s had a harder time keeping up. Decrease for the little ones, double if they’re older than 4.</p>
-        </div>
+  <a class="skip" href="#main">Skip to content</a>
+  <header class="hero">
+    <div class="wrap">
+      <img class="logo" src="/img/logo/grace-logo-full-transparent.png" alt="Grace Jiu Jitsu" />
+      <h1>Kids class</h1>
+      <p class="welcome">Welcome to Grace BJJ Kids. We learn jiu-jitsu together: how to move, how to help a partner, and how to be part of the room.</p>
+    </div>
+  </header>
+  <main id="main">
+    <div class="wrap">
+      <section class="values" aria-label="Values">
+        <div><strong>Competence</strong></div>
+        <div><strong>Connection</strong></div>
+        <div><strong>Community</strong></div>
       </section>
 
       <section class="panel">
-        <h2>Timeline</h2>
-        <div class="grid-2">
-          <div class="field">
-            <label for="totalMin">Class minutes</label>
-            <input id="totalMin" type="number" min="20" max="90" step="1" value="45" />
-          </div>
-          <div class="field">
-            <label for="openingMin">Opening minutes</label>
-            <input id="openingMin" type="number" min="2" max="20" step="0.5" value="13" />
-          </div>
-          <div class="field">
-            <label for="waterMin">Each water break</label>
-            <input id="waterMin" type="number" min="0.5" max="5" step="0.5" value="1" />
-          </div>
-          <div class="field">
-            <label for="finishMin">Finish minutes</label>
-            <input id="finishMin" type="number" min="1" max="10" step="0.5" value="3" />
-          </div>
-        </div>
-        <p class="hint">Remaining time is split across warm-up, lesson, and games from how many you pick.</p>
-        <p class="time-sum ok" id="timeSum"></p>
+        <h2>When we meet</h2>
+        <p>2nd and 4th Tuesday of every month, 5:30–6:15 PM. The first class is Tuesday, October 27, 2026.</p>
+        <p class="next" id="nextClass">Next class: …</p>
       </section>
 
       <section class="panel">
-        <h2>Randomize</h2>
-        <div class="grid-2">
-          <div class="field">
-            <label for="warmupCount">Warm-ups</label>
-            <div class="stepper">
-              <button type="button" data-step="-1" data-for="warmupCount">−</button>
-              <input id="warmupCount" type="number" min="0" max="12" value="6" />
-              <button type="button" data-step="1" data-for="warmupCount">+</button>
-            </div>
-          </div>
-          <div class="field">
-            <label for="lessonCount">Lesson</label>
-            <div class="stepper">
-              <button type="button" data-step="-1" data-for="lessonCount">−</button>
-              <input id="lessonCount" type="number" min="0" max="12" value="3" />
-              <button type="button" data-step="1" data-for="lessonCount">+</button>
-            </div>
-          </div>
-          <div class="field grow">
-            <label for="gameCount">Games</label>
-            <div class="stepper">
-              <button type="button" data-step="-1" data-for="gameCount">−</button>
-              <input id="gameCount" type="number" min="0" max="12" value="2" />
-              <button type="button" data-step="1" data-for="gameCount">+</button>
-            </div>
-          </div>
-        </div>
-        <div class="btn-row">
-          <button class="primary" id="generateBtn" type="button">Generate class</button>
-        </div>
-        <div class="btn-row" style="margin-top:8px">
-          <button class="ghost" id="firstPlanBtn" type="button">Load first class plan</button>
-          <button class="ghost" id="rerollWarmBtn" type="button">Shuffle warm-ups</button>
-          <button class="ghost" id="rerollLessonBtn" type="button">Shuffle lesson</button>
-          <button class="ghost" id="rerollGameBtn" type="button">Shuffle games</button>
-        </div>
+        <h2>Age groups</h2>
+        <ul class="ages">
+          <li><b>4–6</b><span>Motor skills, balance, listening, and games.</span></li>
+          <li><b>7–9</b><span>Partner drills, positions, escapes.</span></li>
+          <li><b>10–12</b><span>Technique, flow, controlled sparring.</span></li>
+          <li><b>13–15</b><span>Advanced techniques, leadership, path to the adult class.</span></li>
+        </ul>
       </section>
 
       <section class="panel">
-        <h2>Your library</h2>
-        <p class="hint">Add warm-ups, lessons, and games. The randomizer pulls from built-ins plus whatever you add.</p>
-        <div class="tabs" id="libTabs">
-          <button type="button" data-cat="warmup" class="on">Warm-ups</button>
-          <button type="button" data-cat="lesson">Lesson</button>
-          <button type="button" data-cat="game">Games</button>
-        </div>
-        <div class="btn-row" style="margin-bottom:10px">
-          <button class="primary" id="addBtn" type="button">Add to this list</button>
-          <button class="ghost" id="exportBtn" type="button">Export</button>
-          <button class="ghost" id="importBtn" type="button">Import</button>
-          <input id="importFile" type="file" accept="application/json" class="hidden" />
-        </div>
-        <div class="library-list" id="libraryList"></div>
+        <h2>What to bring</h2>
+        <p>Loaner gis are available the first week. After that, families buy their own gi with the team patch.</p>
       </section>
 
-      <section class="panel">
-        <h2>Take-home coloring sheet</h2>
-        <p class="hint">Color at home. Bring it back next class for a special surprise.</p>
-        <div class="btn-row">
-          <button class="primary" id="firstSheetBtn" type="button">First class sheet</button>
-          <button class="ghost" id="randomSheetBtn" type="button">Random sheet</button>
-        </div>
-        <div class="btn-row" style="margin-top:8px">
-          <button class="ghost" id="uploadSheetBtn" type="button">Upload coloring sheet</button>
-          <input id="sheetFile" type="file" accept="image/png,image/jpeg,image/webp" class="hidden" />
-        </div>
-        <p class="hint" id="sheetMeta"></p>
-        <div class="library-list" id="sheetList"></div>
-      </section>
-    </aside>
+      <div id="later" class="panel extra" hidden></div>
 
-    <main class="stage">
-      <div class="toolbar">
-        <div class="meta" id="poolMeta"></div>
-        <div class="btn-row">
-          <button class="ghost" id="editToggle" type="button">Show shuffle on items</button>
-          <button class="primary" id="printBtn" type="button">Print / save PDF</button>
-        </div>
+      <div class="actions">
+        <a class="big" href="/coloring/">Coloring sheets</a>
+        <br />
+        <a class="teacher" href="/login/">Teacher login</a>
       </div>
-      <div class="paper-wrap">
-        <article class="paper" id="plan"></article>
-        <article class="paper sheet-page" id="sheet"></article>
-      </div>
-    </main>
-  </div>
+    </div>
+  </main>
+  <footer>Grace BJJ Kids</footer>
+  <script>
+    // PUBLIC_INFO is the place to add a location, a phone, an email, or a sign-up link later.
+    // Leave a value as "" and this page will not show it.
+    const PUBLIC_INFO = {
+      location: "",
+      phone: "",
+      email: "",
+      signupUrl: "",
+      signupLabel: ""
+    };
 
-  <div class="modal-back" id="modalBack" role="dialog" aria-modal="true" aria-labelledby="modalTitle">
-    <form class="modal" id="activityForm">
-      <h2 id="modalTitle">Add activity</h2>
-      <div class="field">
-        <label for="actCategory">Goes into</label>
-        <select id="actCategory">
-          <option value="warmup">Warm-ups</option>
-          <option value="lesson">Lesson</option>
-          <option value="game">Games</option>
-        </select>
-      </div>
-      <div class="field">
-        <label for="actName">Name</label>
-        <input id="actName" required maxlength="80" placeholder="Bear crawl" />
-      </div>
-      <div class="grid-2">
-        <div class="field">
-          <label for="actReps">How many</label>
-          <input id="actReps" type="number" min="1" max="20" step="1" value="2" />
-        </div>
-        <div class="field">
-          <label for="actDuration">Typical minutes</label>
-          <input id="actDuration" type="number" min="0.5" max="20" step="0.5" value="2" />
-        </div>
-      </div>
-      <div class="field">
-        <label for="actHow">How to run it</label>
-        <textarea id="actHow" placeholder="You in front. Easy jog around the mat together."></textarea>
-      </div>
-      <div class="field">
-        <label for="actSay">What you say</label>
-        <textarea id="actSay" placeholder="Okay everyone follow me and let's run around."></textarea>
-      </div>
-      <div class="field">
-        <label for="actExtra">Extra note (optional)</label>
-        <textarea id="actExtra" placeholder="Cheer every time a flag is captured."></textarea>
-      </div>
-      <div class="field">
-        <label for="actEquip">Equipment (optional)</label>
-        <input id="actEquip" placeholder="8–10 small cones" />
-      </div>
-      <input type="hidden" id="actId" />
-      <div class="btn-row">
-        <button class="primary" type="submit">Save to library</button>
-        <button class="ghost" type="button" id="cancelModal">Cancel</button>
-      </div>
-    </form>
-  </div>
+    function nextClassDate(from) {
+      const start = new Date(2026, 9, 27);
+      const cursor = new Date(from.getFullYear(), from.getMonth(), from.getDate());
+      if (cursor < start) return start;
+      for (let i = 0; i < 400; i += 1) {
+        const day = cursor.getDay();
+        const which = Math.floor((cursor.getDate() - 1) / 7) + 1;
+        if (day === 2 && (which === 2 || which === 4) && cursor >= start) return new Date(cursor);
+        cursor.setDate(cursor.getDate() + 1);
+      }
+      return start;
+    }
 
-  <div class="toast" id="toast"></div>
+    const next = nextClassDate(new Date());
+    const label = next.toLocaleDateString(undefined, { weekday: "long", month: "long", day: "numeric", year: "numeric" });
+    document.getElementById("nextClass").textContent = "Next class: " + label;
 
-  <script src="js/data.js"></script>
-  <script src="js/app.js"></script>
+    const bits = [];
+    if (PUBLIC_INFO.location) bits.push(PUBLIC_INFO.location);
+    if (PUBLIC_INFO.phone) bits.push(PUBLIC_INFO.phone);
+    if (PUBLIC_INFO.email) bits.push(PUBLIC_INFO.email);
+    const later = document.getElementById("later");
+    if (bits.length || PUBLIC_INFO.signupUrl) {
+      later.hidden = false;
+      later.innerHTML = bits.map((bit) => `<p></p>`).join("");
+      later.querySelectorAll("p").forEach((p, i) => { p.textContent = bits[i] || ""; });
+      if (PUBLIC_INFO.signupUrl) {
+        const link = document.createElement("a");
+        link.href = PUBLIC_INFO.signupUrl;
+        link.textContent = PUBLIC_INFO.signupLabel || "Sign up";
+        later.appendChild(link);
+      }
+    }
+  </script>
 </body>
 </html>

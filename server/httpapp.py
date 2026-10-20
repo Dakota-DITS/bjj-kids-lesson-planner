@@ -1,0 +1,874 @@
+"""JSON API for roster, attendance, and progress. No student data is written to the repo."""
+
+import json
+import os
+import re
+import secrets
+from datetime import timedelta
+from urllib.parse import unquote, urlparse
+
+import bcrypt
+
+from server.db import (
+    AGE_GROUPS,
+    BELTS,
+    LEVELS,
+    cleanup,
+    connect,
+    iso,
+    migrate,
+    new_id,
+    parse_iso,
+    token_hash,
+    utcnow,
+)
+
+ID_RE = re.compile(r"^[A-Za-z0-9_-]{1,40}$")
+USER_RE = re.compile(r"^[A-Za-z0-9._-]{3,32}$")
+MAX_BODY = 3_000_000
+LOGIN_LIMIT = 8
+LOGIN_WINDOW_MIN = 15
+SESSION_DAYS = 14
+
+
+def config_from_env():
+    data_dir = os.environ.get("BJJ_DATA_DIR", "/var/lib/bjj-planner")
+    db_path = os.environ.get("BJJ_DB") or os.path.join(data_dir, "data.db")
+    return {
+        "data_dir": data_dir,
+        "db_path": db_path,
+        "sheets_dir": os.path.join(data_dir, "sheets"),
+        "secure": os.environ.get("BJJ_COOKIE_SECURE", "1") != "0",
+        "trust_proxy": os.environ.get("BJJ_TRUST_PROXY", "0") == "1",
+        "static_root": os.environ.get("BJJ_STATIC", ""),
+    }
+
+
+def hash_password(password):
+    return bcrypt.hashpw(password.encode("utf-8"), bcrypt.gensalt(rounds=12)).decode("utf-8")
+
+
+def check_password(password, hashed):
+    try:
+        return bcrypt.checkpw(password.encode("utf-8"), hashed.encode("utf-8"))
+    except ValueError:
+        return False
+
+
+def clip(value, limit):
+    return str(value if value is not None else "").replace("\x00", "").strip()[:limit]
+
+
+def clean_id(value):
+    text = clip(value, 40)
+    return text if ID_RE.match(text) else ""
+
+
+class Api:
+    def __init__(self, cfg):
+        self.cfg = cfg
+        os.makedirs(cfg["sheets_dir"], exist_ok=True)
+        conn = connect(cfg["db_path"])
+        migrate(conn)
+        cleanup(conn)
+        conn.close()
+
+    def db(self):
+        return connect(self.cfg["db_path"])
+
+    def client_ip(self, handler):
+        remote = handler.client_address[0]
+        if not self.cfg["trust_proxy"]:
+            return remote
+        forwarded = handler.headers.get("X-Forwarded-For", "")
+        first = forwarded.split(",")[0].strip()
+        return first or remote
+
+    def read_json(self, handler):
+        length = int(handler.headers.get("Content-Length") or 0)
+        if length < 0 or length > MAX_BODY:
+            raise ValueError("That upload is too large.")
+        raw = handler.rfile.read(length) if length else b""
+        if not raw:
+            return {}
+        try:
+            data = json.loads(raw.decode("utf-8"))
+        except (UnicodeDecodeError, json.JSONDecodeError) as err:
+            raise ValueError("The request was not JSON.") from err
+        if not isinstance(data, dict):
+            raise ValueError("The request was not a JSON object.")
+        return data
+
+    def cookie_token(self, handler):
+        header = handler.headers.get("Cookie", "")
+        for part in header.split(";"):
+            name, _, value = part.strip().partition("=")
+            if name == "bjj_session" and value:
+                return value
+        return ""
+
+    def session_user(self, conn, handler):
+        token = self.cookie_token(handler)
+        if not token:
+            return None, None
+        row = conn.execute(
+            """
+            SELECT sessions.csrf, sessions.expires_at, users.id, users.username, users.role
+            FROM sessions JOIN users ON users.id = sessions.user_id
+            WHERE sessions.token_hash = ?
+            """,
+            (token_hash(token),),
+        ).fetchone()
+        if not row:
+            return None, None
+        if parse_iso(row["expires_at"]) < utcnow():
+            return None, None
+        user = {"id": row["id"], "username": row["username"], "role": row["role"]}
+        return user, row["csrf"]
+
+    def require_csrf(self, handler, expected):
+        sent = handler.headers.get("X-CSRF-Token", "")
+        if not expected or not sent or not secrets.compare_digest(sent, expected):
+            return False
+        return True
+
+    def too_many_logins(self, conn, ip):
+        since = iso(utcnow() - timedelta(minutes=LOGIN_WINDOW_MIN))
+        count = conn.execute(
+            "SELECT COUNT(*) AS n FROM login_attempts WHERE ip = ? AND at >= ?",
+            (ip, since),
+        ).fetchone()["n"]
+        return count >= LOGIN_LIMIT
+
+    def issue_session(self, conn, user_id):
+        token = secrets.token_urlsafe(32)
+        csrf = secrets.token_urlsafe(24)
+        expires = iso(utcnow() + timedelta(days=SESSION_DAYS))
+        conn.execute(
+            "INSERT INTO sessions (token_hash, user_id, csrf, expires_at) VALUES (?, ?, ?, ?)",
+            (token_hash(token), user_id, csrf, expires),
+        )
+        return token, csrf, expires
+
+    def public_user(self, user, csrf):
+        return {"user": {"username": user["username"], "role": user["role"]}, "csrf": csrf}
+
+    def student_json(self, row):
+        return {
+            "id": row["id"],
+            "name": row["name"],
+            "age": row["age"],
+            "belt": row["belt"],
+            "stripes": row["stripes"],
+        }
+
+    def class_json(self, row):
+        try:
+            techniques = json.loads(row["techniques"])
+        except json.JSONDecodeError:
+            techniques = []
+        try:
+            attended = json.loads(row["attended"])
+        except json.JSONDecodeError:
+            attended = []
+        return {
+            "id": row["id"],
+            "date": row["date"],
+            "ageGroup": row["age_group"],
+            "theme": row["theme"],
+            "themeLabel": row["theme_label"],
+            "techniques": techniques if isinstance(techniques, list) else [],
+            "game": row["game"],
+            "attended": attended if isinstance(attended, list) else [],
+            "taught": bool(row["taught"]),
+        }
+
+    def sanitize_student(self, raw, existing_id=None):
+        name = clip(raw.get("name"), 40)
+        if not name:
+            raise ValueError("Add the student's name.")
+        try:
+            age = int(raw.get("age"))
+        except (TypeError, ValueError):
+            age = 8
+        age = max(3, min(17, age))
+        belt = raw.get("belt") if raw.get("belt") in BELTS else "white"
+        try:
+            stripes = int(raw.get("stripes"))
+        except (TypeError, ValueError):
+            stripes = 0
+        stripes = max(0, min(4, stripes))
+        sid = clean_id(existing_id or raw.get("id")) or new_id("s-")
+        return {"id": sid, "name": name, "age": age, "belt": belt, "stripes": stripes}
+
+    def sanitize_techniques(self, raw):
+        out = []
+        if not isinstance(raw, list):
+            return out
+        for item in raw[:12]:
+            if not isinstance(item, dict):
+                continue
+            tid = clean_id(item.get("id"))
+            name = clip(item.get("name"), 80)
+            if tid and name:
+                out.append(
+                    {
+                        "id": tid,
+                        "name": name,
+                        "position": clip(item.get("position"), 40),
+                        "theme": clip(item.get("theme"), 32).lower(),
+                    }
+                )
+        return out
+
+    def sanitize_class(self, raw):
+        date = clip(raw.get("date"), 10)
+        if not re.match(r"^\d{4}-\d{2}-\d{2}$", date):
+            raise ValueError("The class needs a date.")
+        age = raw.get("ageGroup") if raw.get("ageGroup") in AGE_GROUPS else "mite"
+        attended = []
+        for sid in raw.get("attended") or []:
+            clean = clean_id(sid)
+            if clean and clean not in attended:
+                attended.append(clean)
+        return {
+            "id": clean_id(raw.get("id")) or new_id("k-"),
+            "date": date,
+            "ageGroup": age,
+            "theme": clip(raw.get("theme"), 32).lower(),
+            "themeLabel": clip(raw.get("themeLabel"), 48),
+            "techniques": self.sanitize_techniques(raw.get("techniques")),
+            "game": clip(raw.get("game"), 80),
+            "attended": attended[:80],
+            "taught": bool(raw.get("taught")),
+        }
+
+    def setting(self, conn, key, default=""):
+        row = conn.execute("SELECT value FROM settings WHERE key = ?", (key,)).fetchone()
+        return row["value"] if row else default
+
+    def put_setting(self, conn, key, value):
+        conn.execute(
+            "INSERT INTO settings (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value",
+            (key, value),
+        )
+
+    def bootstrap(self, conn):
+        students = [self.student_json(row) for row in conn.execute("SELECT * FROM students ORDER BY name")]
+        classes = [self.class_json(row) for row in conn.execute("SELECT * FROM classes ORDER BY date, age_group")]
+        levels = {}
+        for row in conn.execute("SELECT student_id, tech_id, level FROM levels"):
+            levels.setdefault(row["student_id"], {})[row["tech_id"]] = row["level"]
+        notes = {row["student_id"]: row["note"] for row in conn.execute("SELECT student_id, note FROM notes")}
+        try:
+            own = int(self.setting(conn, "stripe_own", "6"))
+        except ValueError:
+            own = 6
+        try:
+            attend = int(self.setting(conn, "stripe_attend", "8"))
+        except ValueError:
+            attend = 8
+        sheets = [
+            {
+                "id": row["id"],
+                "clientId": row["client_id"] or "",
+                "title": row["title"],
+                "caption": row["caption"],
+                "theme": row["theme"],
+                "published": bool(row["published"]),
+            }
+            for row in conn.execute("SELECT * FROM sheets ORDER BY created_at")
+        ]
+        return {
+            "students": students,
+            "classes": classes,
+            "levels": levels,
+            "notes": notes,
+            "stripe": {"own": max(1, min(40, own)), "attend": max(1, min(40, attend))},
+            "featured": {
+                "sheetId": self.setting(conn, "featured_sheet", ""),
+                "caption": self.setting(conn, "featured_caption", ""),
+            },
+            "sheets": sheets,
+        }
+
+    def save_class(self, conn, entry, merge):
+        current = conn.execute(
+            "SELECT * FROM classes WHERE date = ? AND age_group = ?",
+            (entry["date"], entry["ageGroup"]),
+        ).fetchone()
+        attended = entry["attended"]
+        if current and merge:
+            try:
+                previous = json.loads(current["attended"])
+            except json.JSONDecodeError:
+                previous = []
+            for sid in previous:
+                if sid not in attended:
+                    attended.append(sid)
+            entry["id"] = current["id"]
+            if current["taught"] and not entry["taught"]:
+                entry["taught"] = True
+        elif current:
+            entry["id"] = current["id"]
+        payload = (
+            entry["id"],
+            entry["date"],
+            entry["ageGroup"],
+            entry["theme"],
+            entry["themeLabel"],
+            json.dumps(entry["techniques"]),
+            entry["game"],
+            json.dumps(attended),
+            1 if entry["taught"] else 0,
+        )
+        conn.execute(
+            """
+            INSERT INTO classes (id, date, age_group, theme, theme_label, techniques, game, attended, taught)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ON CONFLICT(date, age_group) DO UPDATE SET
+              theme = excluded.theme,
+              theme_label = excluded.theme_label,
+              techniques = excluded.techniques,
+              game = excluded.game,
+              attended = excluded.attended,
+              taught = excluded.taught
+            """,
+            payload,
+        )
+        row = conn.execute(
+            "SELECT * FROM classes WHERE date = ? AND age_group = ?",
+            (entry["date"], entry["ageGroup"]),
+        ).fetchone()
+        return self.class_json(row)
+
+    def decode_image(self, data_url):
+        text = str(data_url or "")
+        match = re.match(r"^data:image/(png|jpeg|webp);base64,([A-Za-z0-9+/=\s]+)$", text)
+        if not match:
+            raise ValueError("Upload a PNG, JPEG, or WebP image.")
+        import base64
+
+        try:
+            blob = base64.b64decode(match.group(2), validate=False)
+        except ValueError as err:
+            raise ValueError("That image could not be read.") from err
+        if len(blob) < 32 or len(blob) > 2_500_000:
+            raise ValueError("That image is empty or too large.")
+        kind = match.group(1)
+        ext = {"png": ".png", "jpeg": ".jpg", "webp": ".webp"}[kind]
+        return blob, ext
+
+    def handle(self, handler):
+        parsed = urlparse(handler.path)
+        path = unquote(parsed.path)
+        method = handler.command
+        if self.cfg["static_root"] and not path.startswith("/api/"):
+            return self.serve_static(handler, path)
+        try:
+            if method == "GET" and path == "/api/auth/csrf":
+                return self.get_csrf(handler)
+            if method == "POST" and path == "/api/login":
+                return self.login(handler)
+            if method == "GET" and path == "/api/auth/nginx":
+                return self.nginx_auth(handler)
+            if method == "GET" and path == "/api/public/featured":
+                return self.public_featured(handler)
+            if method == "GET" and path == "/api/public/sheets":
+                return self.public_sheets(handler)
+            image = re.match(r"^/api/public/sheets/([A-Za-z0-9_-]{1,40})/image$", path)
+            if method == "GET" and image:
+                return self.public_image(handler, image.group(1))
+            conn = self.db()
+            try:
+                user, csrf = self.session_user(conn, handler)
+                if path == "/api/me" and method == "GET":
+                    if not user:
+                        return self.send(handler, 401, {"error": "Log in first."})
+                    return self.send(handler, 200, self.public_user(user, csrf))
+                if path == "/api/bootstrap" and method == "GET":
+                    if not user:
+                        return self.send(handler, 401, {"error": "Log in first."})
+                    body = self.bootstrap(conn)
+                    body.update(self.public_user(user, csrf))
+                    return self.send(handler, 200, body)
+                if method in ("POST", "PUT", "PATCH", "DELETE") and not self.require_csrf(handler, csrf if user else ""):
+                    if path != "/api/logout":
+                        return self.send(handler, 403, {"error": "The page needs to be reloaded before saving."})
+                if path == "/api/logout" and method == "POST":
+                    return self.logout(handler, conn)
+                if not user:
+                    return self.send(handler, 401, {"error": "Log in first."})
+                return self.authed(handler, conn, user, path, method)
+            finally:
+                conn.close()
+        except ValueError as err:
+            return self.send(handler, 400, {"error": str(err)})
+        except Exception:
+            return self.send(handler, 500, {"error": "Something went wrong on the server."})
+
+    def authed(self, handler, conn, user, path, method):
+        admin = user["role"] == "admin"
+        if path == "/api/password" and method == "POST":
+            return self.change_password(handler, conn, user)
+        if path == "/api/users" and method == "GET":
+            if not admin:
+                return self.send(handler, 403, {"error": "An admin manages logins."})
+            rows = conn.execute("SELECT id, username, role FROM users ORDER BY username").fetchall()
+            return self.send(handler, 200, {"users": [dict(row) for row in rows]})
+        if path == "/api/users" and method == "POST":
+            if not admin:
+                return self.send(handler, 403, {"error": "An admin manages logins."})
+            return self.create_user(handler, conn)
+        user_match = re.match(r"^/api/users/([A-Za-z0-9_-]{1,40})$", path)
+        if user_match and method == "DELETE":
+            if not admin:
+                return self.send(handler, 403, {"error": "An admin manages logins."})
+            return self.delete_user(handler, conn, user, user_match.group(1))
+        if path == "/api/students" and method == "POST":
+            if not admin:
+                return self.send(handler, 403, {"error": "An admin adds students."})
+            raw = self.sanitize_student(self.read_json(handler))
+            conn.execute(
+                "INSERT INTO students (id, name, age, belt, stripes, created_at) VALUES (?, ?, ?, ?, ?, ?)",
+                (raw["id"], raw["name"], raw["age"], raw["belt"], raw["stripes"], iso(utcnow())),
+            )
+            conn.commit()
+            return self.send(handler, 201, raw)
+        student_match = re.match(r"^/api/students/([A-Za-z0-9_-]{1,40})$", path)
+        if student_match and method == "PATCH":
+            if not admin:
+                return self.send(handler, 403, {"error": "An admin edits the roster."})
+            sid = student_match.group(1)
+            if not conn.execute("SELECT 1 FROM students WHERE id = ?", (sid,)).fetchone():
+                return self.send(handler, 404, {"error": "That student is not on the roster."})
+            raw = self.sanitize_student(self.read_json(handler), sid)
+            conn.execute(
+                "UPDATE students SET name = ?, age = ?, belt = ?, stripes = ? WHERE id = ?",
+                (raw["name"], raw["age"], raw["belt"], raw["stripes"], sid),
+            )
+            conn.commit()
+            return self.send(handler, 200, raw)
+        if student_match and method == "DELETE":
+            if not admin:
+                return self.send(handler, 403, {"error": "An admin removes students."})
+            sid = student_match.group(1)
+            conn.execute("DELETE FROM students WHERE id = ?", (sid,))
+            conn.execute("DELETE FROM levels WHERE student_id = ?", (sid,))
+            conn.execute("DELETE FROM notes WHERE student_id = ?", (sid,))
+            conn.commit()
+            return self.send(handler, 200, {"ok": True})
+        if path == "/api/classes" and method == "PUT":
+            saved = self.save_class(conn, self.sanitize_class(self.read_json(handler)), merge=False)
+            conn.commit()
+            return self.send(handler, 200, saved)
+        if path == "/api/attendance" and method == "POST":
+            body = self.read_json(handler)
+            saved = self.save_class(conn, self.sanitize_class(body), merge=True)
+            conn.commit()
+            return self.send(handler, 200, saved)
+        if path == "/api/levels" and method == "PUT":
+            body = self.read_json(handler)
+            sid = clean_id(body.get("studentId"))
+            tid = clean_id(body.get("techId"))
+            level = body.get("level")
+            if not sid or not tid or level not in LEVELS:
+                raise ValueError("That progress update is missing a student, a technique, or a level.")
+            conn.execute(
+                """
+                INSERT INTO levels (student_id, tech_id, level) VALUES (?, ?, ?)
+                ON CONFLICT(student_id, tech_id) DO UPDATE SET level = excluded.level
+                """,
+                (sid, tid, level),
+            )
+            conn.commit()
+            return self.send(handler, 200, {"ok": True})
+        if path == "/api/notes" and method == "PUT":
+            body = self.read_json(handler)
+            sid = clean_id(body.get("studentId"))
+            note = clip(body.get("note"), 800)
+            if not sid:
+                raise ValueError("That note needs a student.")
+            if note:
+                conn.execute(
+                    "INSERT INTO notes (student_id, note) VALUES (?, ?) ON CONFLICT(student_id) DO UPDATE SET note = excluded.note",
+                    (sid, note),
+                )
+            else:
+                conn.execute("DELETE FROM notes WHERE student_id = ?", (sid,))
+            conn.commit()
+            return self.send(handler, 200, {"ok": True})
+        if path == "/api/stripe" and method == "PUT":
+            body = self.read_json(handler)
+            try:
+                own = int(body.get("own"))
+            except (TypeError, ValueError):
+                own = 6
+            try:
+                attend = int(body.get("attend"))
+            except (TypeError, ValueError):
+                attend = 8
+            own = max(1, min(40, own))
+            attend = max(1, min(40, attend))
+            self.put_setting(conn, "stripe_own", str(own))
+            self.put_setting(conn, "stripe_attend", str(attend))
+            conn.commit()
+            return self.send(handler, 200, {"own": own, "attend": attend})
+        if path == "/api/featured" and method == "PUT":
+            body = self.read_json(handler)
+            sheet_id = clean_id(body.get("sheetId"))
+            caption = clip(body.get("caption"), 160)
+            self.put_setting(conn, "featured_sheet", sheet_id)
+            self.put_setting(conn, "featured_caption", caption)
+            conn.commit()
+            return self.send(handler, 200, {"sheetId": sheet_id, "caption": caption})
+        if path == "/api/sheets" and method == "POST":
+            if not admin:
+                return self.send(handler, 403, {"error": "An admin publishes coloring sheets."})
+            return self.save_sheet(handler, conn)
+        if path == "/api/import" and method == "POST":
+            return self.import_local(handler, conn, admin)
+        if path == "/api/export" and method == "GET":
+            if not admin:
+                return self.send(handler, 403, {"error": "An admin downloads the attendance backup."})
+            body = self.bootstrap(conn)
+            body.pop("sheets", None)
+            return self.send(handler, 200, body)
+        return self.send(handler, 404, {"error": "That address is not part of the API."})
+
+    def get_csrf(self, handler):
+        token = secrets.token_urlsafe(24)
+        conn = self.db()
+        try:
+            conn.execute(
+                "INSERT INTO csrf_challenges (token, expires_at) VALUES (?, ?)",
+                (token, iso(utcnow() + timedelta(minutes=10))),
+            )
+            conn.commit()
+        finally:
+            conn.close()
+        self.send(handler, 200, {"csrf": token})
+
+    def login(self, handler, conn=None):
+        own = conn or self.db()
+        try:
+            ip = self.client_ip(handler)
+            if self.too_many_logins(own, ip):
+                return self.send(handler, 429, {"error": "Too many sign-in tries. Wait a few minutes."})
+            body = self.read_json(handler)
+            sent = handler.headers.get("X-CSRF-Token", "")
+            challenge = own.execute(
+                "SELECT token, expires_at FROM csrf_challenges WHERE token = ?",
+                (sent,),
+            ).fetchone()
+            if not challenge or not secrets.compare_digest(challenge["token"], sent) or parse_iso(challenge["expires_at"]) < utcnow():
+                return self.send(handler, 403, {"error": "Reload the login page and try again."})
+            own.execute("DELETE FROM csrf_challenges WHERE token = ?", (sent,))
+            username = clip(body.get("username"), 32)
+            password = str(body.get("password") or "")
+            row = own.execute("SELECT * FROM users WHERE username = ?", (username,)).fetchone()
+            if not row or not check_password(password, row["password_hash"]):
+                own.execute("INSERT INTO login_attempts (ip, at) VALUES (?, ?)", (ip, iso(utcnow())))
+                own.commit()
+                return self.send(handler, 401, {"error": "Those details don't match."})
+            token, csrf, _expires = self.issue_session(own, row["id"])
+            own.commit()
+            user = {"id": row["id"], "username": row["username"], "role": row["role"]}
+            self.send(handler, 200, self.public_user(user, csrf), set_cookie=token)
+        finally:
+            if conn is None:
+                own.close()
+
+    def logout(self, handler, conn):
+        token = self.cookie_token(handler)
+        if token:
+            conn.execute("DELETE FROM sessions WHERE token_hash = ?", (token_hash(token),))
+            conn.commit()
+        self.send(handler, 200, {"ok": True}, clear_cookie=True)
+
+    def nginx_auth(self, handler):
+        conn = self.db()
+        try:
+            user, _csrf = self.session_user(conn, handler)
+        finally:
+            conn.close()
+        if not user:
+            handler.send_response(401)
+            handler.send_header("Cache-Control", "no-store")
+            handler.end_headers()
+            return
+        handler.send_response(204)
+        handler.send_header("Cache-Control", "no-store")
+        handler.end_headers()
+
+    def public_featured(self, handler):
+        conn = self.db()
+        try:
+            body = {
+                "sheetId": self.setting(conn, "featured_sheet", ""),
+                "caption": self.setting(conn, "featured_caption", ""),
+            }
+        finally:
+            conn.close()
+        self.send(handler, 200, body)
+
+    def public_sheets(self, handler):
+        conn = self.db()
+        try:
+            rows = conn.execute(
+                "SELECT id, title, caption, theme FROM sheets WHERE published = 1 ORDER BY created_at"
+            ).fetchall()
+        finally:
+            conn.close()
+        self.send(
+            handler,
+            200,
+            {"sheets": [{"id": row["id"], "title": row["title"], "caption": row["caption"], "theme": row["theme"]} for row in rows]},
+        )
+
+    def public_image(self, handler, sid):
+        conn = self.db()
+        try:
+            row = conn.execute(
+                "SELECT filename FROM sheets WHERE id = ? AND published = 1",
+                (sid,),
+            ).fetchone()
+        finally:
+            conn.close()
+        if not row:
+            return self.send(handler, 404, {"error": "That sheet is not published."})
+        filename = os.path.basename(row["filename"])
+        path = os.path.join(self.cfg["sheets_dir"], filename)
+        if not os.path.isfile(path):
+            return self.send(handler, 404, {"error": "That sheet file is missing."})
+        ext = os.path.splitext(filename)[1].lower()
+        ctype = {".png": "image/png", ".jpg": "image/jpeg", ".jpeg": "image/jpeg", ".webp": "image/webp"}.get(ext, "application/octet-stream")
+        with open(path, "rb") as handle:
+            blob = handle.read()
+        handler.send_response(200)
+        handler.send_header("Content-Type", ctype)
+        handler.send_header("Content-Length", str(len(blob)))
+        handler.send_header("Cache-Control", "public, max-age=300")
+        handler.send_header("X-Content-Type-Options", "nosniff")
+        handler.end_headers()
+        handler.wfile.write(blob)
+
+    def change_password(self, handler, conn, user):
+        body = self.read_json(handler)
+        current = str(body.get("current") or "")
+        nxt = str(body.get("next") or "")
+        if len(nxt) < 10:
+            raise ValueError("Use at least 10 characters.")
+        row = conn.execute("SELECT password_hash FROM users WHERE id = ?", (user["id"],)).fetchone()
+        if not check_password(current, row["password_hash"]):
+            return self.send(handler, 401, {"error": "The current password does not match."})
+        conn.execute("UPDATE users SET password_hash = ? WHERE id = ?", (hash_password(nxt), user["id"]))
+        conn.commit()
+        return self.send(handler, 200, {"ok": True})
+
+    def create_user(self, handler, conn):
+        body = self.read_json(handler)
+        username = clip(body.get("username"), 32)
+        password = str(body.get("password") or "")
+        role = body.get("role") if body.get("role") in ("admin", "teacher") else "teacher"
+        if not USER_RE.match(username):
+            raise ValueError("Usernames are 3–32 letters, numbers, dots, or dashes.")
+        if len(password) < 10:
+            raise ValueError("Use at least 10 characters.")
+        if conn.execute("SELECT 1 FROM users WHERE username = ?", (username,)).fetchone():
+            raise ValueError("That username is already in use.")
+        uid = new_id("u-")
+        conn.execute(
+            "INSERT INTO users (id, username, password_hash, role, created_at) VALUES (?, ?, ?, ?, ?)",
+            (uid, username, hash_password(password), role, iso(utcnow())),
+        )
+        conn.commit()
+        return self.send(handler, 201, {"id": uid, "username": username, "role": role})
+
+    def delete_user(self, handler, conn, user, uid):
+        if uid == user["id"]:
+            raise ValueError("You can't remove the login you are using.")
+        target = conn.execute("SELECT role FROM users WHERE id = ?", (uid,)).fetchone()
+        if not target:
+            return self.send(handler, 404, {"error": "That login is already gone."})
+        if target["role"] == "admin":
+            admins = conn.execute("SELECT COUNT(*) AS n FROM users WHERE role = 'admin'").fetchone()["n"]
+            if admins <= 1:
+                raise ValueError("Keep at least one admin.")
+        conn.execute("DELETE FROM users WHERE id = ?", (uid,))
+        conn.commit()
+        return self.send(handler, 200, {"ok": True})
+
+    def save_sheet(self, handler, conn):
+        body = self.read_json(handler)
+        title = clip(body.get("title"), 80) or "Coloring sheet"
+        caption = clip(body.get("caption"), 160)
+        theme = clip(body.get("theme"), 32).lower()
+        client_id = clean_id(body.get("clientId")) or None
+        published = 1 if body.get("published") else 0
+        blob, ext = self.decode_image(body.get("image"))
+        existing = None
+        if client_id:
+            existing = conn.execute("SELECT * FROM sheets WHERE client_id = ?", (client_id,)).fetchone()
+        sid = existing["id"] if existing else new_id("p-")
+        filename = sid + ext
+        path = os.path.join(self.cfg["sheets_dir"], filename)
+        tmp = path + ".tmp"
+        with open(tmp, "wb") as handle:
+            handle.write(blob)
+        os.replace(tmp, path)
+        if existing and existing["filename"] != filename:
+            old = os.path.join(self.cfg["sheets_dir"], os.path.basename(existing["filename"]))
+            if os.path.isfile(old):
+                os.remove(old)
+        conn.execute(
+            """
+            INSERT INTO sheets (id, client_id, title, caption, theme, filename, published, created_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            ON CONFLICT(id) DO UPDATE SET
+              title = excluded.title,
+              caption = excluded.caption,
+              theme = excluded.theme,
+              filename = excluded.filename,
+              published = excluded.published
+            """,
+            (sid, client_id, title, caption, theme, filename, published, iso(utcnow())),
+        )
+        conn.commit()
+        return self.send(
+            handler,
+            200,
+            {"id": sid, "clientId": client_id or "", "title": title, "caption": caption, "theme": theme, "published": bool(published)},
+        )
+
+    def import_local(self, handler, conn, admin):
+        body = self.read_json(handler)
+        roster = body.get("roster") if isinstance(body.get("roster"), list) else []
+        progress = body.get("progress") if isinstance(body.get("progress"), dict) else {}
+        if not admin and roster:
+            return self.send(handler, 403, {"error": "An admin imports the roster. Teachers can import attendance after that."})
+        id_map = {}
+        for raw in roster[:200]:
+            if not isinstance(raw, dict):
+                continue
+            student = self.sanitize_student(raw, clean_id(raw.get("id")) or None)
+            id_map[raw.get("id")] = student["id"]
+            conn.execute(
+                """
+                INSERT INTO students (id, name, age, belt, stripes, created_at) VALUES (?, ?, ?, ?, ?, ?)
+                ON CONFLICT(id) DO UPDATE SET name = excluded.name, age = excluded.age, belt = excluded.belt, stripes = excluded.stripes
+                """,
+                (student["id"], student["name"], student["age"], student["belt"], student["stripes"], iso(utcnow())),
+            )
+        for entry in (progress.get("classes") or [])[:400]:
+            if not isinstance(entry, dict):
+                continue
+            attended = []
+            for sid in entry.get("attended") or []:
+                mapped = id_map.get(sid, sid)
+                clean = clean_id(mapped)
+                if clean:
+                    attended.append(clean)
+            try:
+                saved = self.sanitize_class({**entry, "attended": attended})
+            except ValueError:
+                continue
+            self.save_class(conn, saved, merge=True)
+        levels = progress.get("levels") if isinstance(progress.get("levels"), dict) else {}
+        for sid, tech_levels in levels.items():
+            mapped = clean_id(id_map.get(sid, sid))
+            if not mapped or not isinstance(tech_levels, dict):
+                continue
+            for tid, level in tech_levels.items():
+                tech = clean_id(tid)
+                if tech and level in LEVELS:
+                    conn.execute(
+                        """
+                        INSERT INTO levels (student_id, tech_id, level) VALUES (?, ?, ?)
+                        ON CONFLICT(student_id, tech_id) DO NOTHING
+                        """,
+                        (mapped, tech, level),
+                    )
+        notes = progress.get("notes") if isinstance(progress.get("notes"), dict) else {}
+        for sid, note in notes.items():
+            mapped = clean_id(id_map.get(sid, sid))
+            text = clip(note, 800)
+            if mapped and text:
+                conn.execute(
+                    "INSERT INTO notes (student_id, note) VALUES (?, ?) ON CONFLICT(student_id) DO NOTHING",
+                    (mapped, text),
+                )
+        stripe = progress.get("stripe") if isinstance(progress.get("stripe"), dict) else {}
+        if "own" in stripe or "attend" in stripe:
+            try:
+                own = max(1, min(40, int(stripe.get("own", 6))))
+                attend = max(1, min(40, int(stripe.get("attend", 8))))
+            except (TypeError, ValueError):
+                own, attend = 6, 8
+            self.put_setting(conn, "stripe_own", str(own))
+            self.put_setting(conn, "stripe_attend", str(attend))
+        conn.commit()
+        return self.send(handler, 200, {"ok": True, "students": len(id_map)})
+
+    def send(self, handler, status, body, set_cookie=None, clear_cookie=False):
+        raw = json.dumps(body).encode("utf-8")
+        handler.send_response(status)
+        handler.send_header("Content-Type", "application/json; charset=utf-8")
+        handler.send_header("Content-Length", str(len(raw)))
+        handler.send_header("Cache-Control", "no-store")
+        handler.send_header("X-Content-Type-Options", "nosniff")
+        if set_cookie:
+            handler.send_header("Set-Cookie", self.cookie(set_cookie, SESSION_DAYS * 86400))
+        if clear_cookie:
+            handler.send_header("Set-Cookie", self.cookie("", 0))
+        handler.end_headers()
+        handler.wfile.write(raw)
+
+    def cookie(self, token, max_age):
+        parts = [f"bjj_session={token}", "HttpOnly", "SameSite=Lax", "Path=/", f"Max-Age={max_age}"]
+        if self.cfg["secure"]:
+            parts.append("Secure")
+        return "; ".join(parts)
+
+    def serve_static(self, handler, path):
+        root = os.path.realpath(self.cfg["static_root"])
+        rel = path.split("?", 1)[0]
+        if rel.endswith("/"):
+            rel += "index.html"
+        if rel == "":
+            rel = "/index.html"
+        target = os.path.realpath(os.path.join(root, rel.lstrip("/")))
+        if not target.startswith(root + os.sep) and target != root:
+            return self.send(handler, 403, {"error": "No."})
+        if os.path.isdir(target):
+            target = os.path.join(target, "index.html")
+        if not os.path.isfile(target):
+            handler.send_response(404)
+            handler.send_header("Content-Type", "text/plain; charset=utf-8")
+            handler.end_headers()
+            handler.wfile.write(b"Not found")
+            return
+        ext = os.path.splitext(target)[1].lower()
+        ctype = {
+            ".html": "text/html; charset=utf-8",
+            ".css": "text/css; charset=utf-8",
+            ".js": "text/javascript; charset=utf-8",
+            ".png": "image/png",
+            ".jpg": "image/jpeg",
+            ".jpeg": "image/jpeg",
+            ".webp": "image/webp",
+            ".svg": "image/svg+xml",
+            ".gif": "image/gif",
+            ".ttf": "font/ttf",
+            ".json": "application/json",
+            ".ico": "image/png",
+        }.get(ext, "application/octet-stream")
+        with open(target, "rb") as handle:
+            blob = handle.read()
+        handler.send_response(200)
+        handler.send_header("Content-Type", ctype)
+        handler.send_header("Content-Length", str(len(blob)))
+        handler.send_header("X-Content-Type-Options", "nosniff")
+        handler.end_headers()
+        if handler.command != "HEAD":
+            handler.wfile.write(blob)

@@ -1,27 +1,119 @@
-/* Built-in pool for ages 3–5. Custom activities are stored in localStorage. */
+/* Built-in pool. Grace BJJ Kids ages 4–15, plus the toddler intro preset. */
 
 window.BJJ_DATA = {
-  coaching:
-    "Praise by name. One short sentence at a time. Switch as soon as they start wandering.",
+  logo: "/img/logo/grace-logo-full-transparent.png",
 
-  warmupPaceNotes: {
-    mixed:
-      "Warm-up note: 3–4 year olds had a harder time keeping up. Cut the warm-up if most of the group is that young. If they’re older than 4, think about doubling it.",
-    younger:
-      "Warm-up note: Younger group (3–4). They had a harder time keeping up — warm-up counts are decreased. Switch as soon as they start wandering.",
-    older:
-      "Warm-up note: Older than 4. Warm-up counts are doubled. They can take more volume. Still one short sentence at a time.",
+  ageGroups: {
+    mite: {
+      id: "mite",
+      label: "Mighty Mite",
+      range: "4–6",
+      focus: "Motor skills, balance, listening, games, and basic body movement.",
+      pace: "Volume is decreased. Switch as soon as they start wandering.",
+    },
+    peewee: {
+      id: "peewee",
+      label: "Pee Wee",
+      range: "7–9",
+      focus: "Structured partner drills, fundamental positions, escapes, and basic submission defense.",
+      pace: "Warm-up counts stay as written.",
+    },
+    junior: {
+      id: "junior",
+      label: "Junior",
+      range: "10–12",
+      focus: "Technical precision, positional flow, and sparring control.",
+      pace: "Warm-up counts are increased.",
+    },
+    teen: {
+      id: "teen",
+      label: "Teen",
+      range: "13–15",
+      focus: "Advanced techniques, chains, leadership, and the transition to adult class.",
+      pace: "Warm-up counts are doubled. They can take more volume.",
+    },
+  },
+
+  belts: [
+    ["white", "White"],
+    ["grey-white", "Grey-white"],
+    ["grey", "Grey"],
+    ["grey-black", "Grey-black"],
+    ["yellow-white", "Yellow-white"],
+    ["yellow", "Yellow"],
+    ["yellow-black", "Yellow-black"],
+    ["orange-white", "Orange-white"],
+    ["orange", "Orange"],
+    ["orange-black", "Orange-black"],
+    ["green-white", "Green-white"],
+    ["green", "Green"],
+    ["green-black", "Green-black"],
+  ],
+
+  coaching:
+    "Praise by name. One short sentence at a time. Kids call you teacher. Switch as soon as they start wandering.",
+
+  ageNotes: {
+    mite: "Warm-up note: Mighty Mite (4–6). Volume is decreased. Switch as soon as they start wandering. One short sentence at a time.",
+    peewee: "Warm-up note: Pee Wee (7–9). Warm-up counts are as written. One short sentence at a time.",
+    junior: "Warm-up note: Junior (10–12). Warm-up counts are increased. Still one short sentence at a time.",
+    teen: "Warm-up note: Teen (13–15). Warm-up counts are doubled. They can take more volume. Still one short sentence at a time.",
+    toddler:
+      "Warm-up note: Toddler intro (ages 3–5). The 3–4 year olds had a harder time keeping up, so cut the warm-up if most of the group is that young.",
+  },
+
+  staffRequirements: {
+    head: "Head instructor must be a blue belt or above.",
+    assistant: "Assistant must be a two-stripe white belt or above.",
+  },
+
+  playNote:
+    "Play time is earned. The whole class follows instructions, then we play. If they don't, go back to a drill.",
+
+  sparring: {
+    name: "Sparring",
+    how: "Positional rounds for kids with at least one stripe, and only when enough adults are supervising. Kids with no stripe drill with the assistant instead. Reset often.",
+    points: [
+      "Teach them to tap, and don't wait for the tap.",
+      "It's okay to lose.",
+      "Shower them with encouragement.",
+      "Give honest feedback.",
+      "Roll playfully with the teacher.",
+    ],
   },
 
   wildReset:
     "Okay Feet together, hands at your side, stand like a ninja!",
+
+  rulesCommon: [
+    "4:1 kid-to-adult ratio.",
+    "Kids call the instructor teacher.",
+    "Ask the teacher for permission to go to the bathroom.",
+    "No talking or goofing off during class.",
+    "Line up by rank.",
+    "Loaner gis for the first week. After that, parents buy their own gi with the team patch.",
+    "If one child needs a break, the assistant takes them. You keep the others moving.",
+  ],
+
+  rulesNoRolling: [
+    "No live rolling.",
+    "No submissions.",
+    "No tap.",
+    "No waiting in line for turns during games.",
+  ],
+
+  rulesSparring: [
+    "Live rolling is only for kids with at least one stripe, and only when enough adults are supervising.",
+    "Kids with no stripes do not spar.",
+    "Teach them to tap, and don't wait for the tap.",
+  ],
 
   rules: [
     "No live rolling.",
     "No submissions.",
     "No tap.",
     "No waiting in line for turns during games.",
-    "If one child needs a break, supervisor takes them. You keep the others moving.",
+    "If one child needs a break, the assistant takes them. You keep the others moving.",
   ],
 
   finish: {
@@ -38,7 +130,9 @@ window.BJJ_DATA = {
   water: {
     name: "Get Some Water!",
     how: "Dismiss for water:",
-    say: "Okay does anybody water? Okay follow me, when we want to exit the mat we need to ask our teacher and when we leave we bow. When you're done getting water wait right out here until I say you can come on the mat, don't forget to bow when coming on then go to your donut.",
+    say: "Okay, does anybody want water? Okay follow me. When we want to exit the mat we need to ask our teacher, and when we leave we bow. When you're done getting water, wait right out here until I say you can come on the mat. Don't forget to bow when coming on, then go to your donut.",
+    sayGrace:
+      "Okay, does anybody want water? Follow me. Ask the teacher before you leave the mat, and bow on the way off and on the way back. Wait on the side until I call you in, then get back in line.",
   },
 
   staffFirst: [
@@ -67,7 +161,22 @@ window.BJJ_DATA = {
     },
     {
       role: "Parent",
-      job: "Stay at the edge of the mat unless needed. Can join a game if the instructor invites them.",
+      job: "Stay at the edge of the mat unless needed. Can join a game if the teacher invites them.",
+    },
+  ],
+
+  staffGrace: [
+    {
+      role: "Teacher {instructor}",
+      job: "Head instructor. Must be a blue belt or above. Line the class up by rank, lead every drill, and praise by name.",
+    },
+    {
+      role: "Assistant {helper}",
+      job: "Must be a two-stripe white belt or above. Help run drills, supervise sparring, and stay with a child who needs a break.",
+    },
+    {
+      role: "Parent",
+      job: "Help with a loaner gi the first week. After that, stay at the edge unless the teacher asks. Kids ask the teacher before they leave for the bathroom.",
     },
   ],
 
@@ -106,7 +215,7 @@ window.BJJ_DATA = {
         { say: "Okay Bow and come on and find a donut to stand next to." },
         { p: "They bow, step on, and line up in front of you.\nStill in line:" },
         {
-          say: "Okay Feet together, hands at your side, stand like a ninja! Freeze! I'm {lead} and this is coach/instructor {helper} and we're gonna be your teachers today! What's your name? (point)",
+          say: "Okay Feet together, hands at your side, stand like a ninja! Freeze! I'm Teacher {instructor} and this is Teacher {helper} and we're gonna be your teachers today! What's your name? (point)",
         },
         { p: "Go down the line. Ask each child their name. High-five or knuckles.\nStill in line:" },
         { say: "Are you guys excited to do Jiu-Jitsu today! I can't hear you! Can you guys be louder" },
@@ -132,8 +241,80 @@ window.BJJ_DATA = {
       weight: 3,
       how: "Still in line. High-five or knuckles as you go.",
       say: [
-        "Okay Feet together, hands at your side, stand like a ninja! Freeze! I'm {lead} and this is coach/instructor {helper} and we're gonna be your teachers today!",
+        "Okay Feet together, hands at your side, stand like a ninja! Freeze! I'm Teacher {instructor} and this is Teacher {helper} and we're gonna be your teachers today!",
         "Are you guys excited to do Jiu-Jitsu today! I can't hear you! Can you guys be louder",
+      ],
+    },
+  ],
+
+  graceFirstOpening: [
+    {
+      id: "g-lineup",
+      name: "Line up by rank",
+      lineup: true,
+      weight: 2,
+      how: "Off the mat. Highest belt in front, then on down the roster. Feet together, hands at your sides.",
+      say: ["Line up by rank. Highest belt in front. Feet together. Hands at your sides."],
+    },
+    {
+      id: "g-gi",
+      name: "The gi",
+      weight: 4,
+      how: "Loaner gis this first week. Show the jacket, the pants, the belt, and the team patch on your own gi.\nParents help their child copy. Next week they bring their own gi with the team patch.",
+      say: [
+        "This is the jacket. These are the pants. This is the belt.",
+        "This patch is our team. A loaner gi is for the first week. Then you get your own.",
+        "Watch me. Do as I do.",
+      ],
+    },
+    {
+      id: "g-feet",
+      name: "Wash feet",
+      weight: 2,
+      how: "You wipe your feet first. They copy. The assistant helps anyone who is stuck.",
+      say: ["Watch me. Do as I do. Clean feet, then line back up."],
+    },
+    {
+      id: "g-bow",
+      name: "Bow and come on the mat",
+      weight: 3,
+      how: "You bow, step on, and turn to face them.",
+      say: [
+        "When we come on the mat, we bow like this.",
+        "Bow, come on, and line up in front of me.",
+        "I'm Teacher {instructor} and this is Teacher {helper}. We're your teachers today. What's your name?",
+      ],
+      extra: "Go down the line. Ask each child their name. High-five or knuckles.",
+    },
+  ],
+
+  graceOpening: [
+    {
+      id: "g-lineup",
+      name: "Line up by rank",
+      lineup: true,
+      weight: 3,
+      how: "Off the mat. Highest belt in front. Read the roster order if you have one.",
+      say: ["Line up by rank. Highest belt in front. Ninja stance. Feet together, hands at your sides."],
+    },
+    {
+      id: "g-bow-regular",
+      name: "Bow and come on the mat",
+      weight: 3,
+      how: "You bow. You step on. You turn and face them. They bow, step on, and rebuild the same line.",
+      say: [
+        "When we come on the mat, we bow like this.",
+        "Bow and come on. Same line. Highest belt in front.",
+      ],
+    },
+    {
+      id: "g-names",
+      name: "Names and the plan",
+      weight: 2,
+      how: "High-five or knuckles down the line. One sentence on what class is today.",
+      say: [
+        "I'm Teacher {instructor} and this is Teacher {helper}. We're your teachers today.",
+        "Are you ready to do jiu-jitsu? I can't hear you.",
       ],
     },
   ],
@@ -577,6 +758,132 @@ window.BJJ_DATA = {
       say: "Hands on shoulders. Soft push. If your bottom sits, high-five and try again!",
       extra: "No running starts. No grabbing the gi. Stop the second it gets wild.",
     },
+
+    /* ——— Grace warm-up: the 5-minute line, in order ——— */
+    {
+      id: "wu-run-circles",
+      category: "warmup",
+      name: "Run in circles",
+      duration: 1,
+      ages: ["mite", "peewee", "junior", "teen"],
+      how: "You in front. Easy run around the mat. One direction, then the other. Stay inside the mats.",
+      say: "Okay everyone follow me and let's run in circles. Stay on the mat!",
+    },
+    {
+      id: "wu-jacks-pt",
+      category: "warmup",
+      name: "Jumping jacks in Portuguese",
+      duration: 1,
+      reps: 10,
+      ages: ["mite", "peewee", "junior", "teen"],
+      how: "Count {reps} jumping jacks out loud in Portuguese. You say the number, they repeat it, then you jump together.",
+      say: "Jumping jacks! Count with me in Portuguese. Um, dois, três, quatro, cinco, seis, sete, oito, nove, dez!",
+    },
+    {
+      id: "wu-pushups",
+      category: "warmup",
+      name: "Push-ups",
+      duration: 1,
+      reps: 5,
+      ages: ["mite", "peewee", "junior", "teen"],
+      how: "Hands under shoulders. Mighty Mites stay on their knees. Older groups do regular push-ups. {reps} each.",
+      say: "Push-ups. Down and up. Knees down if you need them. Count with me!",
+    },
+    {
+      id: "wu-situps",
+      category: "warmup",
+      name: "Sit-ups",
+      duration: 1,
+      reps: 5,
+      ages: ["mite", "peewee", "junior", "teen"],
+      how: "On their back, feet down. Sit up and touch their knees. {reps} each. Hold feet for the little ones.",
+      say: "Sit-ups. Touch your knees. Down slow. You can do it!",
+    },
+    {
+      id: "wu-jackrabbit",
+      category: "warmup",
+      name: "Jackrabbit",
+      duration: 1,
+      reps: 2,
+      ages: ["mite", "peewee", "junior", "teen"],
+      how: "Fast burst to the far end of the mat and back. Soft feet. {reps} trips. Send them one at a time if the mat is crowded.",
+      say: "Jackrabbit! Run to the end and back. Fast feet, soft landing. Go!",
+    },
+    {
+      id: "wu-sprawl",
+      category: "warmup",
+      name: "Sprawls",
+      duration: 1.5,
+      reps: 5,
+      ages: ["junior", "teen"],
+      how: "From standing, shoot the hips back and the chest toward the mat, then pop up. {reps} times.",
+      say: "Sprawl! Hips back, chest down, pop up. Ready?",
+    },
+
+    /* ——— Base: every Grace class, in this order ——— */
+    {
+      id: "base-forward-roll",
+      category: "base",
+      name: "Forward roll",
+      duration: 3,
+      reps: 3,
+      ages: ["mite", "peewee", "junior", "teen"],
+      how: "Chin tucked, hands on the mat, roll over one shoulder. Demo slow. {reps} each, in a lane, so nobody rolls into a friend.",
+      say: "Chin down. Hands here. Watch me roll. Now your turn. One at a time in your lane!",
+    },
+    {
+      id: "base-backward-roll",
+      category: "base",
+      name: "Backward roll",
+      duration: 3,
+      reps: 3,
+      ages: ["mite", "peewee", "junior", "teen"],
+      how: "Sit, tuck the chin, roll back over a shoulder. Don't land on the neck. Spot Mighty Mites with a hand on the hip. {reps} each.",
+      say: "Sit. Chin tucked. Roll back over your shoulder. I'll spot you. Don't put your neck on the mat.",
+    },
+    {
+      id: "base-hip-escape",
+      category: "base",
+      name: "Hip escape (shrimp)",
+      duration: 3,
+      reps: 4,
+      ages: ["mite", "peewee", "junior", "teen"],
+      how: "On their back. One foot on the mat, push the hips away, and turn to the side. That is the shrimp. {reps} to each side.",
+      say: "On your back. Foot on the mat. Push your hips away. Shrimp! Switch sides.",
+    },
+
+    /* ——— Play ——— */
+    {
+      id: "gm-dodgeball",
+      category: "game",
+      name: "Dodgeball",
+      duration: 5,
+      ages: ["mite", "peewee", "junior", "teen"],
+      how: "One soft foam ball. Hits below the shoulders only. A hit means five jumping jacks, then they are back in. No head shots and no hard throws. Mighty Mites toss the ball; they don't fire it at faces.",
+      say: "Soft ball. Below the shoulders. If you get hit, five jumping jacks and you're back in.",
+      extra: "Play time is earned. Keep the game only if the whole class follows instructions.",
+      equipment: "One soft foam ball",
+    },
+    {
+      id: "gm-tug-of-war",
+      category: "game",
+      name: "Tug of war",
+      duration: 5,
+      ages: ["mite", "peewee", "junior", "teen"],
+      how: "Two lines and a belt or short rope. No wrapping it around a hand or a neck. They pull on your call. Stop the second someone stumbles toward the wall.",
+      say: "Grip the belt. Don't wrap it. Pull when I say pull. If you let go, we stop.",
+      extra: "Play time is earned. If the class stops listening, the belt goes away and we drill.",
+      equipment: "A belt or short rope",
+    },
+    {
+      id: "gm-position-king",
+      category: "game",
+      name: "Position king",
+      duration: 4,
+      ages: ["junior", "teen"],
+      how: "Winner stays. Start in a named position. First clean pass, sweep, or back take stays in. The other partner goes to the back of a short line. Two pairs at once if you have the adults. No submissions.",
+      say: "This position. Clean score and you stay. No submissions. Next pair, you're in.",
+    },
   ],
 
   sheets: [
@@ -764,3 +1071,61 @@ window.BJJ_DATA = {
     },
   ],
 };
+
+(function tagBuiltInAges() {
+  const tags = {
+    "wu-light-jog": ["toddler", "mite"],
+    "wu-gorilla": ["toddler", "mite", "peewee", "junior", "teen"],
+    "wu-bear": ["toddler", "mite", "peewee", "junior", "teen"],
+    "wu-frog": ["toddler", "mite", "peewee"],
+    "wu-worm": ["toddler", "mite"],
+    "wu-mat-slaps": ["toddler", "mite"],
+    "wu-crab": ["toddler", "mite", "peewee"],
+    "wu-duck": ["toddler", "mite"],
+    "wu-bunny": ["toddler", "mite"],
+    "wu-alligator": ["toddler", "mite"],
+    "wu-superhero": ["toddler", "mite"],
+    "wu-ninja-sneak": ["toddler", "mite"],
+    "wu-starfish": ["toddler", "mite", "peewee"],
+    "wu-seal": ["toddler", "mite"],
+    "wu-shrimp": ["toddler", "mite", "peewee", "junior"],
+    "wu-kangaroo": ["toddler", "mite", "peewee"],
+    "wu-spiderman": ["mite", "peewee", "junior"],
+    "wu-log-roll-wu": ["toddler", "mite"],
+    "ls-burrito": ["toddler"],
+    "ls-race-stand": ["toddler"],
+    "ls-capture-flag": ["toddler"],
+    "ls-under-bear": ["toddler"],
+    "ls-sit-stand": ["toddler"],
+    "ls-tiny-shrimp": ["toddler"],
+    "ls-make-a-ball": ["toddler"],
+    "ls-stand-in-base": ["toddler"],
+    "ls-make-a-wall": ["toddler"],
+    "ls-bottom-scoot": ["toddler"],
+    "ls-follow-belt": ["toddler"],
+    "ls-safe-sit": ["toddler"],
+    "ls-guard-sit": ["toddler"],
+    "ls-get-to-side": ["toddler"],
+    "ls-hug-and-roll": ["toddler"],
+    "ls-connect-hands": ["toddler"],
+    "gm-grab-donuts": ["toddler", "mite"],
+    "gm-protect-donuts": ["toddler", "mite"],
+    "gm-hungry-bear": ["toddler", "mite"],
+    "gm-red-light": ["toddler", "mite", "peewee"],
+    "gm-shark-islands": ["toddler", "mite"],
+    "gm-belt-snake": ["toddler", "mite"],
+    "gm-tunnel": ["toddler", "mite", "peewee"],
+    "gm-musical-donuts": ["toddler", "mite"],
+    "gm-rescue": ["toddler", "mite"],
+    "gm-tag-belt": ["peewee", "junior"],
+    "gm-cone-freeze": ["toddler", "mite"],
+    "gm-superhero-save": ["toddler", "mite"],
+    "gm-crab-race": ["mite", "peewee"],
+    "gm-treasure": ["toddler", "mite"],
+    "gm-follow-leader": ["toddler", "mite", "peewee", "teen"],
+    "gm-sumo-push": ["peewee", "junior"],
+  };
+  window.BJJ_DATA.activities.forEach((activity) => {
+    if (!activity.ages) activity.ages = tags[activity.id] || ["toddler"];
+  });
+})();

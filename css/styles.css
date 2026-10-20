@@ -71,10 +71,24 @@ body {
 
 .brand {
   display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
+.brand-logo {
+  width: 100%;
+  background: #fff;
+  border-radius: 10px;
+  padding: 8px 12px;
+}
+
+.brand-text {
+  display: flex;
   align-items: baseline;
   justify-content: space-between;
   gap: 12px;
-  margin-bottom: 6px;
 }
 
 .brand h1 {
@@ -199,6 +213,67 @@ body {
 .seg.three button {
   font-size: 0.78rem;
   padding: 0 4px;
+}
+
+.seg.ages {
+  grid-template-columns: 1fr 1fr 1fr 1fr;
+}
+
+.seg.ages button {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  height: 46px;
+  line-height: 1.15;
+  font-size: 0.78rem;
+}
+
+.seg.ages small {
+  font-size: 0.62rem;
+  font-weight: 500;
+}
+
+.age-checks {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 0.86rem;
+}
+
+.age-checks label {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  text-transform: none;
+  letter-spacing: 0;
+  color: var(--ui-text);
+}
+
+.hint.warn { color: #fecaca; }
+
+.roster-edit {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 8px;
+}
+
+.roster-edit select {
+  font: inherit;
+  color: var(--ui-text);
+  background: #1c1917;
+  border: 1px solid #57534e;
+  border-radius: 6px;
+  padding: 4px 6px;
+}
+
+.sheet-list-empty {
+  display: grid;
+  place-items: center;
+  min-height: 64px;
+  color: #444;
+  font-size: 0.8rem;
 }
 
 .callout {
@@ -657,7 +732,56 @@ button.danger {
 }
 
 .plan-running-header {
-  margin-bottom: 28px;
+  margin-bottom: 22px;
+  font-weight: 700;
+  align-items: center;
+  gap: 12px;
+}
+
+.plan-logo {
+  height: 58px;
+  width: auto;
+  display: block;
+}
+
+.plan-kicker { flex: 1; }
+
+.sheet-page { position: relative; }
+
+.sheet-brand {
+  display: flex;
+  justify-content: flex-end;
+  margin: 0 0 4px;
+}
+
+.sheet-logo {
+  height: 42px;
+  width: auto;
+}
+
+.paper .req,
+.paper .focus {
+  font-family: var(--doc-sans);
+  font-size: 13.5px;
+  margin: 0 0 10px;
+}
+
+.paper .lineup {
+  margin: 6px 0 8px 18px;
+  padding: 0;
+}
+
+.paper .lineup li { margin: 0 0 3px; }
+
+.callout.warn {
+  font-style: normal;
+  border-left-color: #9f1239;
+  background: #fff1f2;
+  padding: 8px 12px;
+}
+
+.warn-text {
+  color: #9f1239;
   font-weight: 700;
 }
 
@@ -860,6 +984,25 @@ button.danger {
 
 .hidden { display: none !important; }
 
+body:not(.authed) .app { display: none; }
+.gate {
+  margin: 24px;
+  color: #f5f0e8;
+  font-size: 1.05rem;
+}
+body.authed .gate { display: none; }
+body:not(.role-admin) .admin-only { display: none !important; }
+#printTheseBtn { margin: 16px auto; }
+#checkinView input, #accountPanel input, #accountPanel select, .roster-admin input, .roster-admin select {
+  font: inherit;
+  color: var(--ui-text);
+  background: #1c1917;
+  border: 1px solid #57534e;
+  border-radius: 6px;
+  padding: 8px;
+  min-height: 40px;
+}
+
 @media (max-width: 980px) {
   .app { grid-template-columns: 1fr; }
   .sidebar {
@@ -902,6 +1045,168 @@ button.danger {
     margin: 0.7in 0.75in 0.75in 0.75in;
   }
   .block { break-inside: avoid; }
+  .block.lesson-block { break-inside: auto; }
   .item { break-inside: avoid; }
   .staff-table { break-inside: avoid; }
+  .work-view, .toolbar.hidden, .paper-wrap.hidden { display: none !important; }
+  body[data-print="cards"] .paper-wrap,
+  body[data-print="progress"] .paper-wrap { display: none !important; }
+  body[data-print="cards"] #cardView,
+  body[data-print="progress"] #cardView { display: block !important; }
+  .card-page { break-after: page; page-break-after: always; }
+  .wallet-card, .signin-row, .progress-sheet { break-inside: avoid; }
+}
+
+.seg.views {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 6px;
+  margin: 12px 0 16px;
+}
+
+.seg.views button {
+  min-height: 44px;
+}
+
+.paper-wrap.hidden,
+.toolbar.hidden,
+.work-view.hidden { display: none; }
+
+.work-view {
+  background: var(--paper-screen);
+  color: var(--ink);
+  font-family: var(--doc-sans);
+  margin: 24px auto 48px;
+  max-width: 880px;
+  padding: 28px 28px 40px;
+  box-shadow: var(--shadow);
+}
+
+.work-view h2 { margin: 0 0 8px; }
+.work-view h3 { margin: 18px 0 8px; }
+
+.tap, .level-row button, .chip {
+  min-height: 48px;
+  font: inherit;
+  cursor: pointer;
+}
+
+.chip-row, .level-row, .pick-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.chip, .level-row button {
+  border: 2px solid #111;
+  background: #fff;
+  color: #111;
+  border-radius: 999px;
+  padding: 8px 14px;
+}
+
+.chip.on, .level-row button.on {
+  background: #166534;
+  color: #fff;
+  border-color: #166534;
+}
+
+.checkin-status {
+  font-size: 1.7rem;
+  font-weight: 800;
+  min-height: 2.6em;
+  margin: 12px 0;
+}
+
+.checkin-status.ok { color: #166534; }
+.checkin-status.dup { color: #9f1239; }
+
+#checkinVideo {
+  width: 100%;
+  max-height: 320px;
+  background: #111;
+  border-radius: 8px;
+}
+
+.checkin-list { padding-left: 18px; }
+.checkin-list .here { font-weight: 700; }
+
+.lesson-block {
+  border: 3px solid #111;
+  padding: 10px 12px 4px;
+  margin: 14px 0;
+}
+
+.lesson-block > .block-title { font-size: 1.35rem; }
+
+.paper .steps { margin: 4px 0 6px 1.2em; padding: 0; }
+.paper .steps li { margin: 0 0 3px; }
+.paper .drill { margin: 4px 0; }
+.paper .safety { margin: 4px 0 8px; font-weight: 700; }
+.paper .position { margin: 0 0 4px; font-family: var(--doc-sans); font-size: 13px; }
+
+.card-page {
+  min-height: 9.2in;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  color: #111;
+  gap: 12px;
+}
+
+.card-page img.qr, .wallet-card img.qr, .signin-row img.qr {
+  image-rendering: pixelated;
+  background: #fff;
+}
+
+.card-page img.qr { width: 320px; height: 320px; }
+.card-page .card-logo { height: 72px; }
+
+.wallet-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+}
+
+.wallet-card {
+  border: 1px solid #111;
+  min-height: 2in;
+  padding: 8px;
+  display: grid;
+  grid-template-columns: 92px 1fr;
+  gap: 8px;
+  align-items: center;
+  color: #111;
+  background: #fff;
+}
+
+.wallet-card img.qr { width: 92px; height: 92px; }
+.wallet-card .mini-logo { height: 28px; }
+
+.signin-sheet { color: #111; }
+.signin-row {
+  display: grid;
+  grid-template-columns: 28px 1fr 76px;
+  gap: 8px;
+  align-items: center;
+  border-bottom: 1px solid #111;
+  min-height: 78px;
+  padding: 4px 0;
+}
+.signin-row img.qr { width: 68px; height: 68px; }
+.box {
+  width: 18px;
+  height: 18px;
+  border: 2px solid #111;
+}
+
+.progress-sheet { color: #111; }
+.progress-sheet .sheet-logo { height: 52px; }
+.kid-block { border-top: 1px solid #ccc; padding-top: 12px; margin-top: 12px; }
+.note {
+  width: 100%;
+  min-height: 72px;
+  font: inherit;
 }

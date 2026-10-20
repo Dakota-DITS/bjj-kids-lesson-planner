@@ -1,0 +1,22 @@
+[Unit]
+Description=Grace BJJ Kids attendance API
+After=network.target
+
+[Service]
+Type=simple
+User=bjj
+Group=bjj
+WorkingDirectory=/srv/bjj-planner
+Environment=BJJ_DATA_DIR=/var/lib/bjj-planner
+Environment=BJJ_COOKIE_SECURE=1
+Environment=BJJ_TRUST_PROXY=1
+Environment=BJJ_HOST=127.0.0.1
+Environment=BJJ_PORT=8766
+ExecStart=/usr/bin/python3 -m server serve
+Restart=on-failure
+RestartSec=2
+NoNewPrivileges=true
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target
