@@ -1,0 +1,191 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Coloring sheets · Grace BJJ Kids</title>
+  <link rel="icon" href="/img/logo/grace-logo-mark-transparent.png" />
+  <link rel="stylesheet" href="/coloring/coloring.css" />
+</head>
+<body>
+  <header class="top">
+    <a href="/"><img src="/img/logo/grace-logo-mark-transparent.png" alt="Grace Jiu Jitsu" /></a>
+    <a class="teacher" href="/login/">Teacher login</a>
+  </header>
+  <h1>Coloring sheets</h1>
+  <p class="lede">Pick a sheet, add your child's name, and print it. Color at home and bring it back next class.</p>
+  <div class="layout">
+    <aside class="no-print">
+      <div id="featured" class="featured" hidden></div>
+      <div class="filters" id="filters" role="group" aria-label="Sheet themes"></div>
+      <div class="grid" id="grid"></div>
+      <form class="personal" id="personal">
+        <h2>Make it theirs</h2>
+        <label for="childName">Child's name</label>
+        <input id="childName" maxlength="40" placeholder="Sam" />
+        <label for="belt">Belt to color in</label>
+        <select id="belt"></select>
+        <label for="move">Move of the week</label>
+        <input id="move" maxlength="60" placeholder="Hold mount" />
+        <label for="caption">A short caption</label>
+        <textarea id="caption" maxlength="160" placeholder="Knees pinch like a hug."></textarea>
+        <button class="primary" id="printBtn" type="button">Print / save PDF</button>
+        <button class="ghost" id="useFeatured" type="button" hidden>Use this week's sheet</button>
+      </form>
+    </aside>
+    <article class="sheet" id="sheet" aria-live="polite"></article>
+  </div>
+  <script src="/coloring/catalog.js"></script>
+  <script>
+    const sheets = window.COLORING_SHEETS.slice();
+    let theme = "All";
+    let current = sheets[0];
+    let featured = null;
+
+    const $ = (id) => document.getElementById(id);
+    function esc(value) {
+      return String(value == null ? "" : value)
+        .replaceAll("&", "&amp;")
+        .replaceAll("<", "&lt;")
+        .replaceAll(">", "&gt;")
+        .replaceAll('"', "&quot;");
+    }
+
+    function themes() {
+      const names = ["All"];
+      sheets.forEach((sheet) => { if (!names.includes(sheet.theme)) names.push(sheet.theme); });
+      return names;
+    }
+
+    function renderFilters() {
+      $("filters").innerHTML = themes().map((name) =>
+        `<button type="button" data-theme="${esc(name)}" class="${name === theme ? "on" : ""}">${esc(name)}</button>`
+      ).join("");
+    }
+
+    function thumb(sheet) {
+      if (sheet.comic) return sheet.panels[0][0];
+      return sheet.src;
+    }
+
+    function renderGrid() {
+      const list = sheets.filter((sheet) => theme === "All" || sheet.theme === theme);
+      $("grid").innerHTML = list.map((sheet) => `
+        <button type="button" class="card ${sheet.id === current.id ? "on" : ""}" data-id="${esc(sheet.id)}">
+          <img src="${esc(thumb(sheet))}" alt="" />
+          <span>${esc(sheet.name)}</span>
+        </button>`).join("");
+    }
+
+    function beltChip() {
+      const value = $("belt").value;
+      if (!value) return "";
+      const label = $("belt").selectedOptions[0].textContent;
+      return `<p class="belt-line">Color the belt <span class="belt-chip" style="background:${esc(value)}"></span> ${esc(label)}</p>`;
+    }
+
+    function renderSheet() {
+      const name = $("childName").value.trim();
+      const move = $("move").value.trim();
+      const caption = $("caption").value.trim();
+      const who = name ? esc(name) : '<span class="line">______________</span>';
+      let art = "";
+      if (current.comic) {
+        art = `<div class="comic${current.six ? " six" : ""}">${current.panels.map((panel, index) =>
+          `<figure><img src="${esc(panel[0])}" alt="Panel ${index + 1}" /><figcaption>${esc(panel[1])}</figcaption></figure>`
+        ).join("")}</div>`;
+      } else if (current.baked) {
+        art = `<img class="art" src="${esc(current.src)}" alt="${esc(current.name)}" />`;
+      } else {
+        const questions = (current.questions || []).map((q) => `<li>${esc(q)} ______________</li>`).join("");
+        art = `<img class="art" src="${esc(current.src)}" alt="${esc(current.name)}" />
+          ${questions ? `<ol class="questions">${questions}</ol>` : ""}`;
+      }
+      $("sheet").innerHTML = `
+        <img class="sheet-logo" src="/img/logo/grace-logo-mark-transparent.png" alt="Grace Jiu Jitsu" />
+        <h2 class="sheet-title">${esc(current.title || current.name)}</h2>
+        <p class="sheet-sub">${esc(current.theme)}</p>
+        ${move || caption ? `<p class="move"><strong>${esc(move || "This week's move")}</strong>${caption ? `<br>${esc(caption)}` : ""}</p>` : ""}
+        ${beltChip()}
+        ${art}
+        <p class="sheet-title" style="font-size:1.6rem">My name is ${who}</p>
+        <p class="sheet-foot">Bring this back next class for a special surprise.</p>`;
+    }
+
+    function selectSheet(id) {
+      const found = sheets.find((sheet) => sheet.id === id);
+      if (!found) return;
+      current = found;
+      renderGrid();
+      renderSheet();
+    }
+
+    $("filters").addEventListener("click", (event) => {
+      const btn = event.target.closest("button[data-theme]");
+      if (!btn) return;
+      theme = btn.dataset.theme;
+      renderFilters();
+      renderGrid();
+    });
+    $("grid").addEventListener("click", (event) => {
+      const card = event.target.closest("[data-id]");
+      if (card) selectSheet(card.dataset.id);
+    });
+    ["childName", "belt", "move", "caption"].forEach((id) => {
+      $(id).addEventListener("input", renderSheet);
+      $(id).addEventListener("change", renderSheet);
+    });
+    $("printBtn").addEventListener("click", () => window.print());
+    $("useFeatured").addEventListener("click", () => {
+      if (!featured) return;
+      if (featured.sheetId) selectSheet(featured.sheetId);
+      if (featured.caption) $("caption").value = featured.caption;
+      const match = sheets.find((sheet) => sheet.id === featured.sheetId);
+      if (match) $("move").value = match.name;
+      renderSheet();
+    });
+
+    $("belt").innerHTML = window.BELT_COLORS.map(([value, label]) =>
+      `<option value="${esc(value)}">${esc(label)}</option>`
+    ).join("");
+
+    async function loadPublic() {
+      try {
+        const featuredRes = await fetch("/api/public/featured");
+        if (featuredRes.ok) {
+          featured = await featuredRes.json();
+          if (featured && (featured.sheetId || featured.caption)) {
+            const box = $("featured");
+            const known = sheets.find((sheet) => sheet.id === featured.sheetId);
+            box.hidden = false;
+            box.innerHTML = `<strong>This week's move</strong><br>${esc(known ? known.name : featured.caption || "A sheet from class")}${featured.caption && known ? `<br>${esc(featured.caption)}` : ""}`;
+            $("useFeatured").hidden = false;
+          }
+        }
+        const listRes = await fetch("/api/public/sheets");
+        if (listRes.ok) {
+          const body = await listRes.json();
+          (body.sheets || []).forEach((sheet) => {
+            sheets.push({
+              id: sheet.id,
+              name: sheet.title,
+              theme: sheet.theme || "From class",
+              title: sheet.title,
+              src: `/api/public/sheets/${encodeURIComponent(sheet.id)}/image`,
+              questions: [],
+              caption: sheet.caption || ""
+            });
+          });
+        }
+      } catch (err) {
+        /* The built-in sheets still work if the API is down. */
+      }
+      renderFilters();
+      renderGrid();
+      renderSheet();
+    }
+
+    loadPublic();
+  </script>
+</body>
+</html>

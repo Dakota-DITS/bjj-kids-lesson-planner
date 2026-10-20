@@ -1,0 +1,134 @@
+@font-face {
+  font-family: "Luckiest Guy";
+  src: url("/fonts/LuckiestGuy-Regular.ttf") format("truetype");
+  font-display: swap;
+}
+@font-face {
+  font-family: "Fredoka";
+  src: url("/fonts/Fredoka-SemiBold.ttf") format("truetype");
+  font-display: swap;
+}
+
+:root {
+  --ink: #14110f;
+  --red: #9b2a12;
+  --red-dark: #7c210e;
+  --paper: #fff8f3;
+  --card: #ffffff;
+  --line: #eadfd6;
+}
+
+* { box-sizing: border-box; }
+html, body { margin: 0; }
+body {
+  font-family: "Fredoka", "Segoe UI", sans-serif;
+  background:
+    radial-gradient(900px 420px at 100% -10%, #f3d2c6 0%, transparent 55%),
+    var(--paper);
+  color: var(--ink);
+  line-height: 1.45;
+}
+a { color: var(--red-dark); }
+.skip {
+  position: absolute;
+  left: 12px;
+  top: -40px;
+  background: #111;
+  color: #fff;
+  padding: 8px 12px;
+}
+.skip:focus { top: 12px; }
+
+.wrap { width: min(920px, calc(100% - 32px)); margin: 0 auto; }
+header.hero { padding: 28px 0 8px; text-align: center; }
+.logo {
+  width: min(440px, 92vw);
+  height: auto;
+  background: transparent;
+  display: block;
+  margin: 0 auto;
+}
+h1, h2, .values strong {
+  font-family: "Luckiest Guy", "Arial Black", sans-serif;
+  font-weight: 400;
+  letter-spacing: 0.02em;
+}
+h1 { font-size: clamp(2.2rem, 8vw, 3.4rem); margin: 18px 0 8px; color: var(--red); }
+.welcome { font-size: 1.15rem; max-width: 38rem; margin: 0 auto 8px; }
+
+.values {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 10px;
+  margin: 22px 0;
+}
+.values div {
+  background: var(--card);
+  border: 3px solid #111;
+  border-radius: 16px;
+  padding: 12px 14px;
+  text-align: center;
+}
+.values strong { display: block; color: var(--red); font-size: 1.6rem; }
+
+.panel {
+  background: var(--card);
+  border-radius: 18px;
+  padding: 18px 16px;
+  margin: 14px 0;
+  box-shadow: 0 8px 24px rgba(20, 17, 15, 0.05);
+}
+h2 { margin: 0 0 8px; font-size: 1.7rem; }
+.next {
+  display: inline-block;
+  margin-top: 8px;
+  background: #111;
+  color: #fff;
+  border-radius: 999px;
+  padding: 6px 12px;
+  font-size: 1rem;
+}
+.ages { list-style: none; padding: 0; margin: 0; }
+.ages li {
+  display: grid;
+  grid-template-columns: 4.2rem 1fr;
+  gap: 10px;
+  padding: 10px 0;
+  border-top: 1px solid var(--line);
+}
+.ages li:first-child { border-top: 0; }
+.ages b { color: var(--red); }
+
+.actions { text-align: center; margin: 22px 0 10px; }
+.big {
+  display: inline-block;
+  background: var(--red);
+  color: #fff;
+  text-decoration: none;
+  font-family: "Luckiest Guy", "Arial Black", sans-serif;
+  font-size: 1.6rem;
+  letter-spacing: 0.03em;
+  padding: 14px 22px;
+  border-radius: 999px;
+  min-height: 52px;
+}
+.big:hover, .big:focus { background: var(--red-dark); }
+.teacher {
+  display: inline-block;
+  margin-top: 14px;
+  font-size: 0.95rem;
+}
+.extra { font-size: 0.95rem; }
+footer {
+  text-align: center;
+  padding: 10px 0 28px;
+  color: #4a403a;
+  font-size: 0.9rem;
+}
+
+@media (min-width: 720px) {
+  header.hero { padding-top: 42px; }
+  .values { grid-template-columns: repeat(3, 1fr); }
+  .panel { padding: 22px 24px; }
+  .ages li { grid-template-columns: 6rem 1fr; }
+}

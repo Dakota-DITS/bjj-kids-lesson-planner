@@ -1,0 +1,78 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Teacher login · Grace BJJ Kids</title>
+  <link rel="icon" href="/img/logo/grace-logo-mark-transparent.png" />
+  <link rel="stylesheet" href="/css/splash.css" />
+  <style>
+    form.login {
+      max-width: 420px;
+      margin: 24px auto 40px;
+      background: #fff;
+      border-radius: 18px;
+      padding: 20px 18px 24px;
+      box-shadow: 0 10px 30px rgba(20, 17, 15, 0.08);
+    }
+    label { display: block; font-size: 0.95rem; margin: 12px 0 4px; }
+    input {
+      width: 100%;
+      font: inherit;
+      padding: 12px;
+      border-radius: 10px;
+      border: 2px solid #111;
+      min-height: 48px;
+    }
+    button.big { border: 0; width: 100%; cursor: pointer; margin-top: 16px; }
+    .error { color: #9b2a12; min-height: 1.4em; font-weight: 700; }
+  </style>
+</head>
+<body>
+  <main class="wrap">
+    <header class="hero">
+      <img class="logo" src="/img/logo/grace-logo-mark-transparent.png" alt="Grace Jiu Jitsu" />
+      <h1>Teacher login</h1>
+      <p class="welcome">For teachers and admins. Parents can head back to the coloring sheets.</p>
+    </header>
+    <form class="login" id="loginForm">
+      <label for="username">Username</label>
+      <input id="username" name="username" autocomplete="username" required />
+      <label for="password">Password</label>
+      <input id="password" name="password" type="password" autocomplete="current-password" required />
+      <p class="error" id="error" role="alert"></p>
+      <button class="big" type="submit">Log in</button>
+    </form>
+    <p style="text-align:center"><a href="/">Back to the welcome page</a> · <a href="/coloring/">Coloring sheets</a></p>
+  </main>
+  <script>
+    const form = document.getElementById("loginForm");
+    const error = document.getElementById("error");
+    form.addEventListener("submit", async (event) => {
+      event.preventDefault();
+      error.textContent = "";
+      try {
+        const pre = await fetch("/api/auth/csrf", { credentials: "same-origin" });
+        const csrfBody = await pre.json();
+        const res = await fetch("/api/login", {
+          method: "POST",
+          credentials: "same-origin",
+          headers: { "Content-Type": "application/json", "X-CSRF-Token": csrfBody.csrf },
+          body: JSON.stringify({
+            username: document.getElementById("username").value.trim(),
+            password: document.getElementById("password").value
+          })
+        });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) {
+          error.textContent = data.error || "Could not log in.";
+          return;
+        }
+        window.location.href = "/app/";
+      } catch (err) {
+        error.textContent = "The attendance server is not reachable from this page.";
+      }
+    });
+  </script>
+</body>
+</html>
