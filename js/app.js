@@ -4,7 +4,7 @@
   const STORAGE_KEY = "bjj-grace-kids-planner-v2";
   const OLD_STORAGE_KEY = "bjj-kids-lesson-planner-v1";
   const IMPORT_KEY = "bjj-grace-import-v1";
-  const LOGO = P.safeSrc(DATA.logo) || "/img/logo/grace-logo-full-transparent.png";
+  const LOGO = P.safeSrc(DATA.logo) || "/img/logo/grace-logo-mark-transparent.png";
 
   const FIRST_CLASS_IDS = {
     warmup: ["wu-light-jog", "wu-gorilla", "wu-bear", "wu-frog", "wu-worm", "wu-mat-slaps"],

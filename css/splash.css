@@ -44,10 +44,9 @@ header.hero { padding: 28px 0 8px; text-align: center; }
 .logo {
   width: min(440px, 92vw);
   height: auto;
-  background: #fff;
-  border-radius: 18px;
-  padding: 12px 16px;
-  box-shadow: 0 10px 30px rgba(20, 17, 15, 0.08);
+  background: transparent;
+  display: block;
+  margin: 0 auto;
 }
 h1, h2, .values strong {
   font-family: "Luckiest Guy", "Arial Black", sans-serif;

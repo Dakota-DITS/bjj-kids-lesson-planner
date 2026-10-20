@@ -1,7 +1,7 @@
 /* Built-in pool. Grace BJJ Kids ages 4–15, plus the toddler intro preset. */
 
 window.BJJ_DATA = {
-  logo: "/img/logo/grace-logo-full-transparent.png",
+  logo: "/img/logo/grace-logo-mark-transparent.png",
 
   ageGroups: {
     mite: {

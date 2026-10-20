@@ -79,9 +79,9 @@ body {
 
 .brand-logo {
   width: 100%;
-  background: #fff;
-  border-radius: 10px;
-  padding: 8px 12px;
+  height: auto;
+  background: transparent;
+  display: block;
 }
 
 .brand-text {
