@@ -72,6 +72,9 @@ def cmd_serve(args):
         def do_GET(self):
             api.handle(self)
 
+        def do_HEAD(self):
+            api.handle(self)
+
         def do_POST(self):
             api.handle(self)
 
