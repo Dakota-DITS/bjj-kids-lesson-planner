@@ -41,7 +41,13 @@ input, select, textarea { font-size: 16px; }
   height: auto;
   background: transparent;
 }
-.teacher { font-size: 0.9rem; }
+.teacher {
+  display: inline-flex;
+  align-items: center;
+  min-height: 44px;
+  padding: 8px 4px;
+  font-size: 1rem;
+}
 h1, h2, .sheet-title {
   font-family: "Luckiest Guy", "Arial Black", sans-serif;
   font-weight: 400;

@@ -21,7 +21,13 @@
     location.reload();
   });
 
-  navigator.serviceWorker.register("/sw.js", { scope: scope, updateViaCache: "none" }).then(function (reg) {
+  var version = "";
+  var scripts = document.getElementsByTagName("script");
+  for (var i = 0; i < scripts.length; i += 1) {
+    var found = /\/pwa\.js\?v=([^&#]+)/.exec(scripts[i].getAttribute("src") || "");
+    if (found) version = decodeURIComponent(found[1]);
+  }
+  navigator.serviceWorker.register("/sw.js" + (version ? "?v=" + encodeURIComponent(version) : ""), { scope: scope, updateViaCache: "none" }).then(function (reg) {
     function precache() {
       var worker = reg.active || navigator.serviceWorker.controller;
       if (worker) worker.postMessage({ type: "precache" });

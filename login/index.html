@@ -12,8 +12,8 @@
   <meta name="apple-mobile-web-app-title" content="Grace BJJ Kids" />
   <link rel="icon" href="/icons/favicon-32.png" type="image/png" sizes="32x32" />
   <link rel="apple-touch-icon" href="/icons/apple-touch-icon.png" sizes="180x180" />
-  <link rel="stylesheet" href="/css/splash.css?v=20261021-6" />
-  <script src="/pwa.js?v=20261021-6" defer></script>
+  <link rel="stylesheet" href="/css/splash.css?v=20261021-7" />
+  <script src="/pwa.js?v=20261021-7" defer></script>
   <style>
     form.login {
       max-width: 420px;
@@ -34,7 +34,10 @@
       min-height: 48px;
     }
     button.big { border: 0; width: 100%; cursor: pointer; margin-top: 16px; }
+    button.big:disabled { opacity: 0.7; }
     .error { color: #9b2a12; min-height: 1.4em; font-weight: 700; }
+    .login-links { text-align: center; }
+    .login-links a { display: inline-flex; align-items: center; min-height: 44px; padding: 8px; }
   </style>
 </head>
 <body>
@@ -52,13 +55,18 @@
       <p class="error" id="error" role="alert"></p>
       <button class="big" type="submit">Log in</button>
     </form>
-    <p style="text-align:center"><a href="/">Back to the welcome page</a> · <a href="/coloring/">Coloring sheets</a></p>
+    <p class="login-links"><a href="/">Back to the welcome page</a> · <a href="/coloring/">Coloring sheets</a></p>
   </main>
   <script>
     const form = document.getElementById("loginForm");
     const error = document.getElementById("error");
+    const submit = form.querySelector("button.big");
+    let pending = false;
     form.addEventListener("submit", async (event) => {
       event.preventDefault();
+      if (pending) return;
+      pending = true;
+      submit.disabled = true;
       error.textContent = "";
       try {
         const pre = await fetch("/api/auth/csrf", { credentials: "same-origin" });
@@ -80,6 +88,9 @@
         window.location.href = "/app/";
       } catch (err) {
         error.textContent = "The attendance server is not reachable from this page.";
+      } finally {
+        pending = false;
+        submit.disabled = false;
       }
     });
   </script>

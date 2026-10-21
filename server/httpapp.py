@@ -479,6 +479,9 @@ class Api:
         return blob, ext
 
     def handle(self, handler):
+        if handler.command == "HEAD":
+            handler._bjj_head = True
+            handler.command = "GET"
         parsed = urlparse(handler.path)
         path = unquote(parsed.path)
         method = handler.command
@@ -871,7 +874,7 @@ class Api:
         handler.send_header("Content-Type", ctype)
         handler.send_header("Content-Length", str(len(blob)))
         handler.send_header("Cache-Control", "public, max-age=300")
-        handler.send_header("X-Content-Type-Options", "nosniff")
+        self.security_headers(handler)
         handler.end_headers()
         handler.wfile.write(blob)
 
@@ -1189,19 +1192,33 @@ class Api:
         conn.commit()
         return self.send(handler, 200, {"ok": True, "students": len(id_map)})
 
+    def security_headers(self, handler):
+        handler.send_header("X-Content-Type-Options", "nosniff")
+        handler.send_header("X-Frame-Options", "SAMEORIGIN")
+        handler.send_header("Referrer-Policy", "strict-origin-when-cross-origin")
+        handler.send_header("Permissions-Policy", "camera=(self), microphone=(), geolocation=()")
+        handler.send_header(
+            "Content-Security-Policy",
+            "default-src 'self'; base-uri 'self'; object-src 'none'; frame-ancestors 'self'; "
+            "form-action 'self'; img-src 'self' data: https://i.ytimg.com; font-src 'self'; "
+            "style-src 'self' 'unsafe-inline'; script-src 'self' 'unsafe-inline'; "
+            "frame-src https://www.youtube-nocookie.com; connect-src 'self'",
+        )
+
     def send(self, handler, status, body, set_cookie=None, clear_cookie=False):
         raw = json.dumps(body).encode("utf-8")
         handler.send_response(status)
         handler.send_header("Content-Type", "application/json; charset=utf-8")
         handler.send_header("Content-Length", str(len(raw)))
         handler.send_header("Cache-Control", "no-store")
-        handler.send_header("X-Content-Type-Options", "nosniff")
+        self.security_headers(handler)
         if set_cookie:
             handler.send_header("Set-Cookie", self.cookie(set_cookie, SESSION_DAYS * 86400))
         if clear_cookie:
             handler.send_header("Set-Cookie", self.cookie("", 0))
         handler.end_headers()
-        handler.wfile.write(raw)
+        if not getattr(handler, "_bjj_head", False):
+            handler.wfile.write(raw)
 
     def cookie(self, token, max_age):
         parts = [f"bjj_session={token}", "HttpOnly", "SameSite=Lax", "Path=/", f"Max-Age={max_age}"]
@@ -1241,8 +1258,11 @@ class Api:
         if not os.path.isfile(target):
             handler.send_response(404)
             handler.send_header("Content-Type", "text/plain; charset=utf-8")
+            handler.send_header("Cache-Control", "no-store")
+            self.security_headers(handler)
             handler.end_headers()
-            handler.wfile.write(b"Not found")
+            if not getattr(handler, "_bjj_head", False):
+                handler.wfile.write(b"Not found")
             return
         ext = os.path.splitext(target)[1].lower()
         ctype = {
@@ -1268,7 +1288,7 @@ class Api:
         cache = self.static_cache_control(rel)
         if cache:
             handler.send_header("Cache-Control", cache)
-        handler.send_header("X-Content-Type-Options", "nosniff")
+        self.security_headers(handler)
         handler.end_headers()
-        if handler.command != "HEAD":
+        if handler.command != "HEAD" and not getattr(handler, "_bjj_head", False):
             handler.wfile.write(blob)
