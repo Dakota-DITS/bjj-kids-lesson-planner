@@ -92,6 +92,10 @@ async function main() {
         check(`${width} /app/ menu`, await measure(page));
         await page.evaluate(() => document.querySelector("[data-view=checkin]").click());
         check(`${width} /app/ check-in`, await measure(page));
+        await page.evaluate(() => document.querySelector("[data-view=progress]").click());
+        check(`${width} /app/ progress`, await measure(page));
+        await page.evaluate(() => document.querySelector("[data-view=review]").click());
+        check(`${width} /app/ review`, await measure(page));
         await page.evaluate(() => document.querySelector("[data-view=plan]").click());
       }
     }

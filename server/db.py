@@ -23,6 +23,7 @@ BELTS = [
 ]
 LEVELS = ("introduced", "practicing", "help", "own")
 AGE_GROUPS = ("mite", "peewee", "junior", "teen", "toddler")
+ADULT_BELTS = ("white", "blue", "purple", "brown", "black")
 # Representative age when a blank card is claimed with a class and no number.
 AGE_GROUP_AGES = {
     "toddler": 4,
@@ -145,6 +146,14 @@ def migrate(conn):
           retired_at TEXT
         );
         CREATE INDEX IF NOT EXISTS cards_student_idx ON cards(student_id);
+        CREATE TABLE IF NOT EXISTS staff (
+          id TEXT PRIMARY KEY,
+          name TEXT NOT NULL,
+          belt TEXT NOT NULL DEFAULT 'white' CHECK(belt IN ('white', 'blue', 'purple', 'brown', 'black')),
+          stripes INTEGER NOT NULL DEFAULT 0 CHECK(stripes >= 0 AND stripes <= 4),
+          user_id TEXT UNIQUE,
+          created_at TEXT NOT NULL
+        );
         """
     )
     conn.commit()

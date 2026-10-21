@@ -36,6 +36,16 @@
     session: null,
     featured: { sheetId: "", caption: "" },
     serverSheets: [],
+    staff: [],
+    instructorId: "",
+    instructorName: "",
+    assistantIds: [],
+    pendingHelperNames: [],
+    hadInstructor: false,
+    staffDefaulted: false,
+    helpersApplied: false,
+    ratioSource: "roster",
+    levelDrafts: {},
   };
 
   let cameraStream = null;
@@ -62,10 +72,49 @@
     el.classList.toggle("bad", !!message && !ok);
   }
 
+  function staffById(id) {
+    return state.staff.find((person) => person.id === id) || null;
+  }
+
+  function normalizeStaff(raw) {
+    if (!raw || typeof raw !== "object") return null;
+    const id = P.cleanId(raw.id);
+    const name = String(raw.name || "").trim().slice(0, 40);
+    if (!id || !name) return null;
+    return {
+      id,
+      name,
+      belt: P.ADULT_BELTS.includes(raw.belt) ? raw.belt : "white",
+      stripes: P.clampInt(raw.stripes, 0, 4, 0),
+      userId: P.cleanId(raw.userId) || "",
+      login: !!(raw.login || raw.userId),
+    };
+  }
+
+  function instructorName() {
+    const person = staffById(state.instructorId);
+    if (person) {
+      if (state.instructorName && state.instructorName.toLowerCase() === person.name.toLowerCase()) return state.instructorName;
+      return person.name;
+    }
+    return state.instructorName || "";
+  }
+
+  function assistantPeople() {
+    return state.assistantIds.map((id) => staffById(id)).filter(Boolean);
+  }
+
+  function helperNames() {
+    const names = assistantPeople().map((person) => person.name);
+    if (names.length) return names;
+    if (!state.helpersApplied && state.pendingHelperNames.length) return state.pendingHelperNames.slice();
+    return [];
+  }
+
   function fill(str, extra = {}) {
     if (!str) return "";
-    const instructor = $("instructor").value.trim() || "Dakota";
-    const helperName = $("helper").value.trim();
+    const instructor = instructorName() || "the teacher";
+    const helperName = helperNames().join(", ");
     let text = String(str);
     if (!helperName) {
       text = text.replaceAll("Teacher {helper}", "our assistant");
@@ -157,12 +206,25 @@
     if (!s || typeof s !== "object") return;
     const text = {
       title: "title",
-      instructor: "instructor",
-      helper: "helper",
       ages: "ages",
       date: "date",
       startTime: "startTime",
     };
+    if (typeof s.instructor === "string" && s.instructor.trim()) {
+      state.hadInstructor = true;
+      state.instructorName = s.instructor.trim();
+    }
+    if (P.cleanId(s.instructorId)) state.instructorId = P.cleanId(s.instructorId);
+    if (Array.isArray(s.assistantIds) && s.assistantIds.length) {
+      state.assistantIds = s.assistantIds.map((id) => P.cleanId(id)).filter(Boolean);
+      state.helpersApplied = true;
+    }
+    const helperNames = Array.isArray(s.assistants)
+      ? s.assistants
+      : typeof s.helper === "string"
+        ? s.helper.split(",")
+        : [];
+    state.pendingHelperNames = helperNames.map((name) => String(name || "").trim()).filter(Boolean);
     Object.entries(text).forEach(([key, id]) => {
       if (typeof s[key] === "string") $(id).value = s[key];
     });
@@ -197,10 +259,14 @@
   function readSettings() {
     const num = (id, min, max, fallback) => P.clampNum($(id).value, min, max, fallback);
     const group = DATA.ageGroups[state.ageGroup] ? state.ageGroup : "mite";
+    const names = helperNames();
     return {
       title: $("title").value.trim() || "GRACE BJJ KIDS",
-      instructor: $("instructor").value.trim() || "Dakota",
-      helper: $("helper").value.trim(),
+      instructor: instructorName() || "the teacher",
+      instructorId: state.instructorId,
+      helper: names.join(", "),
+      assistants: names,
+      assistantIds: state.assistantIds.slice(),
       ages: $("ages").value.trim() || ageLabel(group),
       kidCount: num("kidCount", 0, 40, 8),
       adultCount: num("adultCount", 0, 20, 2),
@@ -239,13 +305,14 @@
     });
     if ($("ageBlurb")) $("ageBlurb").textContent = group.focus;
     fillThemeLock();
-    if (rebuild) {
+      if (rebuild) {
       state.preset = "grace";
       state.themeOffset = 0;
       state.themeSkip = 0;
       if ($("themeLock")) $("themeLock").value = "";
       $("ages").value = ageLabel(group.id);
       if ($("title").value === "FIRST BJJ CLASS") $("title").value = "GRACE BJJ KIDS";
+      writeClassCounts();
       buildPlan({ mode: "grace" });
       toast(`${group.range} ${group.label}. ${group.pace}`);
     }
@@ -900,14 +967,40 @@ function bodyHtml(item) {
   }
 
   function staffRows(settings) {
-    const toddler = settings.preset === "toddler";
-    const rows = toddler ? (settings.firstClass ? DATA.staffFirst : DATA.staffRegular) : DATA.staffGrace;
+    if (settings.preset === "toddler") {
+      const rows = settings.firstClass ? DATA.staffFirst : DATA.staffRegular;
+      return rows
+        .map(
+          (row) => `
+        <tr>
+          <td>${esc(fill(row.role))}</td>
+          <td>${esc(fill(row.job))}</td>
+        </tr>`
+        )
+        .join("");
+    }
+    const teacher = settings.instructor || "the teacher";
+    const assistants = Array.isArray(settings.assistants) ? settings.assistants.filter(Boolean) : [];
+    const job =
+      "Must be a two-stripe white belt or above. Help run drills, supervise sparring, and stay with a child who needs a break.";
+    const rows = [
+      {
+        role: `Teacher ${teacher}`,
+        job: "Head instructor. Must be a blue belt or above. Line the class up by rank, lead every drill, and praise by name.",
+      },
+    ];
+    if (!assistants.length) rows.push({ role: "Assistant", job });
+    assistants.forEach((name) => rows.push({ role: `Assistant ${name}`, job }));
+    rows.push({
+      role: "Parent",
+      job: "Help with a loaner gi the first week. After that, stay at the edge unless the teacher asks. Kids ask the teacher before they leave for the bathroom.",
+    });
     return rows
       .map(
         (row) => `
         <tr>
-          <td>${esc(fill(row.role))}</td>
-          <td>${esc(fill(row.job))}</td>
+          <td>${esc(row.role)}</td>
+          <td>${esc(row.job)}</td>
         </tr>`
       )
       .join("");
@@ -1010,7 +1103,7 @@ function sparringSection(plan) {
       <div class="plan-running-header">
         <img class="plan-logo" src="${esc(LOGO)}" alt="Grace Jiu-Jitsu" />
         <span class="plan-kicker">Grace BJJ Kids · ${esc(kicker)}</span>
-        <span class="right">Teacher ${esc(s.instructor || "Dakota")}</span>
+        <span class="right">Teacher ${esc(s.instructor || "the teacher")}</span>
       </div>
       <h1 class="title">${esc(s.title)}</h1>
       <p class="class-meta">${esc(s.ages)}<span class="sep"></span>|<span class="sep"></span>${esc(
@@ -1564,8 +1657,12 @@ function sparringSection(plan) {
     const ratio = P.ratioStatus(s.kidCount, s.adultCount);
     const ratioEl = $("ratioNote");
     if (ratioEl) {
+      let source = "";
+      if (state.ratioSource === "attendance") source = " Kids are who checked in for this date and class.";
+      else if (state.ratioSource === "roster") source = " Kids are everyone on the roster. Nobody is checked in for this date and class.";
+      else if (state.ratioSource === "edited") source = " The kid count was typed in.";
       ratioEl.className = ratio.ok ? "hint" : "hint warn";
-      ratioEl.textContent = ratio.text;
+      ratioEl.textContent = ratio.text + source;
     }
     const span = P.classSpan(P.parseStartMinutes(s.startTime), s.totalMin);
     if (!state.plan) {
@@ -1608,6 +1705,149 @@ function sparringSection(plan) {
           : " This date overrides the schedule.";
     }
     el.textContent = text;
+  }
+
+  function writeClassCounts() {
+    const date = $("date") && $("date").value;
+    const entry = date ? classFor(date, state.ageGroup) : null;
+    const fromAttendance = !!(entry && entry.attended && entry.attended.length);
+    state.ratioSource = fromAttendance ? "attendance" : "roster";
+    const kids = fromAttendance ? entry.attended.length : state.roster.length;
+    const adults = (state.instructorId || state.instructorName ? 1 : 0) + state.assistantIds.length;
+    if ($("kidCount")) $("kidCount").value = String(P.clampInt(kids, 0, 40, 0));
+    if ($("adultCount")) $("adultCount").value = String(P.clampInt(adults, 0, 20, 0));
+  }
+
+  function syncPlanCounts() {
+    writeClassCounts();
+    if (state.plan) retimePlan();
+    else updateTimeSum();
+  }
+
+  function adultBeltOptions(selected) {
+    return P.ADULT_BELTS.map(
+      (id) => `<option value="${esc(id)}"${id === selected ? " selected" : ""}>${esc(P.beltLabel(id))}</option>`
+    ).join("");
+  }
+
+  function stripeOptions(selected) {
+    return [0, 1, 2, 3, 4]
+      .map((n) => `<option value="${n}"${Number(selected) === n ? " selected" : ""}>${n}</option>`)
+      .join("");
+  }
+
+  function beltStripeLabel(person) {
+    const stripes = P.clampInt(person.stripes, 0, 4, 0);
+    const stripeText = stripes === 1 ? "1 stripe" : `${stripes} stripes`;
+    return `${P.beltLabel(person.belt)} · ${stripeText}`;
+  }
+
+  function settleStaffSelection() {
+    const people = state.staff;
+    if (!state.hadInstructor && !state.staffDefaulted) {
+      const mine = people.find((person) => person.userId && state.session && person.userId === state.session.id);
+      if (mine) {
+        state.instructorId = mine.id;
+        state.instructorName = mine.name;
+      }
+      state.staffDefaulted = true;
+    } else if (state.instructorName && !staffById(state.instructorId)) {
+      const match = people.find((person) => person.name.toLowerCase() === state.instructorName.toLowerCase());
+      if (match) state.instructorId = match.id;
+    }
+    if (!state.helpersApplied && !state.assistantIds.length && state.pendingHelperNames.length) {
+      state.assistantIds = state.pendingHelperNames
+        .map((name) => {
+          const match = people.find((person) => person.name.toLowerCase() === name.toLowerCase());
+          return match ? match.id : "";
+        })
+        .filter(Boolean);
+      state.helpersApplied = true;
+    }
+    state.assistantIds = state.assistantIds.filter((id, index, list) => {
+      const person = staffById(id);
+      return person && P.canAssistClass(person) && id !== state.instructorId && list.indexOf(id) === index;
+    });
+  }
+
+  function renderStaffPickers() {
+    const head = $("instructorPick");
+    const assist = $("assistantPick");
+    if (!head || !assist) return;
+    settleStaffSelection();
+    const current = staffById(state.instructorId);
+    const headOptions = [`<option value="">Choose head instructor</option>`];
+    if (state.instructorName && !current) {
+      headOptions.push(`<option value="__saved__">${esc(state.instructorName)}</option>`);
+    }
+    state.staff.forEach((person) => {
+      const eligible = P.canHeadClass(person);
+      const disabled = !eligible && (!current || current.id !== person.id) ? " disabled" : "";
+      const flag = eligible ? "" : " · below blue";
+      headOptions.push(
+        `<option value="${esc(person.id)}"${disabled}>${esc(person.name)} · ${esc(beltStripeLabel(person))}${flag}</option>`
+      );
+    });
+    head.innerHTML = headOptions.join("");
+    if (current) head.value = current.id;
+    else if (state.instructorName) head.value = "__saved__";
+    else head.value = "";
+    const choices = state.staff.filter(
+      (person) => P.canAssistClass(person) && person.id !== state.instructorId && !state.assistantIds.includes(person.id)
+    );
+    assist.innerHTML = choices.length
+      ? [`<option value="">Add an assistant</option>`]
+          .concat(choices.map((person) => `<option value="${esc(person.id)}">${esc(person.name)} · ${esc(beltStripeLabel(person))}</option>`))
+          .join("")
+      : `<option value="">No one else is a two-stripe white or higher</option>`;
+    const list = $("assistantList");
+    if (list) {
+      list.innerHTML = assistantPeople()
+        .map(
+          (person) =>
+            `<li><span>${esc(person.name)} · ${esc(beltStripeLabel(person))}</span> <button class="ghost" type="button" data-remove-assistant="${esc(person.id)}">Remove</button></li>`
+        )
+        .join("");
+    }
+    const note = $("staffBeltNote");
+    if (note) {
+      note.textContent =
+        current && !P.canHeadClass(current)
+          ? `${current.name} is below a blue belt. A head instructor is a blue belt or higher.`
+          : "";
+    }
+  }
+
+  function renderStaffAdmin() {
+    const root = $("staffList");
+    if (!root) return;
+    if (!isAdmin()) {
+      root.innerHTML = "";
+      return;
+    }
+    if ($("helperBelt") && !$("helperBelt").options.length) $("helperBelt").innerHTML = adultBeltOptions("white");
+    if ($("helperStripes") && !$("helperStripes").options.length) $("helperStripes").innerHTML = stripeOptions(0);
+    root.innerHTML = state.staff
+      .map((person) => {
+        const remove = person.login
+          ? `<span class="hint">Login</span>`
+          : `<button class="ghost" type="button" data-staff-remove="${esc(person.id)}">Remove</button>`;
+        return `<div class="staff-row" data-staff-id="${esc(person.id)}">
+          <input data-staff-name="${esc(person.id)}" value="${esc(person.name)}" maxlength="40" aria-label="Name" />
+          <select data-staff-belt="${esc(person.id)}" aria-label="Belt">${adultBeltOptions(person.belt)}</select>
+          <select data-staff-stripes="${esc(person.id)}" aria-label="Stripes">${stripeOptions(person.stripes)}</select>
+          ${remove}
+        </div>`;
+      })
+      .join("");
+  }
+
+  async function refreshStaff() {
+    const body = await window.BJJ_API.send("GET", "/api/staff");
+    state.staff = (body.staff || []).map(normalizeStaff).filter(Boolean);
+    renderStaffAdmin();
+    renderStaffPickers();
+    syncPlanCounts();
   }
 
   function openModal(activity) {
@@ -1770,6 +2010,7 @@ function sparringSection(plan) {
   async function pushClass(entry, merge) {
     const saved = await window.BJJ_API.send(merge ? "POST" : "PUT", merge ? "/api/attendance" : "/api/classes", entry);
     replaceClass(saved);
+    syncPlanCounts();
     return saved;
   }
 
@@ -1777,10 +2018,12 @@ function sparringSection(plan) {
     const body = await window.BJJ_API.bootstrap();
     applyBootstrap(body);
     renderRoster();
+    renderStaffPickers();
+    renderStaffAdmin();
     if (state.view === "review") renderReview();
     if (state.view === "progress") renderProgress();
     if (state.view === "checkin") renderCheckinList();
-    if (state.plan) renderPlan();
+    syncPlanCounts();
   }
 
   function applyBootstrap(body) {
@@ -1795,6 +2038,7 @@ function sparringSection(plan) {
     state.featured = body.featured || { sheetId: "", caption: "" };
     state.serverSheets = body.sheets || [];
     state.cards = (Array.isArray(body.cards) ? body.cards : []).map(normalizeCard).filter(Boolean);
+    state.staff = (Array.isArray(body.staff) ? body.staff : []).map(normalizeStaff).filter(Boolean);
     document.body.classList.toggle("role-admin", isAdmin());
     const who = $("whoami");
     if (who && state.session) who.textContent = `${state.session.username} · ${state.session.role}`;
@@ -1838,7 +2082,7 @@ function sparringSection(plan) {
       state.roster.push(P.sanitizeRosterKid(saved));
       $("rosterName").value = "";
       renderRoster();
-      if (state.plan) renderPlan();
+      syncPlanCounts();
       toast(`${saved.name} is on the roster.`);
     } catch (err) {
       toast(err.message || "Could not add that student.");
@@ -2250,6 +2494,187 @@ function sparringSection(plan) {
     }
   }
 
+  const PAST_AGES = [
+    ["mite", "Mighty Mite 4–6"],
+    ["peewee", "Pee Wee 7–9"],
+    ["junior", "Junior 10–12"],
+    ["teen", "Teen 13–15"],
+    ["toddler", "Toddler 3–5"],
+  ];
+
+  function pastAgeLabel(id) {
+    const found = PAST_AGES.find((pair) => pair[0] === id);
+    return found ? found[1] : id;
+  }
+
+  function progressLevelButtons(kidId, techId, level) {
+    return P.LEVELS.map(
+      (id) =>
+        `<button type="button" class="${level === id ? "on" : ""}" data-prog-level="${id}" data-prog-kid="${esc(
+          kidId
+        )}" data-prog-tech="${esc(techId)}">${esc(LEVEL_LABEL[id])}</button>`
+    ).join("");
+  }
+
+  function pastTechMarkup(age, themeId) {
+    if (!themeId) return `<p class="hint">Choose a theme to list techniques, or save the date and who was here.</p>`;
+    const items = pool("lesson", age).filter((item) => item.theme === themeId);
+    if (!items.length) return `<p class="hint">No techniques for that theme in this class.</p>`;
+    return `<div class="tech-checks">${items
+      .map((item) => `<label class="check"><input type="checkbox" value="${esc(item.id)}" /> ${esc(item.name)}</label>`)
+      .join("")}</div>`;
+  }
+
+  function attendanceChips(attended, attrFor) {
+    if (!state.roster.length) return `<p>Add the roster, then mark who was here.</p>`;
+    const on = new Set(attended || []);
+    return `<div class="chip-row">${P.sortByRank(state.roster)
+      .map((kid) => {
+        const selected = on.has(kid.id) ? " on" : "";
+        const attrs = attrFor(kid);
+        return `<button type="button" class="chip${selected}" ${attrs}>${esc(kid.name)}</button>`;
+      })
+      .join("")}</div>`;
+  }
+
+  function loggedClassesHtml() {
+    const classes = state.progress.classes
+      .filter((entry) => entry.date)
+      .slice()
+      .sort((a, b) => (a.date < b.date ? 1 : a.date > b.date ? -1 : a.ageGroup.localeCompare(b.ageGroup)));
+    if (!classes.length) return `<p>No classes logged yet.</p>`;
+    return classes
+      .map((entry) => {
+        const names = (entry.techniques || []).map((tech) => tech.name).filter(Boolean);
+        const count = entry.taught ? "Counts toward the stripe hint." : "Checked in, not marked taught yet.";
+        return `<article class="past-log">
+          <h3>${esc(entry.date)} · ${esc(pastAgeLabel(entry.ageGroup))}${entry.themeLabel ? ` · ${esc(entry.themeLabel)}` : ""}</h3>
+          <p>${esc(count)}${names.length ? ` ${esc(names.join(", "))}` : ""}</p>
+          ${attendanceChips(entry.attended, (kid) => `data-class-kid="${esc(kid.id)}" data-class-id="${esc(entry.id)}"`)}
+          <div class="btn-row">
+            <button class="primary" type="button" data-save-attend="${esc(entry.id)}">Save attendance</button>
+            <button class="ghost" type="button" data-remove-class="${esc(entry.id)}">Remove class</button>
+          </div>
+        </article>`;
+      })
+      .join("");
+  }
+
+  function kidLevelEditor(kid) {
+    const levels = state.progress.levels[kid.id] || {};
+    const drafts = state.levelDrafts[kid.id] || [];
+    const techIds = [...new Set(Object.keys(levels).concat(drafts))];
+    const rows = techIds
+      .map((techId) => {
+        const act = findActivity(techId);
+        const name = act?.name || techId;
+        const where = act?.position || "";
+        return `<div class="kid-block"><strong>${esc(name)}${where ? ` · ${esc(where)}` : ""}</strong><div class="level-row">${progressLevelButtons(
+          kid.id,
+          techId,
+          levels[techId] || ""
+        )}</div></div>`;
+      })
+      .join("");
+    const age = groupForAge(kid.age).id;
+    const known = new Set(techIds);
+    const choices = pool("lesson", age).filter((item) => !known.has(item.id));
+    const picker = choices.length
+      ? `<div class="assistant-add"><select data-add-tech="${esc(kid.id)}" aria-label="Add a technique for ${esc(kid.name)}"><option value="">Add a technique</option>${choices
+          .map((item) => `<option value="${esc(item.id)}">${esc(item.name)}</option>`)
+          .join("")}</select><button class="ghost" type="button" data-add-tech-btn="${esc(kid.id)}">Add</button></div>`
+      : "";
+    return `${rows || "<p>No techniques logged yet.</p>"}${picker}<p class="hint">Tap a level to save it. Tap the highlighted level again to clear it.</p>`;
+  }
+
+  async function savePastClass() {
+    const date = $("pastDate") && $("pastDate").value;
+    const age = ($("pastAge") && $("pastAge").value) || state.ageGroup;
+    if (!date) {
+      setFormNote("pastNote", "Add the date of the class.");
+      return;
+    }
+    const themeId = ($("pastTheme") && $("pastTheme").value) || "";
+    const theme = (DATA.themes || []).find((item) => item.id === themeId);
+    const techIds = [...document.querySelectorAll("#pastTechs input:checked")].map((input) => input.value);
+    const techniques = techIds
+      .map((id) => {
+        const act = findActivity(id);
+        if (!act) return null;
+        return { id: act.id, name: act.name, position: act.position || "", theme: act.theme || themeId };
+      })
+      .filter(Boolean);
+    const attended = [...document.querySelectorAll("#pastAttend .chip.on")].map((btn) => btn.getAttribute("data-past-kid"));
+    const entry = ensureClass(date, age);
+    entry.theme = themeId;
+    entry.themeLabel = theme ? theme.label : "";
+    entry.techniques = techniques;
+    entry.game = entry.game || "";
+    entry.taught = true;
+    entry.attended = attended.filter(Boolean);
+    try {
+      await pushClass(entry, false);
+      setFormNote("pastNote", "Past class saved. It counts toward attendance.", true);
+      toast("Past class saved.");
+      renderProgress();
+    } catch (err) {
+      setFormNote("pastNote", err.message || "Could not save that class.");
+      resync().catch(() => {});
+    }
+  }
+
+  async function saveLoggedAttendance(classId) {
+    const entry = state.progress.classes.find((item) => item.id === classId);
+    if (!entry) return;
+    entry.attended = [...document.querySelectorAll(`#progressView .chip.on[data-class-id="${classId}"]`)].map((btn) =>
+      btn.getAttribute("data-class-kid")
+    );
+    try {
+      await pushClass(entry, false);
+      toast("Attendance updated.");
+      renderProgress();
+    } catch (err) {
+      toast(err.message || "Could not update that class.");
+      resync().catch(() => {});
+    }
+  }
+
+  async function removeLoggedClass(classId) {
+    const entry = state.progress.classes.find((item) => item.id === classId);
+    if (!entry) return;
+    if (!window.confirm(`Remove the class on ${entry.date}?`)) return;
+    try {
+      await window.BJJ_API.send("DELETE", `/api/classes/${classId}`);
+      state.progress.classes = state.progress.classes.filter((item) => item.id !== classId);
+      syncPlanCounts();
+      toast("Class removed.");
+      renderProgress();
+    } catch (err) {
+      toast(err.message || "Could not remove that class.");
+      resync().catch(() => {});
+    }
+  }
+
+  async function setProgressLevel(kidId, techId, level) {
+    const current = (state.progress.levels[kidId] || {})[techId];
+    try {
+      if (current === level) {
+        if (state.progress.levels[kidId]) delete state.progress.levels[kidId][techId];
+        await window.BJJ_API.send("DELETE", "/api/levels", { studentId: kidId, techId });
+      } else {
+        setLevel(kidId, techId, level);
+        await window.BJJ_API.send("PUT", "/api/levels", { studentId: kidId, techId, level });
+      }
+      if (state.levelDrafts[kidId]) {
+        state.levelDrafts[kidId] = state.levelDrafts[kidId].filter((id) => id !== techId);
+      }
+      renderProgress();
+    } catch (err) {
+      toast(err.message || "Could not save that level.");
+      resync().catch(() => {});
+    }
+  }
+
   function renderProgress() {
     const root = $("progressView");
     const age = state.ageGroup;
@@ -2275,39 +2700,47 @@ function sparringSection(plan) {
         const hintText = hint.ready
           ? `Stripe hint: meets ${hint.needOwn} on their own and ${hint.needAttend} classes. The teacher still decides.`
           : `Stripe hint: ${hint.own} of ${hint.needOwn} on their own, ${hint.attended} of ${hint.needAttend} classes. The teacher decides.`;
-        const levels = state.progress.levels[kid.id] || {};
-        const groups = {};
-        Object.entries(levels).forEach(([techId, level]) => {
-          const act = findActivity(techId);
-          const position = act?.position || act?.themeLabel || "Other";
-          groups[position] = groups[position] || [];
-          groups[position].push(`${act?.name || techId} — ${LEVEL_LABEL[level] || level}`);
-        });
-        const grouped = Object.entries(groups)
-          .map(([position, lines]) => `<p><strong>${esc(position)}</strong><br>${esc(lines.join(" · "))}</p>`)
-          .join("");
         const dates = state.progress.classes
-          .filter((entry) => entry.attended.includes(kid.id))
+          .filter((entry) => entry.taught && entry.attended.includes(kid.id))
           .map((entry) => entry.date)
           .filter(Boolean);
         return `<article class="kid-block">
           <h3>${esc(kid.name)}</h3>
           <p>Age ${esc(kid.age)} · ${esc(P.beltLabel(kid.belt))} · ${esc(stripeText(kid))}</p>
           <p>${esc(hintText)}</p>
-          <p>${dates.length ? `${dates.length} class${dates.length === 1 ? "" : "es"}: ${esc(dates.join(", "))}` : "No classes logged yet."}</p>
-          ${grouped || "<p>No techniques logged yet.</p>"}
+          <p>${dates.length ? `${dates.length} taught class${dates.length === 1 ? "" : "es"}: ${esc(dates.join(", "))}` : "No taught classes logged yet."}</p>
+          ${kidLevelEditor(kid)}
           <label>Teacher notes</label>
           <textarea class="note" data-note="${esc(kid.id)}">${esc(state.progress.notes[kid.id] || "")}</textarea>
           <div class="btn-row"><button type="button" class="ghost" data-print-kid="${esc(kid.id)}">Print progress sheet</button></div>
         </article>`;
       })
       .join("");
+    const pastAge = state.ageGroup === "toddler" ? "toddler" : DATA.ageGroups[state.ageGroup] ? state.ageGroup : "mite";
+    const themes = themesForAge(pastAge);
     root.innerHTML = `
       <h2>Progress · ${esc(group ? `${group.range} ${group.label}` : "")}</h2>
       <div class="grid-2">
         <div class="field"><label for="stripeOwn">On their own before a stripe hint</label><input id="stripeOwn" type="number" min="1" max="40" value="${esc(state.progress.stripe.own)}" /></div>
         <div class="field"><label for="stripeAttend">Classes before a stripe hint</label><input id="stripeAttend" type="number" min="1" max="40" value="${esc(state.progress.stripe.attend)}" /></div>
       </div>
+      <h3>Log a past class</h3>
+      <div class="past-class">
+        <div class="field"><label for="pastDate">Date</label><input id="pastDate" type="date" /></div>
+        <div class="field"><label for="pastAge">Class</label><select id="pastAge">${PAST_AGES.map(
+          ([id, label]) => `<option value="${esc(id)}"${id === pastAge ? " selected" : ""}>${esc(label)}</option>`
+        ).join("")}</select></div>
+        <div class="field"><label for="pastTheme">Theme</label><select id="pastTheme"><option value="">No theme</option>${themes
+          .map((theme) => `<option value="${esc(theme.id)}">${esc(theme.label)}</option>`)
+          .join("")}</select></div>
+        <div id="pastTechs">${pastTechMarkup(pastAge, "")}</div>
+        <div id="pastAttend">${attendanceChips([], (kid) => `data-past-kid="${esc(kid.id)}"`)}</div>
+        <div class="btn-row"><button class="primary" type="button" id="pastSaveBtn">Save past class</button></div>
+        <p class="form-note" id="pastNote" role="alert"></p>
+        <p class="hint">Saving the same date and class updates that class. Taught classes count toward the stripe hint.</p>
+      </div>
+      <h3>Logged classes</h3>
+      ${loggedClassesHtml()}
       <h3>Curriculum</h3>
       <ul>${coverage}</ul>
       <h3>Kids</h3>
@@ -2906,8 +3339,6 @@ function sparringSection(plan) {
 
     [
       "title",
-      "instructor",
-      "helper",
       "ages",
       "date",
       "startTime",
@@ -2936,6 +3367,37 @@ function sparringSection(plan) {
       const btn = event.target.closest("button[data-group]");
       if (!btn) return;
       setAgeGroup(btn.dataset.group, true);
+    });
+
+    $("instructorPick").addEventListener("change", () => {
+      const value = $("instructorPick").value;
+      state.hadInstructor = true;
+      if (value === "__saved__") state.instructorId = "";
+      else {
+        state.instructorId = value;
+        const person = staffById(value);
+        state.instructorName = person ? person.name : "";
+      }
+      state.assistantIds = state.assistantIds.filter((id) => id !== state.instructorId);
+      renderStaffPickers();
+      syncPlanCounts();
+    });
+    $("addAssistantBtn").addEventListener("click", () => {
+      const id = $("assistantPick").value;
+      const person = staffById(id);
+      if (!person || !P.canAssistClass(person) || id === state.instructorId || state.assistantIds.includes(id)) return;
+      state.assistantIds.push(id);
+      state.helpersApplied = true;
+      renderStaffPickers();
+      syncPlanCounts();
+    });
+    $("assistantList").addEventListener("click", (event) => {
+      const btn = event.target.closest("[data-remove-assistant]");
+      if (!btn) return;
+      state.assistantIds = state.assistantIds.filter((id) => id !== btn.dataset.removeAssistant);
+      state.helpersApplied = true;
+      renderStaffPickers();
+      syncPlanCounts();
     });
 
     $("suggestDateBtn").addEventListener("click", () => {
@@ -2998,7 +3460,7 @@ function sparringSection(plan) {
       }
       state.roster = state.roster.filter((kid) => kid.id !== id);
       renderRoster();
-      if (state.plan) renderPlan();
+      syncPlanCounts();
     });
 
     $("generateBtn").addEventListener("click", () => {
@@ -3285,6 +3747,19 @@ function sparringSection(plan) {
       if (event.target.closest("#saveClassBtn")) saveReviewedClass();
     });
     $("progressView").addEventListener("change", (event) => {
+      if (event.target.id === "pastAge") {
+        const age = event.target.value;
+        const themes = themesForAge(age);
+        $("pastTheme").innerHTML =
+          `<option value="">No theme</option>` +
+          themes.map((theme) => `<option value="${esc(theme.id)}">${esc(theme.label)}</option>`).join("");
+        $("pastTechs").innerHTML = pastTechMarkup(age, "");
+        return;
+      }
+      if (event.target.id === "pastTheme") {
+        $("pastTechs").innerHTML = pastTechMarkup($("pastAge").value, event.target.value);
+        return;
+      }
       if (event.target.id !== "stripeOwn" && event.target.id !== "stripeAttend") return;
       state.progress.stripe.own = P.clampInt($("stripeOwn").value, 1, 40, 6);
       state.progress.stripe.attend = P.clampInt($("stripeAttend").value, 1, 40, 8);
@@ -3306,6 +3781,47 @@ function sparringSection(plan) {
       }, 400);
     });
     $("progressView").addEventListener("click", (event) => {
+      const pastKid = event.target.closest("[data-past-kid]");
+      if (pastKid) {
+        pastKid.classList.toggle("on");
+        return;
+      }
+      const classKid = event.target.closest("[data-class-kid]");
+      if (classKid) {
+        classKid.classList.toggle("on");
+        return;
+      }
+      if (event.target.closest("#pastSaveBtn")) {
+        savePastClass();
+        return;
+      }
+      const saveAttend = event.target.closest("[data-save-attend]");
+      if (saveAttend) {
+        saveLoggedAttendance(saveAttend.dataset.saveAttend);
+        return;
+      }
+      const removeClass = event.target.closest("[data-remove-class]");
+      if (removeClass) {
+        removeLoggedClass(removeClass.dataset.removeClass);
+        return;
+      }
+      const levelBtn = event.target.closest("[data-prog-level]");
+      if (levelBtn) {
+        setProgressLevel(levelBtn.dataset.progKid, levelBtn.dataset.progTech, levelBtn.dataset.progLevel);
+        return;
+      }
+      const addTech = event.target.closest("[data-add-tech-btn]");
+      if (addTech) {
+        const kidId = addTech.dataset.addTechBtn;
+        const select = document.querySelector(`#progressView [data-add-tech="${kidId}"]`);
+        const techId = select && select.value;
+        if (!techId) return;
+        state.levelDrafts[kidId] = state.levelDrafts[kidId] || [];
+        const have = (state.progress.levels[kidId] || {})[techId];
+        if (!have && !state.levelDrafts[kidId].includes(techId)) state.levelDrafts[kidId].push(techId);
+        renderProgress();
+        return;
+      }
       const btn = event.target.closest("[data-print-kid]");
       if (!btn) return;
       const kid = state.roster.find((item) => item.id === btn.dataset.printKid);
@@ -3482,6 +3998,7 @@ function sparringSection(plan) {
         setFormNote("userNote", "Login added.", true);
         toast("Login added.");
         await refreshUsers();
+        await refreshStaff();
       } catch (err) {
         const message = err.message || "Could not add that login.";
         setFormNote("userNote", message);
@@ -3508,8 +4025,73 @@ function sparringSection(plan) {
         await window.BJJ_API.send("DELETE", `/api/users/${btn.dataset.user}`);
         toast("Login removed.");
         await refreshUsers();
+        await refreshStaff();
       } catch (err) {
         toast(err.message || "Could not remove that login.");
+      }
+    });
+    $("helperForm").addEventListener("submit", async (event) => {
+      event.preventDefault();
+      const name = $("helperName").value.trim();
+      if (!name) {
+        setFormNote("helperNote", "Add the person's name.");
+        return;
+      }
+      try {
+        await window.BJJ_API.send("POST", "/api/staff", {
+          name,
+          belt: $("helperBelt").value,
+          stripes: Number($("helperStripes").value),
+        });
+        $("helperName").value = "";
+        setFormNote("helperNote", "Helper added.", true);
+        await refreshStaff();
+      } catch (err) {
+        setFormNote("helperNote", err.message || "Could not add that helper.");
+      }
+    });
+    $("staffList").addEventListener("change", async (event) => {
+      const row = event.target.closest("[data-staff-id]");
+      if (!row) return;
+      const id = row.dataset.staffId;
+      const name = row.querySelector("[data-staff-name]").value.trim();
+      const belt = row.querySelector("[data-staff-belt]").value;
+      const stripes = Number(row.querySelector("[data-staff-stripes]").value);
+      if (!name) {
+        toast("Add the person's name.");
+        renderStaffAdmin();
+        return;
+      }
+      try {
+        const saved = normalizeStaff(
+          await window.BJJ_API.send("PATCH", `/api/staff/${id}`, { name, belt, stripes })
+        );
+        const idx = state.staff.findIndex((item) => item.id === id);
+        if (saved && idx >= 0) state.staff[idx] = saved;
+        renderStaffPickers();
+        syncPlanCounts();
+      } catch (err) {
+        toast(err.message || "Could not update that person.");
+        renderStaffAdmin();
+      }
+    });
+    $("staffList").addEventListener("click", async (event) => {
+      const btn = event.target.closest("[data-staff-remove]");
+      if (!btn) return;
+      try {
+        await window.BJJ_API.send("DELETE", `/api/staff/${btn.dataset.staffRemove}`);
+        state.staff = state.staff.filter((person) => person.id !== btn.dataset.staffRemove);
+        state.assistantIds = state.assistantIds.filter((id) => id !== btn.dataset.staffRemove);
+        if (state.instructorId === btn.dataset.staffRemove) {
+          state.instructorId = "";
+          state.instructorName = "";
+        }
+        renderStaffAdmin();
+        renderStaffPickers();
+        syncPlanCounts();
+        toast("Helper removed.");
+      } catch (err) {
+        toast(err.message || "Could not remove that helper.");
       }
     });
   }
@@ -3526,6 +4108,16 @@ function sparringSection(plan) {
   }
 
   function onClassField(id) {
+    if (id === "date") {
+      writeClassCounts();
+      if (state.plan) retimePlan();
+      else {
+        updateScheduleHint();
+        save();
+      }
+      return;
+    }
+    if (id === "kidCount") state.ratioSource = "edited";
     if (id === "firstClass" && state.plan) {
       const toddler = state.plan.mode === "toddler";
       $("openingMin").value = $("firstClass").checked ? (toddler ? "13" : "8") : toddler ? "8" : "2";
@@ -3590,11 +4182,14 @@ function sparringSection(plan) {
       }),
     };
     if (!$("date").value) $("date").value = P.nextClassDate(new Date());
+    renderStaffPickers();
+    renderStaffAdmin();
+    writeClassCounts();
     await loadUploads();
     renderLibrary();
     renderRoster();
     updateMeta();
-    if (state.plan) renderPlan();
+    if (state.plan) retimePlan();
     else buildPlan({ mode: "grace" });
     if (!allSheets().some((sheet) => sheet.id === state.sheetId)) state.sheetId = "first-gi";
     renderSheet();
