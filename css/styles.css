@@ -1345,6 +1345,22 @@ body:not(.role-admin) .admin-only { display: none !important; }
 
 .progress-sheet { color: #111; }
 .progress-sheet .sheet-logo { height: 52px; }
+.stripe-hint-readonly {
+  margin: 0 0 16px;
+  line-height: 1.45;
+  overflow-wrap: anywhere;
+}
+.belt-promo {
+  margin: 8px 0;
+  padding: 10px 12px;
+  border-radius: 12px;
+  border: 1px solid #e7d3b0;
+  background: #fff6e8;
+  color: var(--ink);
+  line-height: 1.45;
+  overflow-wrap: anywhere;
+  font-weight: 700;
+}
 .kid-block { border-top: 1px solid #ccc; padding-top: 12px; margin-top: 12px; }
 .note {
   width: 100%;

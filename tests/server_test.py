@@ -585,6 +585,43 @@ class ApiTest(unittest.TestCase):
         status, home = admin.call("GET", "/api/bootstrap")
         self.assertEqual(status, 200)
 
+    def test_stripe_thresholds_are_admin_only(self):
+        teacher = self.client()
+        status, _ = teacher.login("alex", "correct-horse")
+        self.assertEqual(status, 200)
+        status, denied = teacher.call("PUT", "/api/stripe", {"own": 4, "attend": 5})
+        self.assertEqual(status, 403)
+        status, boot = teacher.call("GET", "/api/bootstrap")
+        self.assertEqual(status, 200)
+        self.assertEqual(boot["stripe"], {"own": 6, "attend": 8})
+        status, blocked = teacher.call(
+            "POST",
+            "/api/import",
+            {"progress": {"stripe": {"own": 3, "attend": 4}, "classes": [{"date": "2026-11-02", "ageGroup": "mite", "taught": True}]}},
+        )
+        self.assertEqual(status, 403)
+        status, boot = teacher.call("GET", "/api/bootstrap")
+        self.assertEqual(boot["stripe"], {"own": 6, "attend": 8})
+        self.assertFalse(any(row["date"] == "2026-11-02" for row in boot["classes"]))
+
+        admin = self.client()
+        status, _ = admin.login("dakota", "correct-horse")
+        self.assertEqual(status, 200)
+        status, saved = admin.call("PUT", "/api/stripe", {"own": 7, "attend": 9})
+        self.assertEqual(status, 200)
+        self.assertEqual(saved, {"own": 7, "attend": 9})
+        status, boot = teacher.call("GET", "/api/bootstrap")
+        self.assertEqual(boot["stripe"], {"own": 7, "attend": 9})
+        status, imported = admin.call(
+            "POST",
+            "/api/import",
+            {"progress": {"stripe": {"own": 6, "attend": 8}}},
+        )
+        self.assertEqual(status, 200)
+        status, boot = teacher.call("GET", "/api/bootstrap")
+        self.assertEqual(boot["stripe"], {"own": 6, "attend": 8})
+        self.assertEqual(imported["ok"], True)
+
 
 def _handler(api):
     from http.server import BaseHTTPRequestHandler

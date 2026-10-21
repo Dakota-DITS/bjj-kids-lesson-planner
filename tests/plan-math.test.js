@@ -213,6 +213,22 @@ assert.deepStrictEqual(progress.classes[0].attended, ["c-sam01"]);
 assert.strictEqual(progress.levels["c-sam01"], undefined);
 assert.strictEqual(progress.stripe.own, 40);
 assert.strictEqual(progress.stripe.attend, 1);
+assert.strictEqual(P.STRIPES_ON_BELT, 4);
+assert.deepStrictEqual(P.BELT_GROUP_MIN_AGE, { grey: 4, yellow: 7, orange: 10, green: 13 });
+function promo(age, belt, stripes) {
+  return P.promotionHint({ age, belt, stripes });
+}
+assert.strictEqual(promo(4, "white", 4).text, "Ready for next belt: Grey-white. The head instructor decides.");
+assert.strictEqual(promo(3, "white", 4).text, "4 stripes, waiting on age for Grey-white. The head instructor decides.");
+assert.strictEqual(promo(6, "grey-black", 4).text, "4 stripes, waiting on age for Yellow-white. The head instructor decides.");
+assert.strictEqual(promo(7, "grey-black", 4).text, "Ready for next belt: Yellow-white. The head instructor decides.");
+assert.strictEqual(promo(9, "yellow-black", 4).text, "4 stripes, waiting on age for Orange-white. The head instructor decides.");
+assert.strictEqual(promo(10, "yellow-black", 4).text, "Ready for next belt: Orange-white. The head instructor decides.");
+assert.strictEqual(promo(12, "orange-black", 4).text, "4 stripes, waiting on age for Green-white. The head instructor decides.");
+assert.strictEqual(promo(13, "orange-black", 4).text, "Ready for next belt: Green-white. The head instructor decides.");
+assert.strictEqual(promo(4, "grey-white", 4).ready, true);
+assert.strictEqual(promo(15, "green-black", 4), null);
+assert.strictEqual(promo(12, "grey", 3), null);
 const seq = P.takeSequence([{ id: "a" }, { id: "b" }, { id: "c" }], 2, 1);
 assert.deepStrictEqual(seq.map((item) => item.id), ["b", "c"]);
 

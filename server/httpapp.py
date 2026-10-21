@@ -714,6 +714,8 @@ class Api:
             conn.commit()
             return self.send(handler, 200, {"ok": True})
         if path == "/api/stripe" and method == "PUT":
+            if not admin:
+                return self.send(handler, 403, {"error": "Only an admin can change the stripe hint."})
             body = self.read_json(handler)
             try:
                 own = int(body.get("own"))
@@ -1119,6 +1121,9 @@ class Api:
         body = self.read_json(handler)
         roster = body.get("roster") if isinstance(body.get("roster"), list) else []
         progress = body.get("progress") if isinstance(body.get("progress"), dict) else {}
+        stripe = progress.get("stripe") if isinstance(progress.get("stripe"), dict) else {}
+        if not admin and ("own" in stripe or "attend" in stripe):
+            return self.send(handler, 403, {"error": "Only an admin can change the stripe hint."})
         if not admin and roster:
             return self.send(handler, 403, {"error": "An admin imports the roster. Teachers can import attendance after that."})
         id_map = {}
@@ -1173,7 +1178,7 @@ class Api:
                     (mapped, text),
                 )
         stripe = progress.get("stripe") if isinstance(progress.get("stripe"), dict) else {}
-        if "own" in stripe or "attend" in stripe:
+        if admin and ("own" in stripe or "attend" in stripe):
             try:
                 own = max(1, min(40, int(stripe.get("own", 6))))
                 attend = max(1, min(40, int(stripe.get("attend", 8))))
