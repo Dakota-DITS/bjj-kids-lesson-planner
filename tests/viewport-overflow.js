@@ -48,6 +48,20 @@ function check(label, info) {
   });
 }
 
+async function evalStable(page, fn) {
+  let last;
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    try {
+      await page.waitForSelector("body.authed", { timeout: 15000 });
+      return await page.evaluate(fn);
+    } catch (err) {
+      last = err;
+      if (!/context was destroyed|Execution context|navigat/i.test(String(err))) throw err;
+    }
+  }
+  throw last;
+}
+
 async function main() {
   const puppeteer = loadPuppeteer();
   if (!puppeteer) {
@@ -86,17 +100,17 @@ async function main() {
       await page.waitForSelector("body.authed", { timeout: 15000 });
       for (const width of WIDTHS) {
         await page.setViewport({ width, height: 800, isMobile: true, hasTouch: true });
-        await page.evaluate(() => document.body.classList.remove("menu-open"));
+        await evalStable(page, () => document.body.classList.remove("menu-open"));
         check(`${width} /app/ plan`, await measure(page));
-        await page.evaluate(() => document.body.classList.add("menu-open"));
+        await evalStable(page, () => document.body.classList.add("menu-open"));
         check(`${width} /app/ menu`, await measure(page));
-        await page.evaluate(() => document.querySelector("[data-view=checkin]").click());
+        await evalStable(page, () => document.querySelector("[data-view=checkin]").click());
         check(`${width} /app/ check-in`, await measure(page));
-        await page.evaluate(() => document.querySelector("[data-view=progress]").click());
+        await evalStable(page, () => document.querySelector("[data-view=progress]").click());
         check(`${width} /app/ progress`, await measure(page));
-        await page.evaluate(() => document.querySelector("[data-view=review]").click());
+        await evalStable(page, () => document.querySelector("[data-view=review]").click());
         check(`${width} /app/ review`, await measure(page));
-        await page.evaluate(() => document.querySelector("[data-view=plan]").click());
+        await evalStable(page, () => document.querySelector("[data-view=plan]").click());
       }
     }
   } finally {

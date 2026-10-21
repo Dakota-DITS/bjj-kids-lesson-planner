@@ -100,6 +100,19 @@ h2 { margin: 0 0 8px; font-size: 1.7rem; }
 }
 .ages li:first-child { border-top: 0; }
 .ages b { color: var(--red); }
+.expect { margin: 8px 0 0; padding-left: 1.2rem; }
+.expect li { margin: 8px 0; }
+#faq details { border-top: 1px solid var(--line); }
+#faq details:first-of-type { border-top: 0; }
+#faq summary {
+  display: flex;
+  align-items: center;
+  min-height: 44px;
+  cursor: pointer;
+  font-size: 1.05rem;
+}
+#faq details p { margin: 0 0 12px; }
+.hint { color: #3f3a36; font-size: 1rem; }
 
 .actions { text-align: center; margin: 22px 0 10px; }
 .big {
