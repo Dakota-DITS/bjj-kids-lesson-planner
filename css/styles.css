@@ -346,7 +346,7 @@ body {
   gap: 8px;
 }
 
-button, .btn {
+button, .btn, a.ghost {
   font: inherit;
   cursor: pointer;
   border: 1px solid var(--ui-line);
@@ -366,8 +366,12 @@ button.primary {
   flex: 1;
 }
 
-button.ghost {
+button.ghost, a.ghost {
   background: transparent;
+  display: inline-flex;
+  align-items: center;
+  min-height: 44px;
+  text-decoration: none;
 }
 
 button.danger {
@@ -1063,6 +1067,22 @@ body:not(.role-admin) .admin-only { display: none !important; }
   .paper { padding: 28px 22px 40px; }
 }
 
+.home-summary { margin: 0 0 14px; }
+.home-summary h2 { margin: 0 0 8px; font-size: 1.2rem; }
+.home-cards { display: grid; gap: 10px; }
+.home-card {
+  background: var(--paper);
+  color: var(--ink);
+  border: 1px solid var(--rule);
+  border-radius: 14px;
+  padding: 12px 14px;
+}
+.home-card strong { display: block; font-size: 1.05rem; }
+.home-card p { margin: 4px 0 0; }
+@media (min-width: 860px) {
+  .home-cards { grid-template-columns: 1fr 1fr; }
+}
+
 @media print {
   body { background: white; color: black; }
   .sidebar, .toolbar, .toast, .modal-back, .reroll, .reps-ctrl, .no-print, .name-live, .phone-bar, .scrim { display: none !important; }
@@ -1076,6 +1096,23 @@ body:not(.role-admin) .admin-only { display: none !important; }
     padding: 0;
     min-height: 0;
   }
+  body[data-print="lesson"] #sheet,
+  body[data-print="lesson"] .sheet-page,
+  body[data-print="lesson"] .coaching,
+  body[data-print="lesson"] .callout,
+  body[data-print="lesson"] .staff-table,
+  body[data-print="lesson"] .section-name,
+  body[data-print="lesson"] .req,
+  body[data-print="lesson"] .item p {
+    display: none !important;
+    break-before: auto;
+    page-break-before: auto;
+  }
+  body[data-print="lesson"] .title { font-size: 22pt; }
+  body[data-print="lesson"] .class-meta { font-size: 13pt; }
+  body[data-print="lesson"] .block-title { font-size: 16pt; }
+  body[data-print="lesson"] .item-title,
+  body[data-print="lesson"] .name-print { font-size: 14pt; }
   .sheet-page {
     break-before: page;
     page-break-before: always;
@@ -1270,6 +1307,7 @@ body:not(.role-admin) .admin-only { display: none !important; }
 .claim-form .form-note.bad { color: #9f1239; }
 .claim-form .form-note.ok { color: #166534; }
 .work-view button.ghost,
+.work-view a.ghost,
 .work-view button.danger {
   color: #1c1917;
   background: #fff;

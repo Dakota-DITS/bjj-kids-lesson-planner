@@ -1718,6 +1718,7 @@ function sparringSection(plan) {
     const ordered = P.sortByRank(state.roster);
     if (!ordered.length) {
       list.innerHTML = `<p class="hint">No kids yet. Highest rank will line up first.</p>`;
+      renderHome();
       return;
     }
     const beltOptions = DATA.belts
@@ -1748,6 +1749,50 @@ function sparringSection(plan) {
       card.querySelector('[data-roster="belt"]').value = kid.belt;
       card.querySelector('[data-roster="stripes"]').value = String(kid.stripes);
     });
+    renderHome();
+  }
+
+  function renderHome() {
+    const root = $("homeSummary");
+    if (!root) return;
+    const iso = P.nextClassDate(new Date());
+    const when = new Date(`${iso}T00:00:00`);
+    const nextLabel = Number.isNaN(when.getTime())
+      ? iso
+      : when.toLocaleDateString(undefined, { weekday: "long", month: "long", day: "numeric", year: "numeric" });
+    const groups = ["mite", "peewee", "junior", "teen"].map((id) => {
+      const group = DATA.ageGroups[id];
+      const count = state.roster.filter((kid) => {
+        const match = groupForAge(kid.age);
+        return match && match.id === id;
+      }).length;
+      return `${group.range}: ${count}`;
+    });
+    const outside = state.roster.filter((kid) => !groupForAge(kid.age)).length;
+    const close = [];
+    const belts = [];
+    state.roster.forEach((kid) => {
+      const hint = stripeHint(kid);
+      const ownLeft = Math.max(0, hint.needOwn - hint.own);
+      const classLeft = Math.max(0, hint.needAttend - hint.attended);
+      if (!hint.ready && ownLeft <= 2 && classLeft <= 2 && (ownLeft > 0 || classLeft > 0)) close.push(kid.name);
+      const belt = P.promotionHint(kid);
+      if (belt && belt.ready) belts.push(kid.name);
+    });
+    const closeText = close.length
+      ? close.map((name) => esc(name)).join(", ")
+      : "Nobody is one or two steps from a stripe.";
+    const beltText = belts.length
+      ? `${belts.map((name) => esc(name)).join(", ")}. The head instructor decides.`
+      : "Nobody is ready for a belt hint.";
+    root.innerHTML = `
+      <h2>At a glance</h2>
+      <div class="home-cards">
+        <article class="home-card"><strong>Next class</strong><p>${esc(nextLabel)}, 5:30–6:15 PM</p></article>
+        <article class="home-card"><strong>Roster</strong><p>${esc(groups.join(" · "))}${outside ? esc(` · Other ages: ${outside}`) : ""}</p></article>
+        <article class="home-card"><strong>Close to a stripe</strong><p>${closeText}</p></article>
+        <article class="home-card"><strong>Belt hint</strong><p>${beltText}</p></article>
+      </div>`;
   }
 
   function updateMeta() {
@@ -2125,6 +2170,7 @@ function sparringSection(plan) {
     const idx = state.progress.classes.findIndex((entry) => entry.date === saved.date && entry.ageGroup === saved.ageGroup);
     if (idx >= 0) state.progress.classes[idx] = saved;
     else state.progress.classes.push(saved);
+    renderHome();
   }
 
   async function pushClass(entry, merge) {
@@ -2456,6 +2502,7 @@ function sparringSection(plan) {
     if (!P.LEVELS.includes(level)) return;
     state.progress.levels[kidId] = state.progress.levels[kidId] || {};
     state.progress.levels[kidId][techId] = level;
+    renderHome();
   }
 
   function applyIntroduced(entry) {
@@ -2500,6 +2547,7 @@ function sparringSection(plan) {
       btn.classList.toggle("on", btn.dataset.view === view);
     });
     $("planWrap").classList.toggle("hidden", view !== "plan");
+    if ($("homeSummary")) $("homeSummary").classList.toggle("hidden", view !== "plan");
     const toolbar = document.querySelector(".toolbar");
     if (toolbar) toolbar.classList.toggle("hidden", view !== "plan");
     $("reviewView").classList.toggle("hidden", view !== "review");
@@ -3658,6 +3706,16 @@ function sparringSection(plan) {
     $("printBtn").addEventListener("click", () => {
       delete document.body.dataset.print;
       setView("plan");
+      window.print();
+    });
+    $("printLessonBtn").addEventListener("click", () => {
+      document.body.dataset.print = "lesson";
+      setView("plan");
+      const finish = () => {
+        delete document.body.dataset.print;
+        window.removeEventListener("afterprint", finish);
+      };
+      window.addEventListener("afterprint", finish);
       window.print();
     });
     $("editToggle").addEventListener("click", () => {

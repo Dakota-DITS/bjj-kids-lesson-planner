@@ -12,8 +12,8 @@
   <meta name="apple-mobile-web-app-title" content="Grace BJJ Staff" />
   <link rel="icon" href="/icons/staff-favicon-32.png" type="image/png" sizes="32x32" />
   <link rel="apple-touch-icon" href="/icons/staff-apple-touch-icon.png" sizes="180x180" />
-  <link rel="stylesheet" href="/css/styles.css?v=20261021-8" />
-  <script src="/pwa.js?v=20261021-8" defer></script>
+  <link rel="stylesheet" href="/css/styles.css?v=20261021-9" />
+  <script src="/pwa.js?v=20261021-9" defer></script>
 </head>
 <body>
   <p id="gate" class="gate">Checking the teacher login…</p>
@@ -243,6 +243,7 @@
           <button class="primary" id="addKidBtn" type="button">Add student</button>
         </div>
         <div class="library-list" id="rosterList"></div>
+        <p class="btn-row"><a class="ghost" href="/api/export/roster.csv">Download roster CSV</a></p>
       </section>
 
       <section class="panel">
@@ -354,10 +355,12 @@
     </aside>
 
     <main class="stage">
+      <section class="home-summary no-print" id="homeSummary" aria-label="Today at a glance"></section>
       <div class="toolbar">
         <div class="meta" id="poolMeta"></div>
         <div class="btn-row">
           <button class="ghost" id="editToggle" type="button">Show shuffle on items</button>
+          <button class="ghost" id="printLessonBtn" type="button">Print this class</button>
           <button class="primary" id="printBtn" type="button">Print / save PDF</button>
         </div>
       </div>
@@ -369,6 +372,7 @@
       <section class="work-view hidden" id="progressView"></section>
       <section class="work-view hidden" id="checkinView">
         <h2>Check-in</h2>
+        <p class="btn-row"><a class="ghost" href="/api/export/attendance.csv">Download attendance CSV</a></p>
         <div class="field">
           <label for="checkinDate">Class date</label>
           <input id="checkinDate" type="date" />
@@ -575,12 +579,12 @@
     </form>
   </dialog>
 
-  <script src="/vendor/qrcode-generator/qrcode.js?v=20261021-8"></script>
-  <script src="/vendor/jsQR/jsQR.js?v=20261021-8"></script>
-  <script src="/js/plan-math.js?v=20261021-8"></script>
-  <script src="/js/data.js?v=20261021-8"></script>
-  <script src="/js/curriculum.js?v=20261021-8"></script>
-  <script src="/js/api.js?v=20261021-8"></script>
-  <script src="/js/app.js?v=20261021-8"></script>
+  <script src="/vendor/qrcode-generator/qrcode.js?v=20261021-9"></script>
+  <script src="/vendor/jsQR/jsQR.js?v=20261021-9"></script>
+  <script src="/js/plan-math.js?v=20261021-9"></script>
+  <script src="/js/data.js?v=20261021-9"></script>
+  <script src="/js/curriculum.js?v=20261021-9"></script>
+  <script src="/js/api.js?v=20261021-9"></script>
+  <script src="/js/app.js?v=20261021-9"></script>
 </body>
 </html>

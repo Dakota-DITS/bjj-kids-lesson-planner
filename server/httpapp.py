@@ -754,6 +754,10 @@ class Api:
             body = self.bootstrap(conn)
             body.pop("sheets", None)
             return self.send(handler, 200, body)
+        if path == "/api/export/roster.csv" and method == "GET":
+            return self.send_csv(handler, "grace-roster.csv", self.roster_csv(conn))
+        if path == "/api/export/attendance.csv" and method == "GET":
+            return self.send_csv(handler, "grace-attendance.csv", self.attendance_csv(conn))
         return self.send(handler, 404, {"error": "That address is not part of the API."})
 
     def get_csrf(self, handler):
@@ -1204,6 +1208,49 @@ class Api:
             "style-src 'self' 'unsafe-inline'; script-src 'self' 'unsafe-inline'; "
             "frame-src https://www.youtube-nocookie.com; connect-src 'self'",
         )
+
+    def csv_cell(self, value):
+        text = "" if value is None else str(value)
+        if text[:1] in ("=", "+", "-", "@", "\t", "\r"):
+            text = "'" + text
+        if any(ch in text for ch in '",\n\r'):
+            text = '"' + text.replace('"', '""') + '"'
+        return text
+
+    def roster_csv(self, conn):
+        rows = [["name", "age", "belt", "stripes"]]
+        for row in conn.execute("SELECT name, age, belt, stripes FROM students ORDER BY name COLLATE NOCASE"):
+            rows.append([row["name"], row["age"], row["belt"], row["stripes"]])
+        return rows
+
+    def attendance_csv(self, conn):
+        names = {row["id"]: row["name"] for row in conn.execute("SELECT id, name FROM students")}
+        rows = [["date", "age_group", "theme", "taught", "student"]]
+        for row in conn.execute("SELECT date, age_group, theme, theme_label, attended, taught FROM classes ORDER BY date, age_group"):
+            theme = row["theme_label"] or row["theme"] or ""
+            taught = "yes" if row["taught"] else "no"
+            attended = []
+            for sid in self.json_list(row["attended"]):
+                if sid in names:
+                    attended.append(names[sid])
+            if not attended:
+                rows.append([row["date"], row["age_group"], theme, taught, ""])
+                continue
+            for name in attended:
+                rows.append([row["date"], row["age_group"], theme, taught, name])
+        return rows
+
+    def send_csv(self, handler, filename, rows):
+        raw = ("\r\n".join(",".join(self.csv_cell(cell) for cell in row) for row in rows) + "\r\n").encode("utf-8")
+        handler.send_response(200)
+        handler.send_header("Content-Type", "text/csv; charset=utf-8")
+        handler.send_header("Content-Disposition", f'attachment; filename="{filename}"')
+        handler.send_header("Content-Length", str(len(raw)))
+        handler.send_header("Cache-Control", "no-store")
+        self.security_headers(handler)
+        handler.end_headers()
+        if handler.command != "HEAD" and not getattr(handler, "_bjj_head", False):
+            handler.wfile.write(raw)
 
     def send(self, handler, status, body, set_cookie=None, clear_cookie=False):
         raw = json.dumps(body).encode("utf-8")
