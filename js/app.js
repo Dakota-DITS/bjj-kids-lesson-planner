@@ -100,6 +100,27 @@
     toast._t = setTimeout(() => el.classList.remove("show"), 2800);
   }
 
+  function passwordChangeError(current, next) {
+    if (!current) return "Enter the current password.";
+    if (next.length < 10) return "Use at least 10 characters.";
+    if (next === current) return "Choose a different password.";
+    return "";
+  }
+
+  function generateTemporaryPassword() {
+    const alphabet = "ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz23456789";
+    const limit = 256 - (256 % alphabet.length);
+    let out = "";
+    while (out.length < 20) {
+      const bytes = new Uint8Array(32);
+      crypto.getRandomValues(bytes);
+      for (let i = 0; i < bytes.length && out.length < 20; i += 1) {
+        if (bytes[i] < limit) out += alphabet[bytes[i] % alphabet.length];
+      }
+    }
+    return out;
+  }
+
   function setFormNote(id, message, ok) {
     const el = $(id);
     if (!el) return;
@@ -3444,6 +3465,7 @@ function sparringSection(plan) {
   }
 
   function bind() {
+    bindResetPassword();
     document.querySelectorAll("[data-step]").forEach((btn) => {
       btn.addEventListener("click", () => {
         const input = $(btn.dataset.for);
@@ -4055,14 +4077,10 @@ function sparringSection(plan) {
       event.preventDefault();
       const current = $("currentPassword").value;
       const next = $("nextPassword").value;
-      if (!current) {
-        setFormNote("passwordNote", "Enter the current password.");
-        toast("Enter the current password.");
-        return;
-      }
-      if (next.length < 10) {
-        setFormNote("passwordNote", "Use at least 10 characters.");
-        toast("Use at least 10 characters.");
+      const problem = passwordChangeError(current, next);
+      if (problem) {
+        setFormNote("passwordNote", problem);
+        toast(problem);
         return;
       }
       try {
@@ -4150,6 +4168,11 @@ function sparringSection(plan) {
       }
     });
     $("userList").addEventListener("click", async (event) => {
+      const reset = event.target.closest("button[data-reset]");
+      if (reset) {
+        openResetPassword(reset.dataset.reset, reset.dataset.username || "");
+        return;
+      }
       const btn = event.target.closest("button[data-user]");
       if (!btn) return;
       try {
@@ -4227,14 +4250,40 @@ function sparringSection(plan) {
     });
   }
 
+  function openResetPassword(userId, username) {
+    const dialog = $("resetPasswordDialog");
+    if (!dialog || !userId) return;
+    dialog.dataset.userId = userId;
+    $("resetPasswordWho").textContent = `Set a temporary password for ${username}.`;
+    $("resetPasswordInput").value = "";
+    $("resetPasswordReveal").hidden = true;
+    $("resetPasswordValue").textContent = "";
+    $("resetPasswordSubmit").hidden = false;
+    setFormNote("resetPasswordNote", "");
+    if (typeof dialog.showModal === "function") dialog.showModal();
+  }
+
+  function closeResetPassword() {
+    const dialog = $("resetPasswordDialog");
+    if ($("resetPasswordInput")) $("resetPasswordInput").value = "";
+    if ($("resetPasswordValue")) $("resetPasswordValue").textContent = "";
+    if ($("resetPasswordReveal")) $("resetPasswordReveal").hidden = true;
+    if (dialog && dialog.open) dialog.close();
+    if (dialog) delete dialog.dataset.userId;
+  }
+
   async function refreshUsers() {
     if (!isAdmin() || !$("userList")) return;
     const body = await window.BJJ_API.send("GET", "/api/users");
+    const mine = state.session && state.session.id;
     $("userList").innerHTML = (body.users || [])
-      .map(
-        (user) =>
-          `<p>${esc(user.username)} · ${esc(user.role)} <button class="ghost" type="button" data-user="${esc(user.id)}">Remove</button></p>`
-      )
+      .map((user) => {
+        const pending = user.mustChangePassword ? " · temporary password" : "";
+        const reset = user.id === mine
+          ? ""
+          : `<button class="ghost" type="button" data-reset="${esc(user.id)}" data-username="${esc(user.username)}">Reset password</button>`;
+        return `<p><span>${esc(user.username)} · ${esc(user.role)}${pending}</span>${reset}<button class="ghost" type="button" data-user="${esc(user.id)}">Remove</button></p>`;
+      })
       .join("");
   }
 
@@ -4343,6 +4392,91 @@ function sparringSection(plan) {
     if (gate) gate.hidden = true;
   }
 
+  let mustChangeBound = false;
+
+  function showMustChange(username) {
+    document.body.classList.add("must-change");
+    document.body.classList.remove("authed");
+    const panel = $("mustChange");
+    const gate = $("gate");
+    if (gate) gate.hidden = true;
+    if (panel) panel.hidden = false;
+    const who = $("mustChangeWho");
+    if (who) {
+      who.textContent = username
+        ? `${username} has a temporary password. Choose a new one before using the staff page.`
+        : "This login has a temporary password. Choose a new one before using the staff page.";
+    }
+    if (mustChangeBound) return;
+    mustChangeBound = true;
+    $("mustChangeForm").addEventListener("submit", async (event) => {
+      event.preventDefault();
+      const current = $("mustCurrent").value;
+      const next = $("mustNext").value;
+      const problem = passwordChangeError(current, next);
+      if (problem) {
+        setFormNote("mustChangeNote", problem);
+        return;
+      }
+      try {
+        await window.BJJ_API.send("POST", "/api/password", { current, next });
+        $("mustCurrent").value = "";
+        $("mustNext").value = "";
+        if (panel) panel.hidden = true;
+        document.body.classList.remove("must-change");
+        await boot();
+      } catch (err) {
+        setFormNote("mustChangeNote", err.message || "Could not change the password.");
+      }
+    });
+    $("mustChangeLogout").addEventListener("click", async () => {
+      try {
+        await window.BJJ_API.send("POST", "/api/logout");
+      } catch (err) {
+        /* still leave the page */
+      }
+      window.location.href = "/";
+    });
+  }
+
+  function bindResetPassword() {
+    const form = $("resetPasswordForm");
+    if (!form || form.dataset.bound) return;
+    form.dataset.bound = "1";
+    $("generatePasswordBtn").addEventListener("click", () => {
+      $("resetPasswordInput").value = generateTemporaryPassword();
+      $("resetPasswordInput").focus();
+      $("resetPasswordInput").select();
+    });
+    $("resetPasswordClose").addEventListener("click", closeResetPassword);
+    $("resetPasswordDialog").addEventListener("close", () => {
+      if ($("resetPasswordInput")) $("resetPasswordInput").value = "";
+      if ($("resetPasswordValue")) $("resetPasswordValue").textContent = "";
+      if ($("resetPasswordReveal")) $("resetPasswordReveal").hidden = true;
+      if ($("resetPasswordSubmit")) $("resetPasswordSubmit").hidden = false;
+    });
+    form.addEventListener("submit", async (event) => {
+      event.preventDefault();
+      const dialog = $("resetPasswordDialog");
+      const password = $("resetPasswordInput").value;
+      if (password.length < 10) {
+        setFormNote("resetPasswordNote", "Use at least 10 characters.");
+        return;
+      }
+      try {
+        await window.BJJ_API.send("POST", `/api/users/${dialog.dataset.userId}/password`, { password });
+        $("resetPasswordValue").textContent = password;
+        $("resetPasswordInput").value = "";
+        $("resetPasswordReveal").hidden = false;
+        $("resetPasswordSubmit").hidden = true;
+        setFormNote("resetPasswordNote", "Password reset.", true);
+        await refreshUsers();
+      } catch (err) {
+        setFormNote("resetPasswordNote", err.message || "Could not reset that password.");
+      }
+    });
+  }
+
   async function boot() {
     try {
       const body = await window.BJJ_API.bootstrap();
@@ -4352,6 +4486,10 @@ function sparringSection(plan) {
       console.error(err);
       if (err && err.status === 401) {
         window.location.replace("/login/");
+        return;
+      }
+      if (err && err.status === 403 && err.mustChangePassword) {
+        showMustChange(err.username || "");
         return;
       }
       const gate = $("gate");

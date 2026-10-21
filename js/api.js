@@ -19,6 +19,8 @@
       if (!res.ok) {
         const err = new Error(data.error || "The server could not do that.");
         err.status = res.status;
+        err.mustChangePassword = !!(data && data.mustChangePassword);
+        if (data && data.username) err.username = data.username;
         throw err;
       }
       return data;

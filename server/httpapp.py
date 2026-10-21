@@ -116,7 +116,8 @@ class Api:
             return None, None
         row = conn.execute(
             """
-            SELECT sessions.csrf, sessions.expires_at, users.id, users.username, users.role
+            SELECT sessions.csrf, sessions.expires_at, users.id, users.username, users.role,
+                   users.must_change_password
             FROM sessions JOIN users ON users.id = sessions.user_id
             WHERE sessions.token_hash = ?
             """,
@@ -126,7 +127,12 @@ class Api:
             return None, None
         if parse_iso(row["expires_at"]) < utcnow():
             return None, None
-        user = {"id": row["id"], "username": row["username"], "role": row["role"]}
+        user = {
+            "id": row["id"],
+            "username": row["username"],
+            "role": row["role"],
+            "mustChangePassword": bool(row["must_change_password"]),
+        }
         return user, row["csrf"]
 
     def require_csrf(self, handler, expected):
@@ -154,7 +160,15 @@ class Api:
         return token, csrf, expires
 
     def public_user(self, user, csrf):
-        return {"user": {"id": user["id"], "username": user["username"], "role": user["role"]}, "csrf": csrf}
+        return {
+            "user": {
+                "id": user["id"],
+                "username": user["username"],
+                "role": user["role"],
+                "mustChangePassword": bool(user.get("mustChangePassword")),
+            },
+            "csrf": csrf,
+        }
 
     def student_json(self, row):
         return {
@@ -491,6 +505,22 @@ class Api:
                     if not user:
                         return self.send(handler, 401, {"error": "Log in first."})
                     return self.send(handler, 200, self.public_user(user, csrf))
+                if (
+                    user
+                    and user.get("mustChangePassword")
+                    and not (path == "/api/password" and method == "POST")
+                    and not (path == "/api/logout" and method == "POST")
+                ):
+                    return self.send(
+                        handler,
+                        403,
+                        {
+                            "error": "Choose a new password before continuing.",
+                            "mustChangePassword": True,
+                            "csrf": csrf,
+                            "username": user["username"],
+                        },
+                    )
                 if path == "/api/bootstrap" and method == "GET":
                     if not user:
                         return self.send(handler, 401, {"error": "Log in first."})
@@ -519,8 +549,24 @@ class Api:
         if path == "/api/users" and method == "GET":
             if not admin:
                 return self.send(handler, 403, {"error": "An admin manages logins."})
-            rows = conn.execute("SELECT id, username, role FROM users ORDER BY username").fetchall()
-            return self.send(handler, 200, {"users": [dict(row) for row in rows]})
+            rows = conn.execute(
+                "SELECT id, username, role, must_change_password FROM users ORDER BY username"
+            ).fetchall()
+            return self.send(
+                handler,
+                200,
+                {
+                    "users": [
+                        {
+                            "id": row["id"],
+                            "username": row["username"],
+                            "role": row["role"],
+                            "mustChangePassword": bool(row["must_change_password"]),
+                        }
+                        for row in rows
+                    ]
+                },
+            )
         if path == "/api/users" and method == "POST":
             if not admin:
                 return self.send(handler, 403, {"error": "An admin manages logins."})
@@ -543,6 +589,11 @@ class Api:
             if not admin:
                 return self.send(handler, 403, {"error": "An admin manages the staff roster."})
             return self.delete_staff(handler, conn, staff_match.group(1))
+        reset_match = re.match(r"^/api/users/([A-Za-z0-9_-]{1,40})/password$", path)
+        if reset_match and method == "POST":
+            if not admin:
+                return self.send(handler, 403, {"error": "Only an admin can reset a password."})
+            return self.reset_password(handler, conn, user, reset_match.group(1))
         user_match = re.match(r"^/api/users/([A-Za-z0-9_-]{1,40})$", path)
         if user_match and method == "DELETE":
             if not admin:
@@ -737,7 +788,12 @@ class Api:
                 return self.send(handler, 401, {"error": "Those details don't match."})
             token, csrf, _expires = self.issue_session(own, row["id"])
             own.commit()
-            user = {"id": row["id"], "username": row["username"], "role": row["role"]}
+            user = {
+                "id": row["id"],
+                "username": row["username"],
+                "role": row["role"],
+                "mustChangePassword": bool(row["must_change_password"]),
+            }
             self.send(handler, 200, self.public_user(user, csrf), set_cookie=token)
         finally:
             if conn is None:
@@ -826,7 +882,12 @@ class Api:
         row = conn.execute("SELECT password_hash FROM users WHERE id = ?", (user["id"],)).fetchone()
         if not check_password(current, row["password_hash"]):
             return self.send(handler, 401, {"error": "The current password does not match."})
-        conn.execute("UPDATE users SET password_hash = ? WHERE id = ?", (hash_password(nxt), user["id"]))
+        if nxt == current:
+            raise ValueError("Choose a different password.")
+        conn.execute(
+            "UPDATE users SET password_hash = ?, must_change_password = 0 WHERE id = ?",
+            (hash_password(nxt), user["id"]),
+        )
         conn.commit()
         return self.send(handler, 200, {"ok": True})
 
@@ -849,6 +910,33 @@ class Api:
         self.ensure_login_staff(conn)
         conn.commit()
         return self.send(handler, 201, {"id": uid, "username": username, "role": role})
+
+    def reset_password(self, handler, conn, user, uid):
+        if uid == user["id"]:
+            raise ValueError("Change your own password from Account.")
+        target = conn.execute("SELECT id, role FROM users WHERE id = ?", (uid,)).fetchone()
+        if not target:
+            return self.send(handler, 404, {"error": "That login is already gone."})
+        if target["role"] == "admin":
+            others = conn.execute(
+                "SELECT COUNT(*) AS n FROM users WHERE role = 'admin' AND id != ? AND must_change_password = 0",
+                (uid,),
+            ).fetchone()["n"]
+            if others < 1:
+                raise ValueError("Keep at least one admin who can still sign in.")
+        body = self.read_json(handler)
+        password = str(body.get("password") or "")
+        if len(password) < 10:
+            raise ValueError("Use at least 10 characters.")
+        if len(password) > 200:
+            raise ValueError("That password is too long.")
+        conn.execute(
+            "UPDATE users SET password_hash = ?, must_change_password = 1 WHERE id = ?",
+            (hash_password(password), uid),
+        )
+        conn.execute("DELETE FROM sessions WHERE user_id = ?", (uid,))
+        conn.commit()
+        return self.send(handler, 200, {"ok": True})
 
     def delete_user(self, handler, conn, user, uid):
         if uid == user["id"]:

@@ -12,11 +12,29 @@
   <meta name="apple-mobile-web-app-title" content="Grace BJJ Staff" />
   <link rel="icon" href="/icons/staff-favicon-32.png" type="image/png" sizes="32x32" />
   <link rel="apple-touch-icon" href="/icons/staff-apple-touch-icon.png" sizes="180x180" />
-  <link rel="stylesheet" href="/css/styles.css?v=20261021-4" />
-  <script src="/pwa.js?v=20261021-4" defer></script>
+  <link rel="stylesheet" href="/css/styles.css?v=20261021-5" />
+  <script src="/pwa.js?v=20261021-5" defer></script>
 </head>
 <body>
   <p id="gate" class="gate">Checking the teacher login…</p>
+  <section id="mustChange" class="must-change" hidden>
+    <h1>Choose a new password</h1>
+    <p id="mustChangeWho">This login has a temporary password. Choose a new one before using the staff page.</p>
+    <form id="mustChangeForm" novalidate>
+      <div class="field">
+        <label for="mustCurrent">Temporary password</label>
+        <input id="mustCurrent" type="password" autocomplete="current-password" />
+      </div>
+      <div class="field">
+        <label for="mustNext">New password</label>
+        <input id="mustNext" type="password" autocomplete="new-password" />
+      </div>
+      <p class="hint">Use at least 10 characters.</p>
+      <p class="form-note" id="mustChangeNote" role="alert"></p>
+      <button class="primary" type="submit">Save new password</button>
+      <button class="ghost" id="mustChangeLogout" type="button">Log out</button>
+    </form>
+  </section>
   <div class="app">
     <div class="phone-bar">
       <button type="button" class="menu-toggle" id="menuToggle" aria-expanded="false" aria-controls="sidebar">Menu</button>
@@ -537,13 +555,32 @@
   </div>
 
   <div class="toast" id="toast" role="status"></div>
+  <dialog id="resetPasswordDialog" class="reset-dialog" aria-labelledby="resetPasswordTitle">
+    <form id="resetPasswordForm" novalidate>
+      <h2 id="resetPasswordTitle">Reset password</h2>
+      <p id="resetPasswordWho"></p>
+      <div class="field">
+        <label for="resetPasswordInput">Temporary password</label>
+        <input id="resetPasswordInput" type="text" autocomplete="off" spellcheck="false" />
+      </div>
+      <button class="ghost" id="generatePasswordBtn" type="button">Generate a password</button>
+      <p class="hint">They must choose a new password the next time they log in. Their current sessions will end.</p>
+      <p class="form-note" id="resetPasswordNote" role="alert"></p>
+      <div id="resetPasswordReveal" hidden>
+        <p>Hand this password over now. It will not be shown again.</p>
+        <p id="resetPasswordValue" class="reset-password-value"></p>
+      </div>
+      <button class="primary" id="resetPasswordSubmit" type="submit">Reset password</button>
+      <button class="ghost" id="resetPasswordClose" type="button">Close</button>
+    </form>
+  </dialog>
 
-  <script src="/vendor/qrcode-generator/qrcode.js?v=20261021-4"></script>
-  <script src="/vendor/jsQR/jsQR.js?v=20261021-4"></script>
-  <script src="/js/plan-math.js?v=20261021-4"></script>
-  <script src="/js/data.js?v=20261021-4"></script>
-  <script src="/js/curriculum.js?v=20261021-4"></script>
-  <script src="/js/api.js?v=20261021-4"></script>
-  <script src="/js/app.js?v=20261021-4"></script>
+  <script src="/vendor/qrcode-generator/qrcode.js?v=20261021-5"></script>
+  <script src="/vendor/jsQR/jsQR.js?v=20261021-5"></script>
+  <script src="/js/plan-math.js?v=20261021-5"></script>
+  <script src="/js/data.js?v=20261021-5"></script>
+  <script src="/js/curriculum.js?v=20261021-5"></script>
+  <script src="/js/api.js?v=20261021-5"></script>
+  <script src="/js/app.js?v=20261021-5"></script>
 </body>
 </html>
