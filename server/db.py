@@ -76,7 +76,8 @@ def migrate(conn):
           username TEXT NOT NULL UNIQUE COLLATE NOCASE,
           password_hash TEXT NOT NULL,
           role TEXT NOT NULL CHECK(role IN ('admin', 'teacher')),
-          created_at TEXT NOT NULL
+          created_at TEXT NOT NULL,
+          must_change_password INTEGER NOT NULL DEFAULT 0
         );
         CREATE TABLE IF NOT EXISTS sessions (
           token_hash TEXT PRIMARY KEY,
@@ -156,6 +157,13 @@ def migrate(conn):
         );
         """
     )
+    # Live databases created before this column keep their rows. DEFAULT 0
+    # back-fills every existing user so nobody is forced to change a password
+    # until an admin resets one.
+    columns = {row[1] for row in conn.execute("PRAGMA table_info(users)")}
+    if "must_change_password" not in columns:
+        conn.execute("ALTER TABLE users ADD COLUMN must_change_password INTEGER NOT NULL DEFAULT 0")
+    conn.execute("UPDATE users SET must_change_password = 0 WHERE must_change_password IS NULL")
     conn.commit()
 
 

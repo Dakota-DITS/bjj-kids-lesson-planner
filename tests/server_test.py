@@ -501,6 +501,90 @@ class ApiTest(unittest.TestCase):
         self.assertEqual(still["name"], "Existing")
         conn.close()
 
+    def test_admin_password_reset_forces_change_and_drops_sessions(self):
+        old_path = os.path.join(self.tmp.name, "reset-legacy.db")
+        legacy = connect(old_path)
+        legacy.execute(
+            """
+            CREATE TABLE users (
+              id TEXT PRIMARY KEY,
+              username TEXT NOT NULL UNIQUE,
+              password_hash TEXT NOT NULL,
+              role TEXT NOT NULL,
+              created_at TEXT NOT NULL
+            )
+            """
+        )
+        legacy.execute(
+            "INSERT INTO users (id, username, password_hash, role, created_at) VALUES ('u-old', 'oldadmin', 'hash', 'admin', '2026-01-01T00:00:00Z')"
+        )
+        legacy.commit()
+        migrate(legacy)
+        backfill = legacy.execute("SELECT must_change_password FROM users WHERE id = 'u-old'").fetchone()
+        self.assertEqual(backfill["must_change_password"], 0)
+        migrate(legacy)
+        legacy.close()
+
+        admin = self.client()
+        status, me = admin.login("dakota", "correct-horse")
+        self.assertEqual(status, 200)
+        self.assertFalse(me["user"]["mustChangePassword"])
+        status, created = admin.call(
+            "POST",
+            "/api/users",
+            {"username": "Teacher1", "password": "starter-pass-1", "role": "teacher"},
+        )
+        self.assertEqual(status, 201)
+        uid = created["id"]
+
+        teacher1 = self.client()
+        status, _ = teacher1.login("Teacher1", "starter-pass-1")
+        self.assertEqual(status, 200)
+        status, boot = teacher1.call("GET", "/api/bootstrap")
+        self.assertEqual(status, 200)
+
+        alex = self.client()
+        alex.login("alex", "correct-horse")
+        status, denied = alex.call("POST", f"/api/users/{uid}/password", {"password": "not-allowed-1"})
+        self.assertEqual(status, 403)
+        status, still = teacher1.call("GET", "/api/bootstrap")
+        self.assertEqual(status, 200)
+
+        status, own = admin.call("POST", f"/api/users/{me['user']['id']}/password", {"password": "another-pass-1"})
+        self.assertEqual(status, 400)
+
+        status, reset = admin.call("POST", f"/api/users/{uid}/password", {"password": "handoff-pass-1"})
+        self.assertEqual(status, 200)
+        self.assertEqual(reset, {"ok": True})
+        self.assertNotIn("handoff-pass-1", json.dumps(reset))
+        status, dead = teacher1.call("GET", "/api/bootstrap")
+        self.assertEqual(status, 401)
+
+        conn = connect(self.api.cfg["db_path"])
+        stored = conn.execute("SELECT password_hash, must_change_password FROM users WHERE id = ?", (uid,)).fetchone()
+        self.assertEqual(stored["must_change_password"], 1)
+        self.assertNotIn("handoff-pass-1", stored["password_hash"])
+        self.assertTrue(stored["password_hash"].startswith("$2"))
+        conn.close()
+
+        fresh = self.client()
+        status, signed = fresh.login("Teacher1", "handoff-pass-1")
+        self.assertEqual(status, 200)
+        self.assertTrue(signed["user"]["mustChangePassword"])
+        status, blocked = fresh.call("GET", "/api/bootstrap")
+        self.assertEqual(status, 403)
+        self.assertTrue(blocked["mustChangePassword"])
+        fresh.csrf = blocked["csrf"]
+        status, same = fresh.call("POST", "/api/password", {"current": "handoff-pass-1", "next": "handoff-pass-1"})
+        self.assertEqual(status, 400)
+        status, changed = fresh.call("POST", "/api/password", {"current": "handoff-pass-1", "next": "chosen-pass-1"})
+        self.assertEqual(status, 200)
+        status, boot = fresh.call("GET", "/api/bootstrap")
+        self.assertEqual(status, 200)
+        self.assertFalse(boot["user"]["mustChangePassword"])
+        status, home = admin.call("GET", "/api/bootstrap")
+        self.assertEqual(status, 200)
+
 
 def _handler(api):
     from http.server import BaseHTTPRequestHandler

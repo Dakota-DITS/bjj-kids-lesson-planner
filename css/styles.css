@@ -1008,6 +1008,9 @@ body.authed .gate { display: none; }
 body:not(.role-admin) .admin-only { display: none !important; }
 #accountPanel summary {
   cursor: pointer;
+  min-height: 44px;
+  display: flex;
+  align-items: center;
   font-size: 0.72rem;
   letter-spacing: 0.14em;
   text-transform: uppercase;
@@ -1359,6 +1362,63 @@ body:not(.role-admin) .admin-only { display: none !important; }
 .form-note.ok { color: #bbf7d0; }
 #userList p { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
 #userList button { min-height: 44px; }
+
+.must-change {
+  box-sizing: border-box;
+  width: min(420px, calc(100% - 32px));
+  margin: 28px auto 40px;
+  color: var(--ui-text);
+}
+.must-change h1 { margin: 0 0 8px; font-size: 1.6rem; }
+.must-change p { margin: 0 0 12px; line-height: 1.4; }
+.must-change .field { margin-bottom: 12px; }
+.must-change input,
+.must-change button,
+.reset-dialog input,
+.reset-dialog button {
+  width: 100%;
+  box-sizing: border-box;
+  min-height: 44px;
+  font-size: 16px;
+}
+.must-change button { margin-top: 8px; }
+body.must-change .gate { display: none; }
+body.authed #mustChange { display: none !important; }
+
+.reset-dialog {
+  box-sizing: border-box;
+  width: min(420px, calc(100vw - 24px));
+  max-width: calc(100vw - 24px);
+  margin: auto;
+  padding: 16px;
+  border: 0;
+  border-radius: 16px;
+  background: var(--ui-bg-2);
+  color: var(--ui-text);
+}
+.reset-dialog button[hidden],
+#resetPasswordReveal[hidden] {
+  display: none !important;
+}
+.reset-dialog::backdrop { background: rgba(0, 0, 0, 0.72); }
+.reset-dialog h2 { margin: 0 0 8px; }
+.reset-dialog .field { margin: 12px 0; }
+.reset-dialog button { margin-top: 8px; }
+.reset-password-value {
+  margin: 0;
+  padding: 12px;
+  border-radius: 12px;
+  background: #1c1917;
+  font-family: ui-monospace, "Liberation Mono", monospace;
+  font-size: 1.05rem;
+  line-height: 1.4;
+  overflow-wrap: anywhere;
+  word-break: break-all;
+  user-select: all;
+}
+@media print {
+  .must-change, .reset-dialog { display: none !important; }
+}
 
 .phone-bar, .scrim { display: none; }
 
