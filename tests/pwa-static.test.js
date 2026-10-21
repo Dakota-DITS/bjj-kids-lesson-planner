@@ -51,6 +51,9 @@ for (const block of [publicList, staffList]) {
 }
 assert.ok(staffList.includes('"/app/offline.html"'));
 assert.ok(staffList.includes('"/app/manifest.webmanifest"'));
+assert.equal(publicList.includes("/img/gi/"), false);
+assert.equal(staffList.includes("/img/gi/"), false);
+assert.ok(sw.includes('path.startsWith("/img/gi/")'));
 
 const pwa = text("pwa.js");
 assert.ok(pwa.includes('scope: scope'));

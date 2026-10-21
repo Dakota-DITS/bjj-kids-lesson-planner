@@ -210,6 +210,7 @@ self.addEventListener("fetch", (event) => {
     return;
   }
   const allowed = new Set(assetList());
+  if (path.startsWith("/img/gi/")) allowed.add(path);
   if (request.mode !== "navigate" && !allowed.has(path)) return;
   event.respondWith(networkFirst(request, path, allowed));
 });
