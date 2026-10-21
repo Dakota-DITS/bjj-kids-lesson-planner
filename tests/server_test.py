@@ -415,6 +415,50 @@ class ApiTest(unittest.TestCase):
             status, removed = admin.call("DELETE", f"/api/students/{created_student}")
             self.assertEqual(status, 200)
 
+    def test_bootstrap_survives_empty_staff_and_bad_class_json(self):
+        parsed = self.api.class_json(
+            {
+                "id": "k-1",
+                "date": "2026-10-27",
+                "age_group": "mite",
+                "theme": "mount",
+                "theme_label": None,
+                "techniques": None,
+                "game": None,
+                "attended": "",
+                "taught": None,
+            }
+        )
+        self.assertEqual(parsed["techniques"], [])
+        self.assertEqual(parsed["attended"], [])
+        self.assertEqual(parsed["themeLabel"], "")
+        self.assertEqual(self.api.static_cache_control("/js/app.js"), "private, no-store")
+        self.assertEqual(self.api.static_cache_control("/css/styles.css"), "private, no-store")
+        self.assertEqual(self.api.static_cache_control("/app/index.html"), "private, no-store")
+        self.assertEqual(self.api.static_cache_control("/css/splash.css"), "no-cache")
+        self.assertEqual(self.api.static_cache_control("/"), "no-cache")
+        conn = self.api.db()
+        try:
+            conn.execute("DELETE FROM staff")
+            conn.execute(
+                """
+                INSERT INTO classes (id, date, age_group, theme, techniques, attended, taught)
+                VALUES ('k-badjson', '2026-08-11', 'teen', 'mount', 'not-json', '', 0)
+                """
+            )
+            conn.commit()
+            body = self.api.bootstrap(conn)
+        finally:
+            conn.execute("DELETE FROM classes WHERE id = 'k-badjson'")
+            conn.commit()
+            conn.close()
+        names = {person["name"] for person in body["staff"]}
+        self.assertIn("dakota", names)
+        self.assertIn("alex", names)
+        bad = next(entry for entry in body["classes"] if entry["id"] == "k-badjson")
+        self.assertEqual(bad["techniques"], [])
+        self.assertEqual(bad["attended"], [])
+
     def test_staff_migration_keeps_existing_students(self):
         path = os.path.join(self.tmp.name, "pre-staff.db")
         conn = connect(path)
