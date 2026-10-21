@@ -165,25 +165,33 @@ class Api:
             "stripes": row["stripes"],
         }
 
+    def cell(self, row, key, default=""):
+        try:
+            value = row[key]
+        except (KeyError, IndexError):
+            return default
+        return default if value is None else value
+
+    def json_list(self, value):
+        if value is None or value == "":
+            return []
+        try:
+            parsed = json.loads(value)
+        except (TypeError, json.JSONDecodeError, ValueError):
+            return []
+        return parsed if isinstance(parsed, list) else []
+
     def class_json(self, row):
-        try:
-            techniques = json.loads(row["techniques"])
-        except json.JSONDecodeError:
-            techniques = []
-        try:
-            attended = json.loads(row["attended"])
-        except json.JSONDecodeError:
-            attended = []
         return {
-            "id": row["id"],
-            "date": row["date"],
-            "ageGroup": row["age_group"],
-            "theme": row["theme"],
-            "themeLabel": row["theme_label"],
-            "techniques": techniques if isinstance(techniques, list) else [],
-            "game": row["game"],
-            "attended": attended if isinstance(attended, list) else [],
-            "taught": bool(row["taught"]),
+            "id": self.cell(row, "id"),
+            "date": self.cell(row, "date"),
+            "ageGroup": self.cell(row, "age_group") or "mite",
+            "theme": self.cell(row, "theme"),
+            "themeLabel": self.cell(row, "theme_label"),
+            "techniques": self.json_list(self.cell(row, "techniques", None)),
+            "game": self.cell(row, "game"),
+            "attended": self.json_list(self.cell(row, "attended", None)),
+            "taught": bool(self.cell(row, "taught", 0)),
         }
 
     def sanitize_student(self, raw, existing_id=None):
@@ -257,8 +265,16 @@ class Api:
         )
 
     def bootstrap(self, conn):
-        if self.ensure_login_staff(conn):
-            conn.commit()
+        staff = []
+        try:
+            if self.ensure_login_staff(conn):
+                conn.commit()
+            staff = [
+                self.staff_json(row)
+                for row in conn.execute("SELECT * FROM staff ORDER BY name COLLATE NOCASE")
+            ]
+        except sqlite3.Error:
+            staff = []
         students = [self.student_json(row) for row in conn.execute("SELECT * FROM students ORDER BY name")]
         classes = [self.class_json(row) for row in conn.execute("SELECT * FROM classes ORDER BY date, age_group")]
         levels = {}
@@ -296,17 +312,23 @@ class Api:
             },
             "sheets": sheets,
             "cards": [self.card_json(row) for row in conn.execute("SELECT * FROM cards ORDER BY created_at, code")],
-            "staff": [self.staff_json(row) for row in conn.execute("SELECT * FROM staff ORDER BY name COLLATE NOCASE")],
+            "staff": staff,
         }
 
     def staff_json(self, row):
+        user_id = self.cell(row, "user_id")
+        stripes = self.cell(row, "stripes", 0)
+        try:
+            stripes = int(stripes)
+        except (TypeError, ValueError):
+            stripes = 0
         return {
-            "id": row["id"],
-            "name": row["name"],
-            "belt": row["belt"],
-            "stripes": row["stripes"],
-            "userId": row["user_id"] or "",
-            "login": bool(row["user_id"]),
+            "id": self.cell(row, "id"),
+            "name": self.cell(row, "name"),
+            "belt": self.cell(row, "belt") or "white",
+            "stripes": max(0, min(4, stripes)),
+            "userId": user_id,
+            "login": bool(user_id),
         }
 
     def ensure_login_staff(self, conn):
@@ -327,7 +349,7 @@ class Api:
                     (new_id("st-"), row["username"], row["id"], now),
                 )
                 made += 1
-            except sqlite3.IntegrityError:
+            except sqlite3.Error:
                 continue
         return made
 
@@ -1096,7 +1118,7 @@ class Api:
 
     def static_cache_control(self, rel):
         path = (rel or "").split("?", 1)[0]
-        if path in ("/app/manifest.webmanifest", "/app/offline.html") or path.endswith(".webmanifest") or os.path.basename(path) == "sw.js":
+        if path in ("/app/manifest.webmanifest", "/app/offline.html", "/sw.js", "/manifest.webmanifest") or path.endswith(".webmanifest") or os.path.basename(path) == "sw.js":
             return "no-cache"
         gated = (
             path.startswith("/js/")

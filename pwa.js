@@ -22,6 +22,12 @@
   });
 
   navigator.serviceWorker.register("/sw.js", { scope: scope, updateViaCache: "none" }).then(function (reg) {
+    function precache() {
+      var worker = reg.active || navigator.serviceWorker.controller;
+      if (worker) worker.postMessage({ type: "precache" });
+    }
+    if (reg.active) precache();
+    else navigator.serviceWorker.ready.then(precache).catch(function () {});
     function update() {
       reg.update().catch(function () {});
     }

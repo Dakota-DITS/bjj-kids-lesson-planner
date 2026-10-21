@@ -25,7 +25,7 @@ function pngInfo(rel) {
 }
 
 const sw = text("sw.js");
-assert.ok(sw.includes('const VERSION = "20261021-2"'));
+assert.ok(sw.includes('const VERSION = "20261021-3"'));
 assert.ok(sw.includes("skipWaiting"));
 assert.ok(sw.includes("clients.claim"));
 assert.ok(sw.includes("grace-public-"));
@@ -35,6 +35,22 @@ assert.match(sw, /startsWith\("\/api\/"\)[\s\S]{0,160}respondWith\(fetch\(reques
 assert.equal((sw.match(/"\/api\//g) || []).length, 1);
 assert.ok(sw.includes('cache: "reload"'));
 assert.equal(sw.includes("updateViaCache"), false);
+assert.ok(sw.includes("private"));
+assert.ok(sw.includes("no-store"));
+assert.ok(sw.includes('data.type === "logout"'));
+assert.ok(sw.includes('data.type === "precache"'));
+
+const publicList = sw.split("const PUBLIC_ASSETS")[1].split("const STAFF_ASSETS")[0];
+const staffList = sw.split("const STAFF_ASSETS")[1].split("const PUBLIC_APP")[0];
+for (const block of [publicList, staffList]) {
+  assert.equal(block.includes('"/js/'), false, block);
+  assert.equal(block.includes('"/vendor/'), false, block);
+  assert.equal(block.includes('"/css/styles.css"'), false, block);
+  assert.equal(block.includes('"/app/index.html"'), false, block);
+  assert.equal(block.includes('"/app/"'), false, block);
+}
+assert.ok(staffList.includes('"/app/offline.html"'));
+assert.ok(staffList.includes('"/app/manifest.webmanifest"'));
 
 const pwa = text("pwa.js");
 assert.ok(pwa.includes('scope: scope'));
@@ -108,7 +124,7 @@ for (const rel of ["index.html", "login/index.html", "coloring/index.html"]) {
   assert.ok(html.includes('name="mobile-web-app-capable" content="yes"'), rel);
   assert.ok(html.includes('name="apple-mobile-web-app-status-bar-style" content="default"'), rel);
   assert.ok(html.includes('href="/icons/apple-touch-icon.png"'), rel);
-  assert.ok(html.includes('src="/pwa.js?v=20261021-2"'), rel);
+  assert.ok(html.includes('src="/pwa.js?v=20261021-3"'), rel);
   assert.ok(html.includes('content="#9b2a12"'), rel);
 }
 
@@ -118,7 +134,7 @@ assert.ok(app.includes('content="Grace BJJ Staff"'));
 assert.ok(app.includes('name="apple-mobile-web-app-capable" content="yes"'));
 assert.ok(app.includes('name="apple-mobile-web-app-status-bar-style" content="black"'));
 assert.ok(app.includes('href="/icons/staff-apple-touch-icon.png"'));
-assert.ok(app.includes('src="/pwa.js?v=20261021-2"'));
+assert.ok(app.includes('src="/pwa.js?v=20261021-3"'));
 assert.ok(app.includes('content="#1c1917"'));
 
 assert.ok(text("offline.html").includes("Grace BJJ Kids"));

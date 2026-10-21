@@ -158,12 +158,37 @@ async function main() {
       await authed.evaluate(() => document.querySelector("button.big").click());
       await authed.waitForSelector("body.authed", { timeout: 15000 });
       assert.ok(authed.url().includes("/app/"));
-      const scopes = await authed.evaluate(async () => {
+      await authed.waitForFunction(() => !!navigator.serviceWorker.controller, { timeout: 15000 });
+      await new Promise((resolve) => setTimeout(resolve, 400));
+      try {
+        await authed.reload({ waitUntil: "networkidle0", timeout: 15000 });
+      } catch (err) {
+        /* The first claim can reload the staff page on its own. */
+      }
+      await authed.waitForSelector("body.authed", { timeout: 15000 });
+      const cached = await authed.evaluate(async () => {
         await navigator.serviceWorker.ready;
         const regs = await navigator.serviceWorker.getRegistrations();
-        return regs.map((reg) => reg.scope);
+        const names = await caches.keys();
+        const paths = [];
+        for (const name of names) {
+          const cache = await caches.open(name);
+          const keys = await cache.keys();
+          keys.forEach((req) => paths.push(new URL(req.url).pathname));
+        }
+        return { names, paths, scopes: regs.map((reg) => reg.scope) };
       });
-      assert.ok(scopes.some((scope) => scope.endsWith("/app/")), scopes.join(","));
+      assert.ok(cached.scopes.some((scope) => scope.endsWith("/app/")), cached.scopes.join(","));
+      const leaked = cached.paths.filter((pathname) => (
+        pathname.startsWith("/js/")
+        || pathname.startsWith("/vendor/")
+        || pathname === "/css/styles.css"
+        || pathname === "/app"
+        || pathname === "/app/"
+        || pathname === "/app/index.html"
+      ));
+      assert.deepEqual(leaked, [], JSON.stringify(cached));
+      assert.ok(cached.paths.includes("/app/offline.html"), JSON.stringify(cached.names));
       await authed.setUserAgent(IPHONE);
       await authed.reload({ waitUntil: "networkidle0" });
       await authed.waitForSelector("body.authed", { timeout: 15000 });
@@ -176,6 +201,10 @@ async function main() {
       await authed.click(".pwa-tip button.later");
       await authed.evaluate(() => document.getElementById("logoutBtn").click());
       await authed.waitForFunction(() => location.pathname === "/", { timeout: 15000 });
+      await authed.waitForFunction(async () => {
+        const names = await caches.keys();
+        return names.every((name) => !name.startsWith("grace-staff-"));
+      }, { timeout: 5000 });
 
       await authed.goto(BASE + "/login/", { waitUntil: "networkidle0" });
       await hideTip(authed);

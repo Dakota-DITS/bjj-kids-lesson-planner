@@ -1,7 +1,8 @@
 /* Static shell only. VERSION matches the ?v= token on HTML script and style
-   links. Online loads are network-first, so a 15-minute deploy still shows
-   up before this file itself changes. /api/ is never stored. */
-const VERSION = "20261021-2";
+   links. Public files are network-first. Login-gated files are never stored:
+   Cache Storage is shared by everyone who uses the phone, so a private or
+   no-store response must not survive logout. /api/ is network-only. */
+const VERSION = "20261021-3";
 
 const PUBLIC_CACHE = "grace-public-" + VERSION;
 const STAFF_CACHE = "grace-staff-" + VERSION;
@@ -34,19 +35,8 @@ const PUBLIC_ASSETS = [
 ];
 
 const STAFF_ASSETS = [
-  "/app",
-  "/app/",
-  "/app/index.html",
   "/app/offline.html",
   "/app/manifest.webmanifest",
-  "/css/styles.css",
-  "/js/app.js",
-  "/js/api.js",
-  "/js/data.js",
-  "/js/curriculum.js",
-  "/js/plan-math.js",
-  "/vendor/qrcode-generator/qrcode.js",
-  "/vendor/jsQR/jsQR.js",
   "/pwa.js",
   "/sw.js",
   "/icons/staff-favicon-32.png",
@@ -59,6 +49,8 @@ const STAFF_ASSETS = [
   "/fonts/LuckiestGuy-Regular.ttf",
   "/fonts/Fredoka-SemiBold.ttf"
 ];
+
+const PUBLIC_APP = new Set(["/app/offline.html", "/app/manifest.webmanifest"]);
 
 function staffScope() {
   return new URL(self.registration.scope).pathname.indexOf("/app") === 0;
@@ -76,14 +68,57 @@ function offlinePath() {
   return staffScope() ? "/app/offline.html" : "/offline.html";
 }
 
+function isGated(pathname) {
+  if (pathname.startsWith("/js/") || pathname.startsWith("/vendor/")) return true;
+  if (pathname === "/css/styles.css") return true;
+  if (pathname === "/app" || pathname === "/app/" || pathname === "/app/index.html") return true;
+  if (pathname.startsWith("/app/") && !PUBLIC_APP.has(pathname)) return true;
+  return false;
+}
+
+function storeable(res, path) {
+  if (!res || !res.ok || res.redirected || res.type !== "basic") return false;
+  let pathname = "";
+  try {
+    pathname = new URL(res.url).pathname;
+  } catch (err) {
+    return false;
+  }
+  if (pathname !== path || isGated(pathname)) return false;
+  const header = res.headers.get("Cache-Control") || "";
+  if (/private|no-store/i.test(header)) return false;
+  return true;
+}
+
 async function storeFresh(cache, path) {
   try {
     const res = await fetch(path, { credentials: "same-origin", cache: "reload" });
-    if (!res.ok || res.redirected || res.type !== "basic") return;
-    if (new URL(res.url).pathname !== path) return;
+    if (!storeable(res, path)) return;
     await cache.put(path, res);
   } catch (err) {
-    /* A locked staff file must not block the public install. */
+    /* A missing public file must not block the install. */
+  }
+}
+
+async function cachedOffline() {
+  const names = staffScope() ? [STAFF_CACHE, PUBLIC_CACHE] : [PUBLIC_CACHE];
+  for (const name of names) {
+    const cache = await caches.open(name);
+    const hit = await cache.match(offlinePath()) || await cache.match("/offline.html");
+    if (hit) return hit;
+  }
+  return null;
+}
+
+async function networkOnly(request) {
+  try {
+    return await fetch(request);
+  } catch (err) {
+    if (request.mode === "navigate") {
+      const offline = await cachedOffline();
+      if (offline) return offline;
+    }
+    throw err;
   }
 }
 
@@ -91,7 +126,7 @@ async function networkFirst(request, path, allowed) {
   const cache = await caches.open(cacheName());
   try {
     const res = await fetch(request);
-    if (allowed.has(path) && res.ok && !res.redirected && res.type === "basic" && new URL(res.url).pathname === path) {
+    if (allowed.has(path) && storeable(res, path)) {
       await cache.put(path, res.clone());
     }
     return res;
@@ -99,11 +134,31 @@ async function networkFirst(request, path, allowed) {
     const hit = await cache.match(path);
     if (hit) return hit;
     if (request.mode === "navigate") {
-      const offline = await cache.match(offlinePath());
+      const offline = await cachedOffline();
       if (offline) return offline;
     }
     throw err;
   }
+}
+
+async function dropStaffCaches() {
+  const keys = await caches.keys();
+  await Promise.all(keys.filter((key) => key.startsWith("grace-staff-")).map((key) => caches.delete(key)));
+}
+
+async function ensurePublicPrecache() {
+  const cache = await caches.open(cacheName());
+  const keys = await cache.keys();
+  const have = new Set();
+  keys.forEach((req) => {
+    try {
+      have.add(new URL(req.url).pathname);
+    } catch (err) {
+      /* skip a bad cache key */
+    }
+  });
+  const missing = assetList().filter((path) => !have.has(path));
+  await Promise.all(missing.map((path) => storeFresh(cache, path)));
 }
 
 self.addEventListener("install", (event) => {
@@ -115,13 +170,24 @@ self.addEventListener("install", (event) => {
 });
 
 self.addEventListener("activate", (event) => {
-  const prefix = staffScope() ? "grace-staff-" : "grace-public-";
-  const current = cacheName();
   event.waitUntil((async () => {
     const keys = await caches.keys();
-    await Promise.all(keys.filter((key) => key.startsWith(prefix) && key !== current).map((key) => caches.delete(key)));
+    await Promise.all(keys.filter((key) => {
+      if (key.startsWith("grace-staff-") && key !== STAFF_CACHE) return true;
+      if (key.startsWith("grace-public-") && key !== PUBLIC_CACHE) return true;
+      return false;
+    }).map((key) => caches.delete(key)));
     await self.clients.claim();
   })());
+});
+
+self.addEventListener("message", (event) => {
+  const data = event.data || {};
+  if (data.type === "logout") {
+    event.waitUntil(dropStaffCaches());
+    return;
+  }
+  if (data.type === "precache") event.waitUntil(ensurePublicPrecache());
 });
 
 self.addEventListener("fetch", (event) => {
@@ -138,8 +204,12 @@ self.addEventListener("fetch", (event) => {
     event.respondWith(fetch(request));
     return;
   }
-  const allowed = new Set(assetList());
   const path = url.pathname;
+  if (isGated(path)) {
+    event.respondWith(networkOnly(request));
+    return;
+  }
+  const allowed = new Set(assetList());
   if (request.mode !== "navigate" && !allowed.has(path)) return;
   event.respondWith(networkFirst(request, path, allowed));
 });
