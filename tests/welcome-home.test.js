@@ -9,7 +9,7 @@ const ics = fs.readFileSync(path.join(root, "calendar/grace-bjj-kids.ics"), "utf
 
 assert.ok(html.includes("Classes are free. We suggest a $5 donation per class to help cover cleaning supplies and similar costs."));
 assert.ok(html.includes("The donation is optional. Classes stay free either way."));
-assert.ok(html.includes('href="https://onrealm.org/GBCSalem/-/form/give/BJJ" target="_blank" rel="noopener"'));
+assert.ok(html.includes('href="https://onrealm.org/GBCSalem/-/form/give/BJJ" target="_blank" rel="noopener noreferrer"'));
 assert.ok(html.includes(">Give online</a>"));
 assert.equal(html.includes("venmo"), false);
 assert.equal(html.includes("paypal"), false);

@@ -125,7 +125,7 @@ body {
 
 .panel h2 {
   margin: 0 0 12px;
-  font-size: 0.72rem;
+  font-size: 0.95rem;
   letter-spacing: 0.14em;
   text-transform: uppercase;
   color: var(--ui-muted);
@@ -235,7 +235,7 @@ body {
 }
 
 .seg.ages small {
-  font-size: 0.62rem;
+  font-size: 0.75rem;
   font-weight: 500;
 }
 
@@ -327,13 +327,18 @@ body {
 .check {
   display: flex;
   align-items: center;
-  gap: 8px;
-  font-size: 0.9rem;
+  gap: 10px;
+  min-height: 44px;
+  font-size: 1rem;
   margin: 4px 0 10px;
   color: var(--ui-text);
 }
 
-.check input { accent-color: var(--accent-2); }
+.check input {
+  width: 22px;
+  height: 22px;
+  accent-color: var(--accent-2);
+}
 
 .btn-row {
   display: flex;
@@ -1011,8 +1016,8 @@ body:not(.role-admin) .admin-only { display: none !important; }
   min-height: 44px;
   display: flex;
   align-items: center;
-  font-size: 0.72rem;
-  letter-spacing: 0.14em;
+  font-size: 1rem;
+  letter-spacing: 0.04em;
   text-transform: uppercase;
   color: var(--ui-muted);
   font-weight: 700;
@@ -1489,7 +1494,7 @@ body.authed #mustChange { display: none !important; }
   .seg.ages button, .seg.views button, .stepper button, button, .btn {
     min-height: 44px;
   }
-  .field input, .field select, .field textarea, #checkinView input, #checkinView select, #accountPanel input, #accountPanel select, #progressView input, #progressView select, #progressView textarea {
+  .field input, .field select, .field textarea, #checkinView input, #checkinView select, #accountPanel input, #accountPanel select, #progressView input, #progressView select, #progressView textarea, #rosterList select, #staffList select {
     font-size: 16px;
     min-height: 44px;
   }
@@ -1525,6 +1530,15 @@ body.authed #mustChange { display: none !important; }
     min-width: 0;
   }
   .signin-row { grid-template-columns: 28px minmax(0, 1fr) 68px; min-width: 0; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
 }
 
 @media print {

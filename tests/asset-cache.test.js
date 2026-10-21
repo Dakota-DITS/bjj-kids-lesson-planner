@@ -39,5 +39,9 @@ const rootBlock = nginx.split("\n    location / {")[1];
 assert.ok(rootBlock.includes('Cache-Control "no-cache"'), "public HTML must revalidate");
 assert.ok(!nginx.includes("max-age=14400"), "nginx must not send the Cloudflare 4-hour cache");
 assert.ok(nginx.includes(`?v=${VERSION}`), "nginx should name the asset version the HTML uses");
+assert.ok(nginx.includes('X-Content-Type-Options "nosniff"'), "nginx needs nosniff");
+assert.ok(nginx.includes('X-Frame-Options "SAMEORIGIN"'), "nginx needs a frame policy");
+assert.ok(nginx.includes("Content-Security-Policy"), "nginx needs a content security policy");
+assert.ok(nginx.includes("Referrer-Policy"), "nginx needs a referrer policy");
 
 console.log("asset cache checks passed");

@@ -146,6 +146,7 @@ assert.ok(!text("offline.html").includes("/api/"));
 assert.ok(!text("app/offline.html").includes("/api/"));
 
 const nginx = text("deploy/nginx-bjj.conf");
+assert.ok(text("pwa.js").includes('"/sw.js" + (version ? "?v=" + encodeURIComponent(version) : "")'));
 assert.ok(nginx.includes("location = /sw.js"));
 assert.ok(nginx.includes("location = /manifest.webmanifest"));
 assert.ok(nginx.includes("location = /app/manifest.webmanifest"));
