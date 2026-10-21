@@ -2840,9 +2840,14 @@ function sparringSection(plan) {
           .filter((entry) => entry.taught && entry.attended.includes(kid.id))
           .map((entry) => entry.date)
           .filter(Boolean);
+        const promo = typeof P.promotionHint === "function" ? P.promotionHint(kid) : null;
+        const promoHtml = promo
+          ? `<p class="belt-promo${promo.ready ? " ready" : ""}">${esc(promo.text)}</p>`
+          : "";
         return `<article class="kid-block">
           <h3>${esc(kid.name)}</h3>
           <p>Age ${esc(kid.age)} · ${esc(P.beltLabel(kid.belt))} · ${esc(stripeText(kid))}</p>
+          ${promoHtml}
           <p>${esc(hintText)}</p>
           <p>${dates.length ? `${dates.length} taught class${dates.length === 1 ? "" : "es"}: ${esc(dates.join(", "))}` : "No taught classes logged yet."}</p>
           ${kidLevelEditor(kid)}
@@ -2854,12 +2859,15 @@ function sparringSection(plan) {
       .join("");
     const pastAge = state.ageGroup === "toddler" ? "toddler" : DATA.ageGroups[state.ageGroup] ? state.ageGroup : "mite";
     const themes = themesForAge(pastAge);
-    root.innerHTML = `
-      <h2>Progress · ${esc(group ? `${group.range} ${group.label}` : "")}</h2>
-      <div class="grid-2">
+    const stripeSettings = isAdmin()
+      ? `<div class="grid-2">
         <div class="field"><label for="stripeOwn">On their own before a stripe hint</label><input id="stripeOwn" type="number" min="1" max="40" value="${esc(state.progress.stripe.own)}" /></div>
         <div class="field"><label for="stripeAttend">Classes before a stripe hint</label><input id="stripeAttend" type="number" min="1" max="40" value="${esc(state.progress.stripe.attend)}" /></div>
-      </div>
+      </div>`
+      : `<p class="stripe-hint-readonly">Stripe hint: ${esc(state.progress.stripe.own)} techniques on their own + ${esc(state.progress.stripe.attend)} classes (set by admin)</p>`;
+    root.innerHTML = `
+      <h2>Progress · ${esc(group ? `${group.range} ${group.label}` : "")}</h2>
+      ${stripeSettings}
       <h3>Log a past class</h3>
       <div class="past-class">
         <div class="field"><label for="pastDate">Date</label><input id="pastDate" type="date" /></div>
@@ -4111,9 +4119,11 @@ function sparringSection(plan) {
       if (!raw) return;
       try {
         const data = JSON.parse(raw);
+        const progress = { ...(data.progress || {}) };
+        delete progress.stripe;
         await window.BJJ_API.send("POST", "/api/import", {
           roster: data.roster || [],
-          progress: data.progress || {},
+          progress,
         });
         localStorage.removeItem(IMPORT_KEY);
         await resync();

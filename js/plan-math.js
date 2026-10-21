@@ -297,6 +297,36 @@
     return BELT_LABELS[belt] || ADULT_BELT_LABELS[belt] || "White";
   }
 
+  // IBJJF General System of Graduation, Article 2: minimum age for each kids color group.
+  // White is any age. Four stripes is the degree count on a kids belt (Article 1 and the degree system).
+  const STRIPES_ON_BELT = 4;
+  const BELT_GROUP_MIN_AGE = { grey: 4, yellow: 7, orange: 10, green: 13 };
+
+  function beltColorGroup(belt) {
+    const group = String(belt || "").split("-")[0];
+    return Object.prototype.hasOwnProperty.call(BELT_GROUP_MIN_AGE, group) ? group : "";
+  }
+
+  function promotionHint(kid) {
+    const stripes = clampInt(kid && kid.stripes, 0, STRIPES_ON_BELT, 0);
+    if (stripes < STRIPES_ON_BELT) return null;
+    const idx = BELT_ORDER.indexOf(kid && kid.belt);
+    if (idx < 0 || idx + 1 >= BELT_ORDER.length) return null;
+    const next = BELT_ORDER[idx + 1];
+    const minAge = BELT_GROUP_MIN_AGE[beltColorGroup(next)];
+    const age = Math.round(Number(kid && kid.age));
+    const ready = Number.isFinite(age) && age >= minAge;
+    const label = BELT_LABELS[next];
+    return {
+      ready,
+      belt: next,
+      label,
+      text: ready
+        ? `Ready for next belt: ${label}. The head instructor decides.`
+        : `4 stripes, waiting on age for ${label}. The head instructor decides.`,
+    };
+  }
+
   function canHeadClass(person) {
     if (!person) return false;
     return ADULT_BELTS.indexOf(person.belt) >= 1;
@@ -700,6 +730,10 @@ function sanitizeProgress(raw) {
     sortByRank,
     ADULT_BELTS,
     beltLabel,
+    STRIPES_ON_BELT,
+    BELT_GROUP_MIN_AGE,
+    beltColorGroup,
+    promotionHint,
     canHeadClass,
     canAssistClass,
     ratioStatus,
