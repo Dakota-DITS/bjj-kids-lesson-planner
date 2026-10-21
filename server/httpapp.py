@@ -1094,6 +1094,23 @@ class Api:
             parts.append("Secure")
         return "; ".join(parts)
 
+    def static_cache_control(self, rel):
+        path = (rel or "").split("?", 1)[0]
+        if path in ("/app/manifest.webmanifest", "/app/offline.html") or path.endswith(".webmanifest") or os.path.basename(path) == "sw.js":
+            return "no-cache"
+        gated = (
+            path.startswith("/js/")
+            or path.startswith("/vendor/")
+            or path.startswith("/app/")
+            or path == "/css/styles.css"
+        )
+        if gated:
+            return "private, no-store"
+        ext = os.path.splitext(path)[1].lower()
+        if ext in (".html", ".js", ".css") or path.endswith("/") or path in ("", "/"):
+            return "no-cache"
+        return ""
+
     def serve_static(self, handler, path):
         root = os.path.realpath(self.cfg["static_root"])
         rel = path.split("?", 1)[0]
@@ -1125,13 +1142,17 @@ class Api:
             ".gif": "image/gif",
             ".ttf": "font/ttf",
             ".json": "application/json",
-            ".ico": "image/png",
+            ".ico": "image/x-icon",
+            ".webmanifest": "application/manifest+json",
         }.get(ext, "application/octet-stream")
         with open(target, "rb") as handle:
             blob = handle.read()
         handler.send_response(200)
         handler.send_header("Content-Type", ctype)
         handler.send_header("Content-Length", str(len(blob)))
+        cache = self.static_cache_control(rel)
+        if cache:
+            handler.send_header("Cache-Control", cache)
         handler.send_header("X-Content-Type-Options", "nosniff")
         handler.end_headers()
         if handler.command != "HEAD":
