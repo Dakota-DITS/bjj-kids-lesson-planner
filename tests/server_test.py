@@ -198,6 +198,134 @@ class ApiTest(unittest.TestCase):
         status, auth = admin.call("GET", "/api/auth/nginx", raw=True)
         self.assertEqual(status, 204)
 
+    def test_blank_cards_are_issued_once_and_keep_old_rows(self):
+        path = os.path.join(self.tmp.name, "legacy.db")
+        conn = connect(path)
+        conn.execute(
+            """
+            CREATE TABLE students (
+              id TEXT PRIMARY KEY,
+              name TEXT NOT NULL,
+              age INTEGER NOT NULL,
+              belt TEXT NOT NULL,
+              stripes INTEGER NOT NULL,
+              created_at TEXT NOT NULL
+            )
+            """
+        )
+        conn.execute(
+            "INSERT INTO students (id, name, age, belt, stripes, created_at) VALUES (?, ?, ?, ?, ?, ?)",
+            ("s-old", "Existing", 8, "white", 0, "2026-01-01T00:00:00Z"),
+        )
+        conn.commit()
+        migrate(conn)
+        migrate(conn)
+        kept = conn.execute("SELECT name FROM students WHERE id = ?", ("s-old",)).fetchone()
+        self.assertEqual(kept["name"], "Existing")
+        self.assertIsNotNone(conn.execute("SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'cards'").fetchone())
+        conn.close()
+
+        admin = self.client()
+        admin.login("dakota", "correct-horse")
+        teacher = self.client()
+        teacher.login("alex", "correct-horse")
+
+        status, denied = teacher.call("POST", "/api/cards", {"count": 2})
+        self.assertEqual(status, 403)
+
+        status, made = admin.call("POST", "/api/cards", {"count": 3})
+        self.assertEqual(status, 201)
+        codes = [card["code"] for card in made["cards"]]
+        self.assertEqual(len(set(codes)), 3)
+        self.assertTrue(all(card["status"] == "unclaimed" and card["code"].startswith("b-") and len(card["code"]) > 20 for card in made["cards"]))
+
+        status, clamped = admin.call("POST", "/api/cards", {"count": 0})
+        self.assertEqual(len(clamped["cards"]), 1)
+        status, wide = admin.call("POST", "/api/cards", {"count": 99})
+        self.assertEqual(len(wide["cards"]), 24)
+
+        forged = "b-" + "ab" * 16
+        status, missing = teacher.call(
+            "POST",
+            f"/api/cards/{forged}/claim",
+            {"name": "Ghost", "ageGroup": "mite", "belt": "white", "stripes": 0},
+        )
+        self.assertEqual(status, 404)
+
+        code = codes[0]
+        status, claimed = teacher.call(
+            "POST",
+            f"/api/cards/{code}/claim",
+            {"name": "Jordan", "ageGroup": "peewee", "belt": "white", "stripes": 1},
+        )
+        self.assertEqual(status, 201)
+        self.assertEqual(claimed["student"]["name"], "Jordan")
+        self.assertEqual(claimed["student"]["age"], 8)
+        self.assertNotEqual(claimed["student"]["id"], code)
+        self.assertEqual(claimed["card"]["status"], "claimed")
+        self.assertEqual(claimed["card"]["studentId"], claimed["student"]["id"])
+
+        status, again = admin.call(
+            "POST",
+            f"/api/cards/{code}/claim",
+            {"name": "Jordan Two", "age": 9, "belt": "white", "stripes": 0},
+        )
+        self.assertEqual(status, 409)
+
+        status, boot = teacher.call("GET", "/api/bootstrap")
+        self.assertEqual(status, 200)
+        linked = next(card for card in boot["cards"] if card["code"] == code)
+        self.assertEqual(linked["studentId"], claimed["student"]["id"])
+        status, present = teacher.call(
+            "POST",
+            "/api/attendance",
+            {"date": "2026-11-10", "ageGroup": "peewee", "attended": [claimed["student"]["id"]], "taught": False},
+        )
+        self.assertEqual(status, 200)
+        self.assertIn(claimed["student"]["id"], present["attended"])
+
+        status, other = admin.call("POST", "/api/students", {"name": "Avery", "age": 6, "belt": "grey", "stripes": 0})
+        self.assertEqual(status, 201)
+        self.assertFalse(any(card["code"] == other["id"] for card in boot["cards"]))
+
+        status, denied = teacher.call("PATCH", f"/api/cards/{codes[1]}", {"studentId": other["id"]})
+        self.assertEqual(status, 403)
+        status, linked_blank = admin.call("PATCH", f"/api/cards/{codes[1]}", {"studentId": other["id"]})
+        self.assertEqual(status, 200)
+        self.assertEqual(linked_blank["card"]["studentId"], other["id"])
+        self.assertEqual(linked_blank["card"]["status"], "claimed")
+        status, second = teacher.call(
+            "POST",
+            f"/api/cards/{codes[1]}/claim",
+            {"name": "Someone", "age": 7, "belt": "white", "stripes": 0},
+        )
+        self.assertEqual(status, 409)
+
+        status, denied = teacher.call("POST", f"/api/cards/{codes[2]}/retire")
+        self.assertEqual(status, 403)
+        status, retired = admin.call("POST", f"/api/cards/{codes[2]}/retire")
+        self.assertEqual(status, 200)
+        self.assertEqual(retired["card"]["status"], "retired")
+        status, blocked = teacher.call(
+            "POST",
+            f"/api/cards/{codes[2]}/claim",
+            {"name": "Late", "ageGroup": "mite"},
+        )
+        self.assertEqual(status, 409)
+
+        status, restored = admin.call("PATCH", f"/api/cards/{codes[2]}", {"studentId": other["id"]})
+        self.assertEqual(status, 200)
+        self.assertEqual(restored["card"]["status"], "claimed")
+        self.assertEqual(restored["card"]["studentId"], other["id"])
+
+        status, removed = admin.call("DELETE", f"/api/students/{claimed['student']['id']}")
+        self.assertEqual(status, 200)
+        status, listing = admin.call("GET", "/api/cards")
+        gone = next(card for card in listing["cards"] if card["code"] == code)
+        self.assertEqual(gone["status"], "retired")
+        status, removed = admin.call("DELETE", f"/api/students/{other['id']}")
+        self.assertEqual(status, 200)
+
 
 def _handler(api):
     from http.server import BaseHTTPRequestHandler

@@ -10,7 +10,12 @@
 <body>
   <p id="gate" class="gate">Checking the teacher login…</p>
   <div class="app">
-    <aside class="sidebar">
+    <div class="phone-bar">
+      <button type="button" class="menu-toggle" id="menuToggle" aria-expanded="false" aria-controls="sidebar">Menu</button>
+      <span>Kids class</span>
+    </div>
+    <button type="button" class="scrim" id="menuScrim" aria-label="Close menu" tabindex="-1"></button>
+    <aside class="sidebar" id="sidebar" tabindex="-1">
       <div class="brand">
         <img class="brand-logo" src="/img/logo/grace-logo-mark-reversed-transparent.png" alt="Grace Jiu Jitsu" />
         <div class="brand-text">
@@ -258,26 +263,27 @@
           <button class="ghost" id="logoutBtn" type="button">Log out</button>
           <a class="btn" href="/">Welcome page</a>
         </div>
-        <form id="passwordForm">
+        <form id="passwordForm" novalidate>
           <div class="field">
             <label for="currentPassword">Current password</label>
             <input id="currentPassword" type="password" autocomplete="current-password" />
           </div>
           <div class="field">
             <label for="nextPassword">New password</label>
-            <input id="nextPassword" type="password" autocomplete="new-password" minlength="10" />
+            <input id="nextPassword" type="password" autocomplete="new-password" />
           </div>
+          <p class="form-note" id="passwordNote" role="alert"></p>
           <button class="ghost" type="submit">Change password</button>
         </form>
         <div id="userAdmin" class="admin-only">
-          <form id="userForm">
+          <form id="userForm" novalidate>
             <div class="field">
               <label for="newUsername">New login</label>
               <input id="newUsername" autocomplete="off" maxlength="32" />
             </div>
             <div class="field">
               <label for="newUserPassword">Password</label>
-              <input id="newUserPassword" type="password" autocomplete="new-password" minlength="10" />
+              <input id="newUserPassword" type="password" autocomplete="new-password" />
             </div>
             <div class="field">
               <label for="newUserRole">Role</label>
@@ -286,6 +292,7 @@
                 <option value="admin">Admin</option>
               </select>
             </div>
+            <p class="form-note" id="userNote" role="alert"></p>
             <button class="ghost" type="submit">Add login</button>
           </form>
           <div id="userList"></div>
@@ -323,12 +330,72 @@
           <button class="ghost" id="photoBtn" type="button">Upload or take a photo</button>
           <input id="photoFile" type="file" accept="image/*" capture="environment" class="hidden" />
         </div>
+        <form id="claimForm" class="claim-form hidden" novalidate>
+          <h3>Add new student</h3>
+          <p class="hint">This card is not linked yet. Saving adds the student and checks them in.</p>
+          <div class="grid-2">
+            <div class="field grow">
+              <label for="claimName">Name</label>
+              <input id="claimName" maxlength="40" autocomplete="off" />
+            </div>
+            <div class="field">
+              <label for="claimAge">Age</label>
+              <input id="claimAge" type="number" inputmode="numeric" min="3" max="17" />
+            </div>
+            <div class="field">
+              <label for="claimGroup">Class</label>
+              <select id="claimGroup">
+                <option value="">Choose a class</option>
+                <option value="toddler">Toddler 3–5</option>
+                <option value="mite">Mighty Mite 4–6</option>
+                <option value="peewee">Pee Wee 7–9</option>
+                <option value="junior">Junior 10–12</option>
+                <option value="teen">Teen 13–15</option>
+              </select>
+            </div>
+            <div class="field">
+              <label for="claimBelt">Belt</label>
+              <select id="claimBelt"></select>
+            </div>
+            <div class="field">
+              <label for="claimStripes">Stripes</label>
+              <select id="claimStripes">
+                <option value="0">0</option>
+                <option value="1">1</option>
+                <option value="2">2</option>
+                <option value="3">3</option>
+                <option value="4">4</option>
+              </select>
+            </div>
+          </div>
+          <p class="form-note" id="claimNote" role="alert"></p>
+          <div class="btn-row">
+            <button class="primary" type="submit">Save student</button>
+            <button class="ghost" id="claimCancel" type="button">Cancel</button>
+          </div>
+        </form>
         <ul id="checkinList" class="checkin-list"></ul>
         <div class="btn-row">
           <button class="ghost" id="printFullBtn" type="button">Full-page cards</button>
           <button class="ghost" id="printWalletBtn" type="button">Wallet cards</button>
           <button class="ghost" id="printSigninBtn" type="button">Sign-in sheet</button>
         </div>
+        <div class="admin-only blank-tools">
+          <h3>Blank cards</h3>
+          <p class="hint">Each card gets its own code when you print it. Write the name and class, then scan the card to add the student.</p>
+          <div class="field">
+            <label for="blankCount">How many</label>
+            <input id="blankCount" type="number" inputmode="numeric" min="1" max="24" value="8" />
+          </div>
+          <div class="btn-row">
+            <button class="ghost" id="blankWalletBtn" type="button">Blank wallet cards</button>
+            <button class="ghost" id="blankFullBtn" type="button">Blank full-page cards</button>
+          </div>
+        </div>
+        <details class="admin-only" id="cardRecords">
+          <summary>Card records</summary>
+          <div id="cardRecordList"></div>
+        </details>
       </section>
       <button class="primary no-print hidden" id="printTheseBtn" type="button">Print these</button>
       <section class="work-view hidden" id="cardView"></section>

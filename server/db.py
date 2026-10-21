@@ -23,6 +23,14 @@ BELTS = [
 ]
 LEVELS = ("introduced", "practicing", "help", "own")
 AGE_GROUPS = ("mite", "peewee", "junior", "teen", "toddler")
+# Representative age when a blank card is claimed with a class and no number.
+AGE_GROUP_AGES = {
+    "toddler": 4,
+    "mite": 5,
+    "peewee": 8,
+    "junior": 11,
+    "teen": 14,
+}
 
 
 def utcnow():
@@ -128,6 +136,15 @@ def migrate(conn):
           published INTEGER NOT NULL DEFAULT 0,
           created_at TEXT NOT NULL
         );
+        CREATE TABLE IF NOT EXISTS cards (
+          code TEXT PRIMARY KEY,
+          status TEXT NOT NULL CHECK(status IN ('unclaimed', 'claimed', 'retired')),
+          student_id TEXT,
+          created_at TEXT NOT NULL,
+          claimed_at TEXT,
+          retired_at TEXT
+        );
+        CREATE INDEX IF NOT EXISTS cards_student_idx ON cards(student_id);
         """
     )
     conn.commit()
