@@ -44,6 +44,7 @@
     hadInstructor: false,
     staffDefaulted: false,
     helpersApplied: false,
+    freeHelperNames: [],
     ratioSource: "roster",
     levelDrafts: {},
   };
@@ -55,6 +56,41 @@
 
   const $ = (id) => document.getElementById(id);
   const esc = P.escapeHtml;
+  const ADULT_BELT_IDS = ["white", "blue", "purple", "brown", "black"];
+
+  function listen(id, type, handler) {
+    const el = $(id);
+    if (!el) return null;
+    el.addEventListener(type, handler);
+    return el;
+  }
+
+  function adultBelts() {
+    return Array.isArray(P.ADULT_BELTS) && P.ADULT_BELTS.length ? P.ADULT_BELTS : ADULT_BELT_IDS;
+  }
+
+  function canHead(person) {
+    if (!person) return false;
+    if (typeof P.canHeadClass === "function") return P.canHeadClass(person);
+    return adultBelts().indexOf(person.belt) >= 1;
+  }
+
+  function canAssist(person) {
+    if (!person) return false;
+    if (typeof P.canAssistClass === "function") return P.canAssistClass(person);
+    const rank = adultBelts().indexOf(person.belt);
+    if (rank >= 1) return true;
+    return person.belt === "white" && P.clampInt(person.stripes, 0, 4, 0) >= 2;
+  }
+
+  function runPanel(label, fn) {
+    try {
+      return fn();
+    } catch (err) {
+      reportPanel(label, err);
+      return undefined;
+    }
+  }
 
   function toast(msg) {
     const el = $("toast");
@@ -73,7 +109,7 @@
   }
 
   function staffById(id) {
-    return state.staff.find((person) => person.id === id) || null;
+    return staffList().find((person) => person.id === id) || null;
   }
 
   function normalizeStaff(raw) {
@@ -84,11 +120,34 @@
     return {
       id,
       name,
-      belt: P.ADULT_BELTS.includes(raw.belt) ? raw.belt : "white",
+      belt: adultBelts().includes(raw.belt) ? raw.belt : "white",
       stripes: P.clampInt(raw.stripes, 0, 4, 0),
       userId: P.cleanId(raw.userId) || "",
       login: !!(raw.login || raw.userId),
     };
+  }
+
+  function staffList() {
+    return Array.isArray(state.staff) ? state.staff : [];
+  }
+
+  function assistantIdList() {
+    if (!Array.isArray(state.assistantIds)) state.assistantIds = [];
+    return state.assistantIds;
+  }
+
+  function personNames(value) {
+    const list = Array.isArray(value) ? value : typeof value === "string" ? value.split(",") : [];
+    return list
+      .map((item) => {
+        if (item && typeof item === "object") return String(item.name || "").trim();
+        return String(item == null ? "" : item).trim();
+      })
+      .filter(Boolean);
+  }
+
+  function reportPanel(label, err) {
+    console.error(label, err);
   }
 
   function instructorName() {
@@ -101,14 +160,17 @@
   }
 
   function assistantPeople() {
-    return state.assistantIds.map((id) => staffById(id)).filter(Boolean);
+    return assistantIdList().map((id) => staffById(id)).filter(Boolean);
   }
 
   function helperNames() {
     const names = assistantPeople().map((person) => person.name);
-    if (names.length) return names;
-    if (!state.helpersApplied && state.pendingHelperNames.length) return state.pendingHelperNames.slice();
-    return [];
+    const pending = Array.isArray(state.pendingHelperNames) ? state.pendingHelperNames : [];
+    if (!state.helpersApplied && pending.length) return pending.slice();
+    const free = Array.isArray(state.freeHelperNames) ? state.freeHelperNames : [];
+    return names.concat(
+      free.filter((name) => !names.some((have) => have.toLowerCase() === String(name).toLowerCase()))
+    );
   }
 
   function fill(str, extra = {}) {
@@ -219,14 +281,11 @@
       state.assistantIds = s.assistantIds.map((id) => P.cleanId(id)).filter(Boolean);
       state.helpersApplied = true;
     }
-    const helperNames = Array.isArray(s.assistants)
-      ? s.assistants
-      : typeof s.helper === "string"
-        ? s.helper.split(",")
-        : [];
-    state.pendingHelperNames = helperNames.map((name) => String(name || "").trim()).filter(Boolean);
+    const fromAssistants = personNames(s.assistants);
+    state.pendingHelperNames = fromAssistants.length ? fromAssistants : personNames(s.helper);
     Object.entries(text).forEach(([key, id]) => {
-      if (typeof s[key] === "string") $(id).value = s[key];
+      const el = $(id);
+      if (el && typeof s[key] === "string") el.value = s[key];
     });
     const nums = {
       totalMin: [15, 120],
@@ -248,9 +307,11 @@
       if (s[key] == null || s[key] === "") return;
       const n = Number(s[key]);
       if (!Number.isFinite(n)) return;
-      $(key).value = String(P.clampNum(n, range[0], range[1], n));
+      const el = $(key);
+      if (el) el.value = String(P.clampNum(n, range[0], range[1], n));
     });
-    if (typeof s.firstClass === "boolean") $("firstClass").checked = s.firstClass;
+    const firstClass = $("firstClass");
+    if (firstClass && typeof s.firstClass === "boolean") firstClass.checked = s.firstClass;
     if (typeof s.themeLock === "string") state.pendingTheme = s.themeLock;
     if (s.preset === "toddler" || s.preset === "grace") state.preset = s.preset;
     if (DATA.ageGroups[s.ageGroup]) setAgeGroup(s.ageGroup, false);
@@ -438,7 +499,7 @@
       : settings.firstClass
         ? DATA.graceFirstOpening
         : DATA.graceOpening;
-    return src.map((item) => ({
+    return (Array.isArray(src) ? src : []).map((item) => ({
       ...item,
       catalogMinutes: item.weight || 3,
       catalogReps: 1,
@@ -455,31 +516,37 @@
   }
 
   function sectionParts(content, settings) {
+    content = content || {};
+    settings = settings || {};
+    const warmup = Array.isArray(content.warmup) ? content.warmup : [];
+    const base = Array.isArray(content.base) ? content.base : [];
+    const lesson = Array.isArray(content.lesson) ? content.lesson : [];
+    const games = Array.isArray(content.games) ? content.games : [];
     const waterSec = Math.round(P.clampNum(settings.waterMin, 0, 10, 1) * 60);
     const parts = [{ id: "opening", flex: false, seconds: Math.round(settings.openingMin * 60) }];
     const grace = content.mode === "grace";
-    const wantWater1 = content.warmup.length > 0 && waterSec > 0;
+    const wantWater1 = warmup.length > 0 && waterSec > 0;
     const wantWater2 =
       waterSec > 0 &&
       (grace
-        ? content.lesson.length + content.base.length > 0 && (content.games.length > 0 || content.sparring)
-        : content.lesson.length > 0 && content.games.length > 0);
-    if (content.warmup.length) {
+        ? lesson.length + base.length > 0 && (games.length > 0 || content.sparring)
+        : lesson.length > 0 && games.length > 0);
+    if (warmup.length) {
       parts.push(
         grace
           ? { id: "warmup", flex: false, seconds: 5 * 60 }
-          : { id: "warmup", flex: true, weight: prefSum(content.warmup) }
+          : { id: "warmup", flex: true, weight: prefSum(warmup) }
       );
     }
     if (wantWater1) parts.push({ id: "water1", flex: false, seconds: waterSec });
-    if (grace && content.base.length) parts.push({ id: "base", flex: true, weight: prefSum(content.base) });
-    if (content.lesson.length) parts.push({ id: "lesson", flex: true, weight: prefSum(content.lesson) });
+    if (grace && base.length) parts.push({ id: "base", flex: true, weight: prefSum(base) });
+    if (lesson.length) parts.push({ id: "lesson", flex: true, weight: prefSum(lesson) });
     if (wantWater2) parts.push({ id: "water2", flex: false, seconds: waterSec });
-    if (content.games.length) {
+    if (games.length) {
       parts.push(
         grace
           ? { id: "games", flex: false, seconds: 5 * 60 }
-          : { id: "games", flex: true, weight: prefSum(content.games) }
+          : { id: "games", flex: true, weight: prefSum(games) }
       );
     }
     if (content.sparring) parts.push({ id: "sparring", flex: true, weight: 6 * 60 });
@@ -488,12 +555,13 @@
   }
 
   function stampItems(items, start, budget, startMinutes) {
+    const list = (Array.isArray(items) ? items : []).filter((item) => item && typeof item === "object");
     const times = P.allocateItemTimes(
-      items.map((item) => item.prefMinutes || item.catalogMinutes || 2),
+      list.map((item) => item.prefMinutes || item.catalogMinutes || 2),
       budget
     );
     let cursor = start;
-    return items.map((item, index) => {
+    return list.map((item, index) => {
       const duration = times[index] || 0;
       const block = {
         ...item,
@@ -516,22 +584,29 @@
   }
 
 function assembleGrace(content, settings) {
+  settings = settings || {};
+  content = content || {};
   const total = Math.round(P.clampNum(settings.totalMin, 15, 120, 45) * 60);
   const startMinutes = P.parseStartMinutes(settings.startTime);
   const sec = (min) => Math.max(0, Math.round(Number(min) * 60));
+  const opening = Array.isArray(content.opening) ? content.opening : [];
+  const warmup = Array.isArray(content.warmup) ? content.warmup : [];
+  const base = Array.isArray(content.base) ? content.base : [];
+  const lesson = Array.isArray(content.lesson) ? content.lesson : [];
+  const games = Array.isArray(content.games) ? content.games : [];
   const requested = {
-    opening: content.opening.length ? sec(settings.openingMin) : 0,
-    warmup: content.warmup.length ? sec(settings.warmupMin) : 0,
-    base: content.base.length ? sec(settings.baseMin) : 0,
-    lesson: content.lesson.length ? sec(settings.lessonMin) : 0,
+    opening: opening.length ? sec(settings.openingMin) : 0,
+    warmup: warmup.length ? sec(settings.warmupMin) : 0,
+    base: base.length ? sec(settings.baseMin) : 0,
+    lesson: lesson.length ? sec(settings.lessonMin) : 0,
     water: sec(settings.waterMin),
     sparring: sec(settings.sparringMin),
-    game: content.games.length ? sec(settings.gameMin) : 0,
+    game: games.length ? sec(settings.gameMin) : 0,
     finish: sec(settings.finishMin),
   };
   const fit = P.fitClassTimes(requested, total);
   const byId = { ...fit.seconds };
-  if (!content.lesson.length && byId.lesson) {
+  if (!lesson.length && byId.lesson) {
     byId.game += byId.lesson;
     byId.lesson = 0;
   }
@@ -569,19 +644,19 @@ function assembleGrace(content, settings) {
     };
     cursor += dur;
   };
-  placeItems("opening", content.opening);
-  placeItems("warmup", content.warmup);
-  placeItems("base", content.base);
-  placeItems("lesson", content.lesson);
+  placeItems("opening", opening);
+  placeItems("warmup", warmup);
+  placeItems("base", base);
+  placeItems("lesson", lesson);
   placeMark("water");
   placeMark("sparring");
-  placeItems("games", content.games, gameMeta(content.games, "grace"), "game");
+  placeItems("games", games, gameMeta(games, "grace"), "game");
   placeMark("finish");
   if (cursor !== total && plan.lesson) {
     const extra = total - cursor;
     plan.lesson.duration += extra;
     plan.lesson.when = P.clockRange(startMinutes, plan.lesson.start, plan.lesson.duration);
-    plan.lesson.items = stampItems(content.lesson, plan.lesson.start, plan.lesson.duration, startMinutes);
+    plan.lesson.items = stampItems(lesson, plan.lesson.start, plan.lesson.duration, startMinutes);
     cursor = plan.lesson.start + plan.lesson.duration;
     ["water", "sparring", "games", "finish"].forEach((id) => {
       if (!plan[id]) return;
@@ -734,6 +809,7 @@ function themeGamePrefer(themeId, age) {
 }
 
   function cleanItem(item) {
+    if (!item || typeof item !== "object") return null;
     const catalogMinutes = Number(item.catalogMinutes) || Number(item.prefMinutes) || 2;
     const catalogReps = Math.max(1, Number(item.catalogReps) || 1);
     const reps = Math.max(1, Math.min(20, Number(item.reps) || catalogReps));
@@ -744,6 +820,10 @@ function themeGamePrefer(themeId, age) {
       reps,
       prefMinutes: P.prefMinutes(catalogMinutes, catalogReps, reps),
     };
+  }
+
+  function cleanItems(items) {
+    return (Array.isArray(items) ? items : []).map(cleanItem).filter(Boolean);
   }
 
 function buildPlan(opts = {}) {
@@ -822,11 +902,11 @@ function buildPlan(opts = {}) {
     state.preset = mode;
     const content = {
       mode,
-      opening: (state.plan.opening?.items || openingItems(settings)).map(cleanItem),
-      warmup: (state.plan.warmup?.items || []).map(cleanItem),
-      base: (state.plan.base?.items || []).map(cleanItem),
-      lesson: (state.plan.lesson?.items || []).map(cleanItem),
-      games: (state.plan.games?.items || []).map(cleanItem),
+      opening: cleanItems(state.plan.opening?.items || openingItems(settings)),
+      warmup: cleanItems(state.plan.warmup?.items),
+      base: cleanItems(state.plan.base?.items),
+      lesson: cleanItems(state.plan.lesson?.items),
+      games: cleanItems(state.plan.games?.items),
       sparring: false,
       liveSparring: liveSparring(settings, mode),
       theme: state.plan.theme || null,
@@ -847,7 +927,7 @@ function buildPlan(opts = {}) {
     const key = section === "game" ? "games" : section;
     const cat = section === "game" ? "game" : section;
     const age = state.plan.mode === "toddler" ? "toddler" : readSettings().ageGroup;
-    const current = (state.plan[key]?.items || []).map(cleanItem);
+    const current = cleanItems(state.plan[key]?.items);
     let next = current;
     if (count < current.length) next = current.slice(0, count);
     else if (count > current.length) {
@@ -951,6 +1031,7 @@ function bodyHtml(item) {
 }
 
   function renderItem(item, section) {
+    if (!item || typeof item !== "object") return "";
     const equip = item.equipment ? `<p>Equipment: ${esc(fill(item.equipment, item))}</p>` : "";
     return `
       <div class="item">
@@ -967,6 +1048,7 @@ function bodyHtml(item) {
   }
 
   function staffRows(settings) {
+    settings = settings || {};
     if (settings.preset === "toddler") {
       const rows = settings.firstClass ? DATA.staffFirst : DATA.staffRegular;
       return rows
@@ -979,8 +1061,9 @@ function bodyHtml(item) {
         )
         .join("");
     }
-    const teacher = settings.instructor || "the teacher";
-    const assistants = Array.isArray(settings.assistants) ? settings.assistants.filter(Boolean) : [];
+    const teacher = typeof settings.instructor === "string" && settings.instructor.trim() ? settings.instructor.trim() : "the teacher";
+    const namedAssistants = personNames(settings.assistants);
+    const assistants = namedAssistants.length ? namedAssistants : personNames(settings.helper);
     const job =
       "Must be a two-stripe white belt or above. Help run drills, supervise sparring, and stay with a child who needs a break.";
     const rows = [
@@ -1071,9 +1154,14 @@ function sparringSection(plan) {
       </section>`;
   }
 
+  function blockItems(block) {
+    const items = block && Array.isArray(block.items) ? block.items : [];
+    return items.filter((item) => item && typeof item === "object");
+  }
+
   function renderPlan() {
     const plan = state.plan;
-    if (!plan) return;
+    if (!plan || !plan.settings) return;
     const s = plan.settings;
     const ratio = P.ratioStatus(s.kidCount, s.adultCount);
     const span = P.classSpan(plan.startMinutes, s.totalMin);
@@ -1143,7 +1231,7 @@ function sparringSection(plan) {
               <h2 class="block-title"><span class="when">${esc(plan.opening.when)}</span> ${
                 plan.mode === "grace" ? "Line up and come on the mat" : "Get ready and come on the mat"
               }</h2>
-              ${plan.opening.items.map((item) => renderItem(item, "opening")).join("")}
+              ${blockItems(plan.opening).map((item) => renderItem(item, "opening")).join("")}
             </section>`
           : ""
       }
@@ -1154,7 +1242,7 @@ function sparringSection(plan) {
                 plan.mode === "grace" ? "Fun warm-up" : "Warm-up"
               }</h2>
               <p class="callout">${esc(paceNote)}</p>
-              ${plan.warmup.items.map((item) => renderItem(item, "warmup")).join("")}
+              ${blockItems(plan.warmup).map((item) => renderItem(item, "warmup")).join("")}
               <div class="item"><p>If they get wild:</p>${sayHtml(DATA.wildReset)}</div>
             </section>`
           : ""
@@ -1164,7 +1252,7 @@ function sparringSection(plan) {
         plan.base
           ? `<section class="block">
               <h2 class="block-title"><span class="when">${esc(plan.base.when)}</span> Base</h2>
-              ${plan.base.items.map((item) => renderItem(item, "base")).join("")}
+              ${blockItems(plan.base).map((item) => renderItem(item, "base")).join("")}
             </section>`
           : ""
       }
@@ -1181,7 +1269,7 @@ function sparringSection(plan) {
                   ? `<p class="focus">${esc(plan.theme.reason)}. ${esc(group ? group.focus : "")}</p>`
                   : ""
               }
-              ${plan.lesson.items.map((item) => renderItem(item, "lesson")).join("")}
+              ${blockItems(plan.lesson).map((item) => renderItem(item, "lesson")).join("")}
             </section>`
           : ""
       }
@@ -1195,7 +1283,7 @@ function sparringSection(plan) {
                 plan.games.title || "Games"
               )}</h2>
               ${plan.games.note ? `<p>${esc(plan.games.note)}</p>` : ""}
-              ${plan.games.items.map((item) => renderItem(item, "game")).join("")}
+              ${blockItems(plan.games).map((item) => renderItem(item, "game")).join("")}
             </section>`
           : ""
       }
@@ -1555,14 +1643,16 @@ function sparringSection(plan) {
   }
 
   function renderLibrary() {
+    const list = $("libraryList");
+    if (!list) return;
     const cat = state.libCat;
     const items = allActivities()
       .filter((activity) => activity.category === cat)
       .sort((a, b) => {
         if (!!a.builtin !== !!b.builtin) return a.builtin ? 1 : -1;
-        return a.name.localeCompare(b.name);
+        return String(a.name || "").localeCompare(String(b.name || ""));
       });
-    $("libraryList").innerHTML = items
+    list.innerHTML = items
       .map((activity) => {
         const off = state.disabled.includes(activity.id);
         const pin = state.pinned.includes(activity.id);
@@ -1646,7 +1736,8 @@ function sparringSection(plan) {
       const custom = state.custom.filter((activity) => activity.category === cat).length;
       return `${n} ${catLabel(cat).toLowerCase()}${custom ? ` (${custom} yours)` : ""}`;
     });
-    $("poolMeta").textContent = "Pool: " + counts.join(" · ");
+    const meta = $("poolMeta");
+    if (meta) meta.textContent = "Pool: " + counts.join(" · ");
     updateTimeSum();
     updateScheduleHint();
   }
@@ -1654,6 +1745,7 @@ function sparringSection(plan) {
   function updateTimeSum() {
     const s = readSettings();
     const el = $("timeSum");
+    if (!el) return;
     const ratio = P.ratioStatus(s.kidCount, s.adultCount);
     const ratioEl = $("ratioNote");
     if (ratioEl) {
@@ -1710,10 +1802,11 @@ function sparringSection(plan) {
   function writeClassCounts() {
     const date = $("date") && $("date").value;
     const entry = date ? classFor(date, state.ageGroup) : null;
-    const fromAttendance = !!(entry && entry.attended && entry.attended.length);
+    const attended = entry && Array.isArray(entry.attended) ? entry.attended : [];
+    const fromAttendance = attended.length > 0;
     state.ratioSource = fromAttendance ? "attendance" : "roster";
-    const kids = fromAttendance ? entry.attended.length : state.roster.length;
-    const adults = (state.instructorId || state.instructorName ? 1 : 0) + state.assistantIds.length;
+    const kids = fromAttendance ? attended.length : Array.isArray(state.roster) ? state.roster.length : 0;
+    const adults = (state.instructorId || state.instructorName ? 1 : 0) + assistantIdList().length;
     if ($("kidCount")) $("kidCount").value = String(P.clampInt(kids, 0, 40, 0));
     if ($("adultCount")) $("adultCount").value = String(P.clampInt(adults, 0, 20, 0));
   }
@@ -1725,7 +1818,7 @@ function sparringSection(plan) {
   }
 
   function adultBeltOptions(selected) {
-    return P.ADULT_BELTS.map(
+    return adultBelts().map(
       (id) => `<option value="${esc(id)}"${id === selected ? " selected" : ""}>${esc(P.beltLabel(id))}</option>`
     ).join("");
   }
@@ -1743,7 +1836,7 @@ function sparringSection(plan) {
   }
 
   function settleStaffSelection() {
-    const people = state.staff;
+    const people = staffList();
     if (!state.hadInstructor && !state.staffDefaulted) {
       const mine = people.find((person) => person.userId && state.session && person.userId === state.session.id);
       if (mine) {
@@ -1752,21 +1845,27 @@ function sparringSection(plan) {
       }
       state.staffDefaulted = true;
     } else if (state.instructorName && !staffById(state.instructorId)) {
-      const match = people.find((person) => person.name.toLowerCase() === state.instructorName.toLowerCase());
+      const wanted = String(state.instructorName).toLowerCase();
+      const match = people.find((person) => String(person.name || "").toLowerCase() === wanted);
       if (match) state.instructorId = match.id;
     }
-    if (!state.helpersApplied && !state.assistantIds.length && state.pendingHelperNames.length) {
-      state.assistantIds = state.pendingHelperNames
-        .map((name) => {
-          const match = people.find((person) => person.name.toLowerCase() === name.toLowerCase());
-          return match ? match.id : "";
-        })
-        .filter(Boolean);
+    const pending = Array.isArray(state.pendingHelperNames) ? state.pendingHelperNames : [];
+    if (!state.helpersApplied && !assistantIdList().length && pending.length) {
+      const matched = [];
+      const free = [];
+      pending.forEach((name) => {
+        const wanted = String(name).toLowerCase();
+        const match = people.find((person) => String(person.name || "").toLowerCase() === wanted);
+        if (match && !matched.includes(match.id)) matched.push(match.id);
+        else if (!match) free.push(name);
+      });
+      state.assistantIds = matched;
+      state.freeHelperNames = free;
       state.helpersApplied = true;
     }
-    state.assistantIds = state.assistantIds.filter((id, index, list) => {
+    state.assistantIds = assistantIdList().filter((id, index, list) => {
       const person = staffById(id);
-      return person && P.canAssistClass(person) && id !== state.instructorId && list.indexOf(id) === index;
+      return person && canAssist(person) && id !== state.instructorId && list.indexOf(id) === index;
     });
   }
 
@@ -1780,8 +1879,8 @@ function sparringSection(plan) {
     if (state.instructorName && !current) {
       headOptions.push(`<option value="__saved__">${esc(state.instructorName)}</option>`);
     }
-    state.staff.forEach((person) => {
-      const eligible = P.canHeadClass(person);
+    staffList().forEach((person) => {
+      const eligible = canHead(person);
       const disabled = !eligible && (!current || current.id !== person.id) ? " disabled" : "";
       const flag = eligible ? "" : " · below blue";
       headOptions.push(
@@ -1792,8 +1891,8 @@ function sparringSection(plan) {
     if (current) head.value = current.id;
     else if (state.instructorName) head.value = "__saved__";
     else head.value = "";
-    const choices = state.staff.filter(
-      (person) => P.canAssistClass(person) && person.id !== state.instructorId && !state.assistantIds.includes(person.id)
+    const choices = staffList().filter(
+      (person) => canAssist(person) && person.id !== state.instructorId && !assistantIdList().includes(person.id)
     );
     assist.innerHTML = choices.length
       ? [`<option value="">Add an assistant</option>`]
@@ -1812,7 +1911,7 @@ function sparringSection(plan) {
     const note = $("staffBeltNote");
     if (note) {
       note.textContent =
-        current && !P.canHeadClass(current)
+        current && !canHead(current)
           ? `${current.name} is below a blue belt. A head instructor is a blue belt or higher.`
           : "";
     }
@@ -1827,7 +1926,7 @@ function sparringSection(plan) {
     }
     if ($("helperBelt") && !$("helperBelt").options.length) $("helperBelt").innerHTML = adultBeltOptions("white");
     if ($("helperStripes") && !$("helperStripes").options.length) $("helperStripes").innerHTML = stripeOptions(0);
-    root.innerHTML = state.staff
+    root.innerHTML = staffList()
       .map((person) => {
         const remove = person.login
           ? `<span class="hint">Login</span>`
@@ -2265,10 +2364,18 @@ function sparringSection(plan) {
 
   function groupForAge(age) {
     const n = Number(age);
-    if (n <= 6) return DATA.ageGroups.mite;
-    if (n <= 9) return DATA.ageGroups.peewee;
-    if (n <= 12) return DATA.ageGroups.junior;
-    return DATA.ageGroups.teen;
+    if (!Number.isFinite(n)) return null;
+    if (n >= 4 && n <= 6) return DATA.ageGroups.mite || null;
+    if (n >= 7 && n <= 9) return DATA.ageGroups.peewee || null;
+    if (n >= 10 && n <= 12) return DATA.ageGroups.junior || null;
+    if (n >= 13 && n <= 15) return DATA.ageGroups.teen || null;
+    return null;
+  }
+
+  function groupText(group, age) {
+    if (group && group.range && group.label) return `${group.range} ${group.label}`;
+    if (age != null && age !== "") return `Age ${age}`;
+    return "";
   }
 
   function stripeText(kid) {
@@ -2278,6 +2385,7 @@ function sparringSection(plan) {
 
   function techniquesOf(plan) {
     return (plan?.lesson?.items || [])
+      .filter((item) => item && typeof item === "object")
       .map((item) => ({
         id: item.id,
         name: item.name,
@@ -2288,7 +2396,10 @@ function sparringSection(plan) {
   }
 
   function gameName(plan) {
-    return (plan?.games?.items || []).map((item) => item.name).filter(Boolean).join(", ");
+    return (plan?.games?.items || [])
+      .filter((item) => item && item.name)
+      .map((item) => item.name)
+      .join(", ");
   }
 
   function blankClass(date, age) {
@@ -2338,7 +2449,9 @@ function sparringSection(plan) {
   function stripeHint(kid) {
     const levels = state.progress.levels[kid.id] || {};
     const own = Object.values(levels).filter((level) => level === "own").length;
-    const attended = state.progress.classes.filter((entry) => entry.taught && entry.attended.includes(kid.id)).length;
+    const attended = state.progress.classes.filter(
+      (entry) => entry.taught && Array.isArray(entry.attended) && entry.attended.includes(kid.id)
+    ).length;
     const needOwn = state.progress.stripe.own;
     const needAttend = state.progress.stripe.attend;
     return {
@@ -2373,8 +2486,8 @@ function sparringSection(plan) {
     $("checkinView").classList.toggle("hidden", view !== "checkin");
     $("cardView").classList.toggle("hidden", view !== "cards");
     if ($("printTheseBtn")) $("printTheseBtn").classList.toggle("hidden", view !== "cards");
-    if (view === "review") renderReview();
-    if (view === "progress") renderProgress();
+    if (view === "review") runPanel("Review", () => renderReview());
+    if (view === "progress") runPanel("Progress", () => renderProgress());
     if (view === "checkin") {
       if (!$("checkinDate").value) $("checkinDate").value = $("date").value || P.nextClassDate(new Date());
       cameraHelp();
@@ -2412,15 +2525,16 @@ function sparringSection(plan) {
   function renderReview(attendOverride) {
     const root = $("reviewView");
     const plan = state.plan;
-    if (!plan || plan.mode !== "grace") {
+    if (!root) return;
+    if (!plan || plan.mode !== "grace" || !plan.settings) {
       root.innerHTML = `<h2>Review class</h2><p>Generate a Grace class, then mark who was here and where each technique landed.</p>`;
       return;
     }
     const date = plan.settings.date || "";
     const entry = classFor(date, plan.settings.ageGroup);
+    const attendedIds = entry && Array.isArray(entry.attended) ? entry.attended : [];
     const attended =
-      attendOverride ||
-      new Set(entry && entry.attended.length ? entry.attended : state.roster.map((kid) => kid.id));
+      attendOverride || new Set(attendedIds.length ? attendedIds : state.roster.map((kid) => kid.id));
     const techs = techniquesOf(plan);
     const chips = state.roster.length
       ? P.sortByRank(state.roster)
@@ -2576,7 +2690,8 @@ function sparringSection(plan) {
         )}</div></div>`;
       })
       .join("");
-    const age = groupForAge(kid.age).id;
+    const grouped = groupForAge(kid.age);
+    const age = grouped && grouped.id ? grouped.id : "mite";
     const known = new Set(techIds);
     const choices = pool("lesson", age).filter((item) => !known.has(item.id));
     const picker = choices.length
@@ -2684,7 +2799,7 @@ function sparringSection(plan) {
         const since = P.themeStaleness(theme.id, state.progress.classes, age);
         const hits = state.progress.classes.filter((entry) => entry.taught && entry.ageGroup === age && entry.theme === theme.id);
         const taughtIds = new Set();
-        hits.forEach((entry) => entry.techniques.forEach((tech) => taughtIds.add(tech.id)));
+        hits.forEach((entry) => (entry.techniques || []).forEach((tech) => tech && taughtIds.add(tech.id)));
         const missing = pool("lesson", age)
           .filter((item) => item.theme === theme.id && !taughtIds.has(item.id))
           .map((item) => item.name);
@@ -2761,11 +2876,13 @@ function sparringSection(plan) {
     const body = Object.entries(groups)
       .map(([position, lines]) => `<h3>${esc(position)}</h3><ul>${lines.join("")}</ul>`)
       .join("");
-    const dates = state.progress.classes.filter((entry) => entry.attended.includes(kid.id) && entry.date).map((entry) => entry.date);
+    const dates = state.progress.classes
+      .filter((entry) => Array.isArray(entry.attended) && entry.attended.includes(kid.id) && entry.date)
+      .map((entry) => entry.date);
     return `<article class="progress-sheet card-page">
       <img class="sheet-logo" src="${esc(LOGO)}" alt="Grace Jiu-Jitsu" />
       <h2>${esc(kid.name)}</h2>
-      <p>${esc(group.range)} ${esc(group.label)} · ${esc(P.beltLabel(kid.belt))} · ${esc(stripeText(kid))}</p>
+      <p>${esc(groupText(group, kid.age))} · ${esc(P.beltLabel(kid.belt))} · ${esc(stripeText(kid))}</p>
       <p>${dates.length} classes${dates.length ? `: ${esc(dates.join(", "))}` : ""}</p>
       <p>${esc(
         hint.ready
@@ -2812,7 +2929,7 @@ function sparringSection(plan) {
       <div>
         <img class="mini-logo card-logo" src="${esc(LOGO)}" alt="" />
         <h2>${esc(kid.name)}</h2>
-        <p>${esc(group.range)} ${esc(group.label)}</p>
+        <p>${esc(groupText(group, kid.age))}</p>
         <p>${esc(P.beltLabel(kid.belt))} · ${esc(stripeText(kid))}</p>
       </div>`;
   }
@@ -3330,6 +3447,7 @@ function sparringSection(plan) {
     document.querySelectorAll("[data-step]").forEach((btn) => {
       btn.addEventListener("click", () => {
         const input = $(btn.dataset.for);
+        if (!input) return;
         const min = Number(input.min || 0);
         const max = Number(input.max || 12);
         input.value = String(Math.max(min, Math.min(max, Number(input.value) + Number(btn.dataset.step))));
@@ -3359,17 +3477,19 @@ function sparringSection(plan) {
       "gameMin",
       "themeLock",
     ].forEach((id) => {
-      $(id).addEventListener("input", () => onClassField(id));
-      $(id).addEventListener("change", () => onClassField(id));
+      const el = $(id);
+      if (!el) return;
+      el.addEventListener("input", () => onClassField(id));
+      el.addEventListener("change", () => onClassField(id));
     });
 
-    $("ageGroup").addEventListener("click", (event) => {
+    listen("ageGroup", "click", (event) => {
       const btn = event.target.closest("button[data-group]");
       if (!btn) return;
       setAgeGroup(btn.dataset.group, true);
     });
 
-    $("instructorPick").addEventListener("change", () => {
+    listen("instructorPick", "change", () => {
       const value = $("instructorPick").value;
       state.hadInstructor = true;
       if (value === "__saved__") state.instructorId = "";
@@ -3378,24 +3498,28 @@ function sparringSection(plan) {
         const person = staffById(value);
         state.instructorName = person ? person.name : "";
       }
-      state.assistantIds = state.assistantIds.filter((id) => id !== state.instructorId);
+      state.assistantIds = assistantIdList().filter((id) => id !== state.instructorId);
       renderStaffPickers();
       syncPlanCounts();
     });
-    $("addAssistantBtn").addEventListener("click", () => {
-      const id = $("assistantPick").value;
+    listen("addAssistantBtn", "click", () => {
+      const pick = $("assistantPick");
+      if (!pick) return;
+      const id = pick.value;
       const person = staffById(id);
-      if (!person || !P.canAssistClass(person) || id === state.instructorId || state.assistantIds.includes(id)) return;
+      if (!person || !canAssist(person) || id === state.instructorId || assistantIdList().includes(id)) return;
       state.assistantIds.push(id);
       state.helpersApplied = true;
+      state.freeHelperNames = [];
       renderStaffPickers();
       syncPlanCounts();
     });
-    $("assistantList").addEventListener("click", (event) => {
+    listen("assistantList", "click", (event) => {
       const btn = event.target.closest("[data-remove-assistant]");
       if (!btn) return;
-      state.assistantIds = state.assistantIds.filter((id) => id !== btn.dataset.removeAssistant);
+      state.assistantIds = assistantIdList().filter((id) => id !== btn.dataset.removeAssistant);
       state.helpersApplied = true;
+      state.freeHelperNames = [];
       renderStaffPickers();
       syncPlanCounts();
     });
@@ -4030,7 +4154,7 @@ function sparringSection(plan) {
         toast(err.message || "Could not remove that login.");
       }
     });
-    $("helperForm").addEventListener("submit", async (event) => {
+    listen("helperForm", "submit", async (event) => {
       event.preventDefault();
       const name = $("helperName").value.trim();
       if (!name) {
@@ -4050,7 +4174,7 @@ function sparringSection(plan) {
         setFormNote("helperNote", err.message || "Could not add that helper.");
       }
     });
-    $("staffList").addEventListener("change", async (event) => {
+    listen("staffList", "change", async (event) => {
       const row = event.target.closest("[data-staff-id]");
       if (!row) return;
       const id = row.dataset.staffId;
@@ -4075,7 +4199,7 @@ function sparringSection(plan) {
         renderStaffAdmin();
       }
     });
-    $("staffList").addEventListener("click", async (event) => {
+    listen("staffList", "click", async (event) => {
       const btn = event.target.closest("[data-staff-remove]");
       if (!btn) return;
       try {
@@ -4165,10 +4289,10 @@ function sparringSection(plan) {
 
   async function startApp() {
     load();
-    fillBeltSelect();
-    fillThemeLock();
-    bind();
-    cameraHelp();
+    runPanel("Belt list", fillBeltSelect);
+    runPanel("Theme list", fillThemeLock);
+    runPanel("Controls", bind);
+    runPanel("Camera help", cameraHelp);
     window.BJJ_APP = {
       decodeSource,
       markPresent,
@@ -4181,22 +4305,32 @@ function sparringSection(plan) {
         view: state.view,
       }),
     };
-    if (!$("date").value) $("date").value = P.nextClassDate(new Date());
-    renderStaffPickers();
-    renderStaffAdmin();
-    writeClassCounts();
-    await loadUploads();
-    renderLibrary();
-    renderRoster();
-    updateMeta();
-    if (state.plan) retimePlan();
-    else buildPlan({ mode: "grace" });
-    if (!allSheets().some((sheet) => sheet.id === state.sheetId)) state.sheetId = "first-gi";
-    renderSheet();
-    renderSheetList();
-    fillFeatured();
-    updateScheduleHint();
-    if (isAdmin()) refreshUsers().catch(() => {});
+    if ($("date") && !$("date").value) $("date").value = P.nextClassDate(new Date());
+    runPanel("Staff", () => {
+      renderStaffPickers();
+      renderStaffAdmin();
+      writeClassCounts();
+    });
+    try {
+      await loadUploads();
+    } catch (err) {
+      reportPanel("Uploads", err);
+    }
+    runPanel("Library", renderLibrary);
+    runPanel("Roster", renderRoster);
+    runPanel("Class clock", updateMeta);
+    runPanel("Plan", () => {
+      if (state.plan) retimePlan();
+      else buildPlan({ mode: "grace" });
+    });
+    runPanel("Coloring", () => {
+      if (!allSheets().some((sheet) => sheet.id === state.sheetId)) state.sheetId = "first-gi";
+      renderSheet();
+      renderSheetList();
+      fillFeatured();
+    });
+    runPanel("Schedule", updateScheduleHint);
+    if (isAdmin()) refreshUsers().catch((err) => reportPanel("Logins", err));
     document.body.classList.add("authed");
     const gate = $("gate");
     if (gate) gate.hidden = true;
@@ -4208,12 +4342,18 @@ function sparringSection(plan) {
       applyBootstrap(body);
       await startApp();
     } catch (err) {
-      if (err.status === 401) {
+      console.error(err);
+      if (err && err.status === 401) {
         window.location.replace("/login/");
         return;
       }
       const gate = $("gate");
-      if (gate) gate.textContent = "The attendance server is not reachable from this page.";
+      if (!gate) return;
+      const detail = err && err.message ? String(err.message) : "Unknown error";
+      gate.textContent =
+        err && err.status
+          ? `The attendance server could not load this page (${err.status}). ${detail}`
+          : `The staff page could not finish loading. ${detail}`;
     }
   }
 
