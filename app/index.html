@@ -53,14 +53,19 @@
             <label for="title">Title</label>
             <input id="title" value="GRACE BJJ KIDS" />
           </div>
-          <div class="field">
-            <label for="instructor">Teacher</label>
-            <input id="instructor" value="Dakota" />
+          <div class="field grow">
+            <label for="instructorPick">Head instructor</label>
+            <select id="instructorPick"></select>
           </div>
-          <div class="field">
-            <label for="helper">Assistant</label>
-            <input id="helper" placeholder="name" value="" />
+          <div class="field grow">
+            <label for="assistantPick">Assistants</label>
+            <div class="assistant-add">
+              <select id="assistantPick"></select>
+              <button class="ghost" id="addAssistantBtn" type="button">Add</button>
+            </div>
+            <ul class="assistant-list" id="assistantList"></ul>
           </div>
+          <p class="hint" id="staffBeltNote"></p>
           <div class="field">
             <label for="ages">Ages on the plan</label>
             <input id="ages" value="4–6 Mighty Mite" />
@@ -296,6 +301,27 @@
             <button class="ghost" type="submit">Add login</button>
           </form>
           <div id="userList"></div>
+          <div id="staffAdmin">
+            <h3>Staff roster</h3>
+            <p class="hint">Logins are listed here. Add a helper when someone helps on the mat without a login. Blue belt or higher can be head instructor. Assistants need a two-stripe white belt or higher.</p>
+            <form id="helperForm" novalidate>
+              <div class="field">
+                <label for="helperName">Helper name</label>
+                <input id="helperName" maxlength="40" autocomplete="off" />
+              </div>
+              <div class="field">
+                <label for="helperBelt">Belt</label>
+                <select id="helperBelt"></select>
+              </div>
+              <div class="field">
+                <label for="helperStripes">Stripes</label>
+                <select id="helperStripes"></select>
+              </div>
+              <p class="form-note" id="helperNote" role="alert"></p>
+              <button class="ghost" type="submit">Add helper</button>
+            </form>
+            <div id="staffList"></div>
+          </div>
           <button class="ghost" id="exportServerBtn" type="button">Download attendance backup</button>
         </div>
       </details>

@@ -284,8 +284,29 @@
     });
   }
 
+  const ADULT_BELTS = ["white", "blue", "purple", "brown", "black"];
+  const ADULT_BELT_LABELS = {
+    white: "White",
+    blue: "Blue",
+    purple: "Purple",
+    brown: "Brown",
+    black: "Black",
+  };
+
   function beltLabel(belt) {
-    return BELT_LABELS[belt] || "White";
+    return BELT_LABELS[belt] || ADULT_BELT_LABELS[belt] || "White";
+  }
+
+  function canHeadClass(person) {
+    if (!person) return false;
+    return ADULT_BELTS.indexOf(person.belt) >= 1;
+  }
+
+  function canAssistClass(person) {
+    if (!person) return false;
+    const rank = ADULT_BELTS.indexOf(person.belt);
+    if (rank >= 1) return true;
+    return person.belt === "white" && clampInt(person.stripes, 0, 4, 0) >= 2;
   }
 
   function ratioStatus(kids, adults) {
@@ -677,7 +698,10 @@ function sanitizeProgress(raw) {
     prefMinutes,
     rankScore,
     sortByRank,
+    ADULT_BELTS,
     beltLabel,
+    canHeadClass,
+    canAssistClass,
     ratioStatus,
     kidCanSpar,
     sanitizeIdList,

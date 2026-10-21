@@ -4,12 +4,14 @@ import json
 import os
 import re
 import secrets
+import sqlite3
 from datetime import timedelta
 from urllib.parse import unquote, urlparse
 
 import bcrypt
 
 from server.db import (
+    ADULT_BELTS,
     AGE_GROUP_AGES,
     AGE_GROUPS,
     BELTS,
@@ -152,7 +154,7 @@ class Api:
         return token, csrf, expires
 
     def public_user(self, user, csrf):
-        return {"user": {"username": user["username"], "role": user["role"]}, "csrf": csrf}
+        return {"user": {"id": user["id"], "username": user["username"], "role": user["role"]}, "csrf": csrf}
 
     def student_json(self, row):
         return {
@@ -255,6 +257,8 @@ class Api:
         )
 
     def bootstrap(self, conn):
+        if self.ensure_login_staff(conn):
+            conn.commit()
         students = [self.student_json(row) for row in conn.execute("SELECT * FROM students ORDER BY name")]
         classes = [self.class_json(row) for row in conn.execute("SELECT * FROM classes ORDER BY date, age_group")]
         levels = {}
@@ -292,7 +296,52 @@ class Api:
             },
             "sheets": sheets,
             "cards": [self.card_json(row) for row in conn.execute("SELECT * FROM cards ORDER BY created_at, code")],
+            "staff": [self.staff_json(row) for row in conn.execute("SELECT * FROM staff ORDER BY name COLLATE NOCASE")],
         }
+
+    def staff_json(self, row):
+        return {
+            "id": row["id"],
+            "name": row["name"],
+            "belt": row["belt"],
+            "stripes": row["stripes"],
+            "userId": row["user_id"] or "",
+            "login": bool(row["user_id"]),
+        }
+
+    def ensure_login_staff(self, conn):
+        rows = conn.execute(
+            """
+            SELECT users.id AS id, users.username AS username
+            FROM users
+            LEFT JOIN staff ON staff.user_id = users.id
+            WHERE staff.id IS NULL
+            """
+        ).fetchall()
+        now = iso(utcnow())
+        made = 0
+        for row in rows:
+            try:
+                conn.execute(
+                    "INSERT INTO staff (id, name, belt, stripes, user_id, created_at) VALUES (?, ?, 'white', 0, ?, ?)",
+                    (new_id("st-"), row["username"], row["id"], now),
+                )
+                made += 1
+            except sqlite3.IntegrityError:
+                continue
+        return made
+
+    def sanitize_staff(self, raw, existing=None):
+        name = clip(raw.get("name"), 40)
+        if not name:
+            raise ValueError("Add the person's name.")
+        belt = raw.get("belt") if raw.get("belt") in ADULT_BELTS else (existing["belt"] if existing else "white")
+        try:
+            stripes = int(raw.get("stripes"))
+        except (TypeError, ValueError):
+            stripes = existing["stripes"] if existing else 0
+        stripes = max(0, min(4, stripes))
+        return {"name": name, "belt": belt, "stripes": stripes}
 
     def card_json(self, row):
         return {
@@ -454,6 +503,24 @@ class Api:
             if not admin:
                 return self.send(handler, 403, {"error": "An admin manages logins."})
             return self.create_user(handler, conn)
+        if path == "/api/staff" and method == "GET":
+            if self.ensure_login_staff(conn):
+                conn.commit()
+            rows = conn.execute("SELECT * FROM staff ORDER BY name COLLATE NOCASE").fetchall()
+            return self.send(handler, 200, {"staff": [self.staff_json(row) for row in rows]})
+        if path == "/api/staff" and method == "POST":
+            if not admin:
+                return self.send(handler, 403, {"error": "An admin manages the staff roster."})
+            return self.create_staff(handler, conn)
+        staff_match = re.match(r"^/api/staff/([A-Za-z0-9_-]{1,40})$", path)
+        if staff_match and method == "PATCH":
+            if not admin:
+                return self.send(handler, 403, {"error": "An admin manages the staff roster."})
+            return self.patch_staff(handler, conn, staff_match.group(1))
+        if staff_match and method == "DELETE":
+            if not admin:
+                return self.send(handler, 403, {"error": "An admin manages the staff roster."})
+            return self.delete_staff(handler, conn, staff_match.group(1))
         user_match = re.match(r"^/api/users/([A-Za-z0-9_-]{1,40})$", path)
         if user_match and method == "DELETE":
             if not admin:
@@ -520,6 +587,14 @@ class Api:
             saved = self.save_class(conn, self.sanitize_class(self.read_json(handler)), merge=False)
             conn.commit()
             return self.send(handler, 200, saved)
+        class_match = re.match(r"^/api/classes/([A-Za-z0-9_-]{1,40})$", path)
+        if class_match and method == "DELETE":
+            cid = class_match.group(1)
+            if not conn.execute("SELECT 1 FROM classes WHERE id = ?", (cid,)).fetchone():
+                return self.send(handler, 404, {"error": "That class is already gone."})
+            conn.execute("DELETE FROM classes WHERE id = ?", (cid,))
+            conn.commit()
+            return self.send(handler, 200, {"ok": True})
         if path == "/api/attendance" and method == "POST":
             body = self.read_json(handler)
             saved = self.save_class(conn, self.sanitize_class(body), merge=True)
@@ -539,6 +614,15 @@ class Api:
                 """,
                 (sid, tid, level),
             )
+            conn.commit()
+            return self.send(handler, 200, {"ok": True})
+        if path == "/api/levels" and method == "DELETE":
+            body = self.read_json(handler)
+            sid = clean_id(body.get("studentId"))
+            tid = clean_id(body.get("techId"))
+            if not sid or not tid:
+                raise ValueError("That progress update is missing a student or a technique.")
+            conn.execute("DELETE FROM levels WHERE student_id = ? AND tech_id = ?", (sid, tid))
             conn.commit()
             return self.send(handler, 200, {"ok": True})
         if path == "/api/notes" and method == "PUT":
@@ -740,6 +824,7 @@ class Api:
             "INSERT INTO users (id, username, password_hash, role, created_at) VALUES (?, ?, ?, ?, ?)",
             (uid, username, hash_password(password), role, iso(utcnow())),
         )
+        self.ensure_login_staff(conn)
         conn.commit()
         return self.send(handler, 201, {"id": uid, "username": username, "role": role})
 
@@ -753,7 +838,42 @@ class Api:
             admins = conn.execute("SELECT COUNT(*) AS n FROM users WHERE role = 'admin'").fetchone()["n"]
             if admins <= 1:
                 raise ValueError("Keep at least one admin.")
+        conn.execute("UPDATE staff SET user_id = NULL WHERE user_id = ?", (uid,))
         conn.execute("DELETE FROM users WHERE id = ?", (uid,))
+        conn.commit()
+        return self.send(handler, 200, {"ok": True})
+
+    def create_staff(self, handler, conn):
+        raw = self.sanitize_staff(self.read_json(handler))
+        sid = new_id("st-")
+        conn.execute(
+            "INSERT INTO staff (id, name, belt, stripes, user_id, created_at) VALUES (?, ?, ?, ?, NULL, ?)",
+            (sid, raw["name"], raw["belt"], raw["stripes"], iso(utcnow())),
+        )
+        conn.commit()
+        row = conn.execute("SELECT * FROM staff WHERE id = ?", (sid,)).fetchone()
+        return self.send(handler, 201, self.staff_json(row))
+
+    def patch_staff(self, handler, conn, sid):
+        row = conn.execute("SELECT * FROM staff WHERE id = ?", (sid,)).fetchone()
+        if not row:
+            return self.send(handler, 404, {"error": "That person is not on the staff roster."})
+        raw = self.sanitize_staff(self.read_json(handler), row)
+        conn.execute(
+            "UPDATE staff SET name = ?, belt = ?, stripes = ? WHERE id = ?",
+            (raw["name"], raw["belt"], raw["stripes"], sid),
+        )
+        conn.commit()
+        updated = conn.execute("SELECT * FROM staff WHERE id = ?", (sid,)).fetchone()
+        return self.send(handler, 200, self.staff_json(updated))
+
+    def delete_staff(self, handler, conn, sid):
+        row = conn.execute("SELECT * FROM staff WHERE id = ?", (sid,)).fetchone()
+        if not row:
+            return self.send(handler, 404, {"error": "That person is not on the staff roster."})
+        if row["user_id"]:
+            raise ValueError("That person has a login. Edit their belt here, or remove the login from Account.")
+        conn.execute("DELETE FROM staff WHERE id = ?", (sid,))
         conn.commit()
         return self.send(handler, 200, {"ok": True})
 

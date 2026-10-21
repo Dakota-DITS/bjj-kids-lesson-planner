@@ -1269,6 +1269,41 @@ body:not(.role-admin) .admin-only { display: none !important; }
 }
 .work-view button.danger { color: #7f1d1d; border-color: #7f1d1d; }
 .work-view .hint { color: #4a4a4a; }
+.work-view .check { color: inherit; margin: 0; }
+.work-view .form-note.bad { color: #9f1239; }
+.work-view .form-note.ok { color: #166534; }
+
+.assistant-add {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+.assistant-add select { flex: 1 1 auto; min-width: 0; }
+.assistant-list {
+  list-style: none;
+  margin: 8px 0 0;
+  padding: 0;
+  display: grid;
+  gap: 8px;
+}
+.assistant-list li,
+.staff-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+  min-height: 44px;
+}
+.staff-row { margin-top: 10px; }
+.staff-row input { flex: 1 1 8rem; min-width: 0; }
+.past-class, .past-log {
+  display: grid;
+  gap: 8px;
+  margin: 12px 0 16px;
+}
+.past-log { border-top: 1px solid #ddd; padding-top: 12px; }
+.tech-checks { display: grid; gap: 4px; }
+.tech-checks label { min-height: 44px; }
 .blank-tools { margin-top: 18px; }
 .blank-tools h3, #cardRecords summary { margin: 0 0 8px; }
 #cardRecords { margin-top: 16px; }
@@ -1378,7 +1413,7 @@ body:not(.role-admin) .admin-only { display: none !important; }
   .seg.ages button, .seg.views button, .stepper button, button, .btn {
     min-height: 44px;
   }
-  .field input, .field select, .field textarea, #checkinView input, #checkinView select, #accountPanel input, #accountPanel select {
+  .field input, .field select, .field textarea, #checkinView input, #checkinView select, #accountPanel input, #accountPanel select, #progressView input, #progressView select, #progressView textarea {
     font-size: 16px;
     min-height: 44px;
   }

@@ -326,6 +326,132 @@ class ApiTest(unittest.TestCase):
         status, removed = admin.call("DELETE", f"/api/students/{other['id']}")
         self.assertEqual(status, 200)
 
+    def test_past_class_and_staff_roster(self):
+        admin = self.client()
+        status, body = admin.login("dakota", "correct-horse")
+        self.assertEqual(status, 200)
+        self.assertTrue(body["user"]["id"])
+        status, boot = admin.call("GET", "/api/bootstrap")
+        self.assertEqual(status, 200)
+        self.assertTrue(any(person["login"] and person["name"] == "dakota" for person in boot["staff"]))
+        self.assertTrue(any(person["login"] and person["userId"] == body["user"]["id"] for person in boot["staff"]))
+        sam = next((student for student in boot["students"] if student["name"] == "Sam"), None)
+        created_student = ""
+        if not sam:
+            status, sam = admin.call("POST", "/api/students", {"name": "Zoe History", "age": 8, "belt": "grey", "stripes": 1})
+            self.assertEqual(status, 201)
+            created_student = sam["id"]
+
+        teacher = self.client()
+        teacher.login("alex", "correct-horse")
+        status, denied = teacher.call("POST", "/api/staff", {"name": "Nope", "belt": "blue", "stripes": 0})
+        self.assertEqual(status, 403)
+
+        status, helper = admin.call("POST", "/api/staff", {"name": "Quinn Helper", "belt": "white", "stripes": 2})
+        self.assertEqual(status, 201)
+        self.assertEqual(helper["login"], False)
+        self.assertEqual(helper["belt"], "white")
+        status, patched = admin.call("PATCH", f"/api/staff/{helper['id']}", {"name": "Quinn Helper", "belt": "blue", "stripes": 0})
+        self.assertEqual(status, 200)
+        self.assertEqual(patched["belt"], "blue")
+        login_row = next(person for person in boot["staff"] if person["userId"] == body["user"]["id"])
+        status, blocked = admin.call("DELETE", f"/api/staff/{login_row['id']}")
+        self.assertEqual(status, 400)
+        self.assertIn("login", blocked["error"].lower())
+
+        status, saved = teacher.call(
+            "PUT",
+            "/api/classes",
+            {
+                "date": "2026-09-15",
+                "ageGroup": "mite",
+                "theme": "mount",
+                "themeLabel": "Mount",
+                "techniques": [{"id": "ls-mount-base", "name": "Mount base", "position": "Mount", "theme": "mount"}],
+                "attended": [sam["id"]],
+                "taught": True,
+            },
+        )
+        self.assertEqual(status, 200)
+        self.assertTrue(saved["taught"])
+        self.assertEqual(saved["attended"], [sam["id"]])
+        status, level = teacher.call("PUT", "/api/levels", {"studentId": sam["id"], "techId": "ls-mount-base", "level": "own"})
+        self.assertEqual(status, 200)
+        status, again = admin.call("GET", "/api/bootstrap")
+        self.assertEqual(again["levels"][sam["id"]]["ls-mount-base"], "own")
+        past = next(entry for entry in again["classes"] if entry["date"] == "2026-09-15")
+        self.assertEqual(past["attended"], [sam["id"]])
+        self.assertTrue(past["taught"])
+
+        status, cleared = teacher.call("DELETE", "/api/levels", {"studentId": sam["id"], "techId": "ls-mount-base"})
+        self.assertEqual(status, 200)
+        status, removed = teacher.call("DELETE", f"/api/classes/{saved['id']}")
+        self.assertEqual(status, 200)
+        status, missing = teacher.call("DELETE", f"/api/classes/{saved['id']}")
+        self.assertEqual(status, 404)
+        status, after = admin.call("GET", "/api/bootstrap")
+        self.assertNotIn("ls-mount-base", after["levels"].get(sam["id"], {}))
+        self.assertFalse(any(entry["date"] == "2026-09-15" for entry in after["classes"]))
+        status, gone = admin.call("DELETE", f"/api/staff/{helper['id']}")
+        self.assertEqual(status, 200)
+
+        status, created = admin.call(
+            "POST",
+            "/api/users",
+            {"username": "tempcoach", "password": "long-enough-1", "role": "teacher"},
+        )
+        self.assertEqual(status, 201)
+        status, roster = admin.call("GET", "/api/staff")
+        linked = next(person for person in roster["staff"] if person["userId"] == created["id"])
+        status, _ = admin.call("DELETE", f"/api/users/{created['id']}")
+        self.assertEqual(status, 200)
+        status, roster = admin.call("GET", "/api/staff")
+        kept = next(person for person in roster["staff"] if person["id"] == linked["id"])
+        self.assertFalse(kept["login"])
+        self.assertEqual(kept["userId"], "")
+        status, removed = admin.call("DELETE", f"/api/staff/{kept['id']}")
+        self.assertEqual(status, 200)
+        if created_student:
+            status, removed = admin.call("DELETE", f"/api/students/{created_student}")
+            self.assertEqual(status, 200)
+
+    def test_staff_migration_keeps_existing_students(self):
+        path = os.path.join(self.tmp.name, "pre-staff.db")
+        conn = connect(path)
+        conn.execute(
+            """
+            CREATE TABLE students (
+              id TEXT PRIMARY KEY,
+              name TEXT NOT NULL,
+              age INTEGER NOT NULL,
+              belt TEXT NOT NULL,
+              stripes INTEGER NOT NULL,
+              created_at TEXT NOT NULL
+            )
+            """
+        )
+        conn.execute(
+            "INSERT INTO students (id, name, age, belt, stripes, created_at) VALUES (?, ?, ?, ?, ?, ?)",
+            ("s-old", "Existing", 8, "white", 0, "2026-01-01T00:00:00Z"),
+        )
+        conn.commit()
+        migrate(conn)
+        row = conn.execute("SELECT name FROM students WHERE id = ?", ("s-old",)).fetchone()
+        self.assertEqual(row["name"], "Existing")
+        tables = {item["name"] for item in conn.execute("SELECT name FROM sqlite_master WHERE type = 'table'")}
+        self.assertIn("staff", tables)
+        conn.execute(
+            "INSERT INTO staff (id, name, belt, stripes, user_id, created_at) VALUES (?, ?, ?, ?, NULL, ?)",
+            ("st-old", "Helper", "blue", 0, "2026-01-01T00:00:00Z"),
+        )
+        conn.commit()
+        migrate(conn)
+        kept = conn.execute("SELECT belt FROM staff WHERE id = ?", ("st-old",)).fetchone()
+        self.assertEqual(kept["belt"], "blue")
+        still = conn.execute("SELECT name FROM students WHERE id = ?", ("s-old",)).fetchone()
+        self.assertEqual(still["name"], "Existing")
+        conn.close()
+
 
 def _handler(api):
     from http.server import BaseHTTPRequestHandler

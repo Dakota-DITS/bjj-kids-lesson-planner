@@ -90,6 +90,15 @@ const lined = P.sortByRank([
 ]);
 assert.deepStrictEqual(lined.map((k) => k.name), ["Bea", "Cam", "Ada"]);
 
+assert.strictEqual(P.canHeadClass({ belt: "blue", stripes: 0 }), true);
+assert.strictEqual(P.canHeadClass({ belt: "purple", stripes: 0 }), true);
+assert.strictEqual(P.canHeadClass({ belt: "black", stripes: 2 }), true);
+assert.strictEqual(P.canHeadClass({ belt: "white", stripes: 4 }), false);
+assert.strictEqual(P.canHeadClass({ belt: "grey", stripes: 4 }), false);
+assert.strictEqual(P.canAssistClass({ belt: "white", stripes: 1 }), false);
+assert.strictEqual(P.canAssistClass({ belt: "white", stripes: 2 }), true);
+assert.strictEqual(P.canAssistClass({ belt: "blue", stripes: 0 }), true);
+assert.strictEqual(P.canAssistClass({ belt: "brown", stripes: 0 }), true);
 assert.strictEqual(P.ratioStatus(8, 2).ok, true);
 assert.strictEqual(P.ratioStatus(9, 2).ok, false);
 assert.strictEqual(P.ratioStatus(5, 0).ok, false);
