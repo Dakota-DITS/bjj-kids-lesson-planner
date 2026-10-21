@@ -43,5 +43,7 @@ assert.ok(nginx.includes('X-Content-Type-Options "nosniff"'), "nginx needs nosni
 assert.ok(nginx.includes('X-Frame-Options "SAMEORIGIN"'), "nginx needs a frame policy");
 assert.ok(nginx.includes("Content-Security-Policy"), "nginx needs a content security policy");
 assert.ok(nginx.includes("Referrer-Policy"), "nginx needs a referrer policy");
+assert.ok(nginx.includes("listen 80 default_server;"), "this site is the default server on port 80");
+assert.ok(nginx.includes("location ~ /\\.git { return 404; }"), "nginx must not serve .git");
 
 console.log("asset cache checks passed");
