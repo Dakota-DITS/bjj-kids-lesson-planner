@@ -622,6 +622,58 @@ class ApiTest(unittest.TestCase):
         self.assertEqual(boot["stripe"], {"own": 6, "attend": 8})
         self.assertEqual(imported["ok"], True)
 
+    def test_csv_exports_are_staff_only(self):
+        anon = self.client()
+        status, _ = anon.call("GET", "/api/export/roster.csv", raw=True)
+        self.assertEqual(status, 401)
+        status, _ = anon.call("GET", "/api/export/attendance.csv", raw=True)
+        self.assertEqual(status, 401)
+
+        admin = self.client()
+        status, _ = admin.login("dakota", "correct-horse")
+        self.assertEqual(status, 200)
+        status, student = admin.call(
+            "POST",
+            "/api/students",
+            {"name": "=1+1", "age": 8, "belt": "grey", "stripes": 1},
+        )
+        self.assertEqual(status, 201)
+        status, roster = admin.call("GET", "/api/export/roster.csv", raw=True)
+        self.assertEqual(status, 200)
+        text = roster.decode()
+        self.assertIn("name,age,belt,stripes", text)
+        self.assertIn("'=1+1,8,grey,1", text)
+
+        status, saved = admin.call(
+            "POST",
+            "/api/attendance",
+            {
+                "date": "2027-01-12",
+                "ageGroup": "teen",
+                "theme": "mount",
+                "themeLabel": "Mount",
+                "techniques": [],
+                "game": "",
+                "attended": [student["id"]],
+                "taught": True,
+            },
+        )
+        self.assertEqual(status, 200)
+        status, sheet = admin.call("GET", "/api/export/attendance.csv", raw=True)
+        self.assertEqual(status, 200)
+        attendance = sheet.decode()
+        self.assertIn("date,age_group,theme,taught,student", attendance)
+        self.assertIn("2027-01-12,teen,Mount,yes,'=1+1", attendance)
+
+        teacher = self.client()
+        status, _ = teacher.login("alex", "correct-horse")
+        self.assertEqual(status, 200)
+        status, teacher_roster = teacher.call("GET", "/api/export/roster.csv", raw=True)
+        self.assertEqual(status, 200)
+        self.assertIn("'=1+1", teacher_roster.decode())
+        status, _ = admin.call("DELETE", f"/api/students/{student['id']}")
+        self.assertEqual(status, 200)
+
 
 def _handler(api):
     from http.server import BaseHTTPRequestHandler
