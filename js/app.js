@@ -4042,6 +4042,13 @@ function sparringSection(plan) {
       } catch (err) {
         /* still leave the page */
       }
+      if (navigator.serviceWorker && navigator.serviceWorker.controller) {
+        navigator.serviceWorker.controller.postMessage({ type: "logout" });
+      }
+      if (window.caches) {
+        const names = await caches.keys();
+        await Promise.all(names.filter((name) => name.startsWith("grace-staff-")).map((name) => caches.delete(name)));
+      }
       window.location.href = "/";
     });
     $("passwordForm").addEventListener("submit", async (event) => {

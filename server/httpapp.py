@@ -1118,6 +1118,8 @@ class Api:
 
     def static_cache_control(self, rel):
         path = (rel or "").split("?", 1)[0]
+        if path in ("/app/manifest.webmanifest", "/app/offline.html", "/sw.js", "/manifest.webmanifest") or path.endswith(".webmanifest") or os.path.basename(path) == "sw.js":
+            return "no-cache"
         gated = (
             path.startswith("/js/")
             or path.startswith("/vendor/")
@@ -1162,7 +1164,8 @@ class Api:
             ".gif": "image/gif",
             ".ttf": "font/ttf",
             ".json": "application/json",
-            ".ico": "image/png",
+            ".ico": "image/x-icon",
+            ".webmanifest": "application/manifest+json",
         }.get(ext, "application/octet-stream")
         with open(target, "rb") as handle:
             blob = handle.read()

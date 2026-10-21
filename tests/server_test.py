@@ -437,6 +437,11 @@ class ApiTest(unittest.TestCase):
         self.assertEqual(self.api.static_cache_control("/app/index.html"), "private, no-store")
         self.assertEqual(self.api.static_cache_control("/css/splash.css"), "no-cache")
         self.assertEqual(self.api.static_cache_control("/"), "no-cache")
+        self.assertEqual(self.api.static_cache_control("/sw.js"), "no-cache")
+        self.assertEqual(self.api.static_cache_control("/manifest.webmanifest"), "no-cache")
+        self.assertEqual(self.api.static_cache_control("/app/manifest.webmanifest"), "no-cache")
+        self.assertEqual(self.api.static_cache_control("/app/offline.html"), "no-cache")
+        self.assertEqual(self.api.static_cache_control("/vendor/jsQR/jsQR.js"), "private, no-store")
         conn = self.api.db()
         try:
             conn.execute("DELETE FROM staff")
