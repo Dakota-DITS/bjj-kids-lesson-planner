@@ -1259,6 +1259,7 @@ class Api:
             ".json": "application/json",
             ".ico": "image/x-icon",
             ".webmanifest": "application/manifest+json",
+            ".ics": "text/calendar; charset=utf-8",
         }.get(ext, "application/octet-stream")
         with open(target, "rb") as handle:
             blob = handle.read()
