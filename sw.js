@@ -2,7 +2,7 @@
    links. Public files are network-first. Login-gated files are never stored:
    Cache Storage is shared by everyone who uses the phone, so a private or
    no-store response must not survive logout. /api/ is network-only. */
-const VERSION = "20261021-3";
+const VERSION = "20261021-4";
 
 const PUBLIC_CACHE = "grace-public-" + VERSION;
 const STAFF_CACHE = "grace-staff-" + VERSION;
@@ -210,6 +210,7 @@ self.addEventListener("fetch", (event) => {
     return;
   }
   const allowed = new Set(assetList());
+  if (path.startsWith("/img/gi/")) allowed.add(path);
   if (request.mode !== "navigate" && !allowed.has(path)) return;
   event.respondWith(networkFirst(request, path, allowed));
 });
