@@ -10,6 +10,7 @@ from urllib.parse import unquote, urlparse
 import bcrypt
 
 from server.db import (
+    AGE_GROUP_AGES,
     AGE_GROUPS,
     BELTS,
     LEVELS,
@@ -290,7 +291,40 @@ class Api:
                 "caption": self.setting(conn, "featured_caption", ""),
             },
             "sheets": sheets,
+            "cards": [self.card_json(row) for row in conn.execute("SELECT * FROM cards ORDER BY created_at, code")],
         }
+
+    def card_json(self, row):
+        return {
+            "code": row["code"],
+            "status": row["status"],
+            "studentId": row["student_id"] or "",
+            "createdAt": row["created_at"],
+        }
+
+    def student_from_claim(self, raw):
+        raw = raw or {}
+        age_raw = raw.get("age")
+        blank_age = age_raw is None or (isinstance(age_raw, str) and not str(age_raw).strip())
+        group = raw.get("ageGroup") if raw.get("ageGroup") in AGE_GROUP_AGES else ""
+        if blank_age:
+            if not group:
+                raise ValueError("Add an age or a class.")
+            age = AGE_GROUP_AGES[group]
+        else:
+            try:
+                age = int(age_raw)
+            except (TypeError, ValueError):
+                raise ValueError("Age needs to be a number.")
+            if age < 3 or age > 17:
+                raise ValueError("Age needs to be from 3 to 17.")
+        payload = {
+            "name": raw.get("name"),
+            "age": age,
+            "belt": raw.get("belt"),
+            "stripes": raw.get("stripes"),
+        }
+        return self.sanitize_student(payload)
 
     def save_class(self, conn, entry, merge):
         current = conn.execute(
@@ -456,8 +490,32 @@ class Api:
             conn.execute("DELETE FROM students WHERE id = ?", (sid,))
             conn.execute("DELETE FROM levels WHERE student_id = ?", (sid,))
             conn.execute("DELETE FROM notes WHERE student_id = ?", (sid,))
+            conn.execute(
+                "UPDATE cards SET status = 'retired', retired_at = ? WHERE student_id = ? AND status != 'retired'",
+                (iso(utcnow()), sid),
+            )
             conn.commit()
             return self.send(handler, 200, {"ok": True})
+        if path == "/api/cards" and method == "GET":
+            rows = conn.execute("SELECT * FROM cards ORDER BY created_at, code").fetchall()
+            return self.send(handler, 200, {"cards": [self.card_json(row) for row in rows]})
+        if path == "/api/cards" and method == "POST":
+            if not admin:
+                return self.send(handler, 403, {"error": "An admin prints blank cards."})
+            return self.create_cards(handler, conn)
+        claim_match = re.match(r"^/api/cards/([A-Za-z0-9_-]{1,40})/claim$", path)
+        if claim_match and method == "POST":
+            return self.claim_card(handler, conn, claim_match.group(1))
+        retire_match = re.match(r"^/api/cards/([A-Za-z0-9_-]{1,40})/retire$", path)
+        if retire_match and method == "POST":
+            if not admin:
+                return self.send(handler, 403, {"error": "An admin retires cards."})
+            return self.retire_card(handler, conn, retire_match.group(1))
+        card_match = re.match(r"^/api/cards/([A-Za-z0-9_-]{1,40})$", path)
+        if card_match and method == "PATCH":
+            if not admin:
+                return self.send(handler, 403, {"error": "An admin re-links cards."})
+            return self.relink_card(handler, conn, card_match.group(1))
         if path == "/api/classes" and method == "PUT":
             saved = self.save_class(conn, self.sanitize_class(self.read_json(handler)), merge=False)
             conn.commit()
@@ -698,6 +756,92 @@ class Api:
         conn.execute("DELETE FROM users WHERE id = ?", (uid,))
         conn.commit()
         return self.send(handler, 200, {"ok": True})
+
+    def create_cards(self, handler, conn):
+        body = self.read_json(handler)
+        try:
+            count = int(body.get("count", 8))
+        except (TypeError, ValueError):
+            count = 8
+        count = max(1, min(24, count))
+        now = iso(utcnow())
+        made = []
+        for _ in range(count):
+            code = "b-" + secrets.token_hex(16)
+            conn.execute(
+                "INSERT INTO cards (code, status, student_id, created_at) VALUES (?, 'unclaimed', NULL, ?)",
+                (code, now),
+            )
+            made.append({"code": code, "status": "unclaimed", "studentId": "", "createdAt": now})
+        conn.commit()
+        return self.send(handler, 201, {"cards": made})
+
+    def claim_card(self, handler, conn, code):
+        student = self.student_from_claim(self.read_json(handler))
+        conn.execute("BEGIN IMMEDIATE")
+        row = conn.execute("SELECT status FROM cards WHERE code = ?", (code,)).fetchone()
+        if not row:
+            conn.rollback()
+            return self.send(handler, 404, {"error": "That code is not a Grace card."})
+        if row["status"] == "retired":
+            conn.rollback()
+            return self.send(handler, 409, {"error": "That card was retired."})
+        if row["status"] != "unclaimed":
+            conn.rollback()
+            return self.send(handler, 409, {"error": "That card is already linked to a student."})
+        now = iso(utcnow())
+        conn.execute(
+            "INSERT INTO students (id, name, age, belt, stripes, created_at) VALUES (?, ?, ?, ?, ?, ?)",
+            (student["id"], student["name"], student["age"], student["belt"], student["stripes"], now),
+        )
+        conn.execute(
+            """
+            UPDATE cards
+            SET status = 'claimed', student_id = ?, claimed_at = ?
+            WHERE code = ? AND status = 'unclaimed'
+            """,
+            (student["id"], now, code),
+        )
+        if conn.execute("SELECT changes()").fetchone()[0] != 1:
+            conn.rollback()
+            return self.send(handler, 409, {"error": "That card is already linked to a student."})
+        conn.commit()
+        card = conn.execute("SELECT * FROM cards WHERE code = ?", (code,)).fetchone()
+        return self.send(handler, 201, {"student": student, "card": self.card_json(card)})
+
+    def retire_card(self, handler, conn, code):
+        row = conn.execute("SELECT * FROM cards WHERE code = ?", (code,)).fetchone()
+        if not row:
+            return self.send(handler, 404, {"error": "That code is not a Grace card."})
+        now = iso(utcnow())
+        conn.execute(
+            "UPDATE cards SET status = 'retired', retired_at = ? WHERE code = ?",
+            (now, code),
+        )
+        conn.commit()
+        card = conn.execute("SELECT * FROM cards WHERE code = ?", (code,)).fetchone()
+        return self.send(handler, 200, {"card": self.card_json(card)})
+
+    def relink_card(self, handler, conn, code):
+        body = self.read_json(handler)
+        sid = clean_id(body.get("studentId"))
+        if not sid or not conn.execute("SELECT 1 FROM students WHERE id = ?", (sid,)).fetchone():
+            raise ValueError("Choose a student on the roster.")
+        row = conn.execute("SELECT * FROM cards WHERE code = ?", (code,)).fetchone()
+        if not row:
+            return self.send(handler, 404, {"error": "That code is not a Grace card."})
+        now = iso(utcnow())
+        conn.execute(
+            """
+            UPDATE cards
+            SET status = 'claimed', student_id = ?, claimed_at = COALESCE(claimed_at, ?), retired_at = NULL
+            WHERE code = ?
+            """,
+            (sid, now, code),
+        )
+        conn.commit()
+        card = conn.execute("SELECT * FROM cards WHERE code = ?", (code,)).fetchone()
+        return self.send(handler, 200, {"card": self.card_json(card)})
 
     def save_sheet(self, handler, conn):
         body = self.read_json(handler)

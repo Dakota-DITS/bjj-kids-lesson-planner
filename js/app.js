@@ -31,6 +31,8 @@
     themeSkip: 0,
     cardPick: {},
     cardLayout: "wallet",
+    cards: [],
+    pendingCard: "",
     session: null,
     featured: { sheetId: "", caption: "" },
     serverSheets: [],
@@ -39,6 +41,7 @@
   let cameraStream = null;
   let cameraTimer = 0;
   let noteTimer = 0;
+  let claimOpen = false;
 
   const $ = (id) => document.getElementById(id);
   const esc = P.escapeHtml;
@@ -49,6 +52,14 @@
     el.classList.add("show");
     clearTimeout(toast._t);
     toast._t = setTimeout(() => el.classList.remove("show"), 2800);
+  }
+
+  function setFormNote(id, message, ok) {
+    const el = $(id);
+    if (!el) return;
+    el.textContent = message || "";
+    el.classList.toggle("ok", !!ok && !!message);
+    el.classList.toggle("bad", !!message && !ok);
   }
 
   function fill(str, extra = {}) {
@@ -1740,9 +1751,9 @@ function sparringSection(plan) {
   }
 
   function fillBeltSelect() {
-    $("rosterBelt").innerHTML = DATA.belts
-      .map(([id, label]) => `<option value="${esc(id)}">${esc(label)}</option>`)
-      .join("");
+    const options = DATA.belts.map(([id, label]) => `<option value="${esc(id)}">${esc(label)}</option>`).join("");
+    $("rosterBelt").innerHTML = options;
+    if ($("claimBelt")) $("claimBelt").innerHTML = options;
   }
 
   function isAdmin() {
@@ -1783,6 +1794,7 @@ function sparringSection(plan) {
     });
     state.featured = body.featured || { sheetId: "", caption: "" };
     state.serverSheets = body.sheets || [];
+    state.cards = (Array.isArray(body.cards) ? body.cards : []).map(normalizeCard).filter(Boolean);
     document.body.classList.toggle("role-admin", isAdmin());
     const who = $("whoami");
     if (who && state.session) who.textContent = `${state.session.username} · ${state.session.role}`;
@@ -2104,6 +2116,8 @@ function sparringSection(plan) {
   function setView(view) {
     if (view !== "checkin") stopCamera();
     state.view = view;
+    document.body.classList.remove("menu-open");
+    if ($("menuToggle")) $("menuToggle").setAttribute("aria-expanded", "false");
     document.querySelectorAll("#viewSwitch button").forEach((btn) => {
       btn.classList.toggle("on", btn.dataset.view === view);
     });
@@ -2121,6 +2135,33 @@ function sparringSection(plan) {
       if (!$("checkinDate").value) $("checkinDate").value = $("date").value || P.nextClassDate(new Date());
       cameraHelp();
       renderCheckinList();
+      renderCardRecords();
+      refreshCards();
+    }
+  }
+
+  function normalizeCard(raw) {
+    const code = P.cleanId(raw && raw.code);
+    if (!code) return null;
+    const status = ["unclaimed", "claimed", "retired"].includes(raw.status) ? raw.status : "unclaimed";
+    return { code, status, studentId: P.cleanId(raw.studentId) || "" };
+  }
+
+  function rememberCard(card) {
+    const next = normalizeCard(card);
+    if (!next) return;
+    const idx = state.cards.findIndex((item) => item.code === next.code);
+    if (idx >= 0) state.cards[idx] = next;
+    else state.cards.push(next);
+  }
+
+  async function refreshCards() {
+    try {
+      const body = await window.BJJ_API.send("GET", "/api/cards");
+      state.cards = (body.cards || []).map(normalizeCard).filter(Boolean);
+      renderCardRecords();
+    } catch (err) {
+      /* keep the cards from the last load */
     }
   }
 
@@ -2428,6 +2469,213 @@ function sparringSection(plan) {
     return { known, dup, unknown, date: when };
   }
 
+  function resolveScan(id) {
+    const kid = state.roster.find((item) => item.id === id);
+    if (kid) return { type: "student", id: kid.id };
+    const card = state.cards.find((item) => item.code === id);
+    if (!card) return { type: "unknown", message: "That code is not a Grace card." };
+    if (card.status === "retired") return { type: "retired", message: "That card was retired." };
+    if (card.status === "claimed") {
+      const linked = state.roster.find((item) => item.id === card.studentId);
+      if (!linked) return { type: "missing", message: "That card's student is no longer on the roster." };
+      return { type: "student", id: linked.id };
+    }
+    return { type: "unclaimed", code: card.code };
+  }
+
+  async function handleScans(ids) {
+    const studentIds = [];
+    const messages = [];
+    const unclaimed = [];
+    ids.forEach((id) => {
+      const found = resolveScan(id);
+      if (found.type === "student") {
+        if (!studentIds.includes(found.id)) studentIds.push(found.id);
+        return;
+      }
+      if (found.type === "unclaimed") {
+        if (!unclaimed.includes(found.code)) unclaimed.push(found.code);
+        return;
+      }
+      if (found.message && !messages.includes(found.message)) messages.push(found.message);
+    });
+    const result = studentIds.length ? await markPresent(studentIds) : null;
+    if (unclaimed.length && !claimOpen) {
+      openClaim(unclaimed[0]);
+      if (unclaimed.length > 1) {
+        $("checkinStatus").textContent = "More than one new card. Add this student, then scan the next card.";
+        $("checkinStatus").className = "checkin-status";
+      }
+      return;
+    }
+    if (result && (result.known.length || result.dup.length)) {
+      showScanResult(result);
+      return;
+    }
+    if (messages.length) {
+      $("checkinStatus").textContent = messages[0];
+      $("checkinStatus").className = "checkin-status dup";
+      beep(false);
+      return;
+    }
+    if (result) showScanResult(result);
+  }
+
+  function openClaim(code) {
+    claimOpen = true;
+    state.pendingCard = code;
+    const form = $("claimForm");
+    if (!form) return;
+    form.classList.remove("hidden");
+    $("claimName").value = "";
+    $("claimAge").value = "";
+    $("claimGroup").value = "";
+    $("claimBelt").value = "white";
+    $("claimStripes").value = "0";
+    setFormNote("claimNote", "");
+    $("checkinStatus").textContent = "New card. Add this student.";
+    $("checkinStatus").className = "checkin-status ok";
+    form.scrollIntoView({ block: "nearest" });
+    $("claimName").focus();
+  }
+
+  function closeClaim() {
+    claimOpen = false;
+    state.pendingCard = "";
+    const form = $("claimForm");
+    if (form) form.classList.add("hidden");
+    setFormNote("claimNote", "");
+  }
+
+  async function submitClaim(event) {
+    event.preventDefault();
+    const code = state.pendingCard;
+    const name = $("claimName").value.trim().slice(0, 40);
+    const ageText = $("claimAge").value.trim();
+    const ageGroup = $("claimGroup").value;
+    if (!code) {
+      setFormNote("claimNote", "Scan a blank card first.");
+      return;
+    }
+    if (!name) {
+      setFormNote("claimNote", "Add the student's name.");
+      toast("Add the student's name.");
+      return;
+    }
+    if (!ageText && !ageGroup) {
+      setFormNote("claimNote", "Add an age or a class.");
+      toast("Add an age or a class.");
+      return;
+    }
+    if (ageText) {
+      const age = Number(ageText);
+      if (!Number.isInteger(age) || age < 3 || age > 17) {
+        setFormNote("claimNote", "Age needs to be from 3 to 17.");
+        toast("Age needs to be from 3 to 17.");
+        return;
+      }
+    }
+    const body = {
+      name,
+      belt: $("claimBelt").value,
+      stripes: Number($("claimStripes").value),
+    };
+    if (ageText) body.age = Number(ageText);
+    if (ageGroup) body.ageGroup = ageGroup;
+    try {
+      const saved = await window.BJJ_API.send("POST", `/api/cards/${code}/claim`, body);
+      const kid = P.sanitizeRosterKid(saved.student);
+      if (!kid) throw new Error("Could not add that student.");
+      if (!state.roster.some((item) => item.id === kid.id)) state.roster.push(kid);
+      if (saved.card) rememberCard(saved.card);
+      closeClaim();
+      renderRoster();
+      renderCardRecords();
+      const result = await markPresent([kid.id]);
+      showScanResult(result);
+      if (result.known.length) {
+        $("checkinStatus").textContent = `${kid.name} is on the roster and checked in.`;
+      }
+      toast(`${kid.name} is on the roster.`);
+      if (state.plan) renderPlan();
+    } catch (err) {
+      const message = err.message || "Could not add that student.";
+      setFormNote("claimNote", message);
+      toast(message);
+    }
+  }
+
+  function renderCardRecords() {
+    const list = $("cardRecordList");
+    if (!list) return;
+    if (!state.cards.length) {
+      list.innerHTML = `<p class="hint">No blank cards printed yet.</p>`;
+      return;
+    }
+    const options = [`<option value="">Link to a student</option>`]
+      .concat(P.sortByRank(state.roster).map((kid) => `<option value="${esc(kid.id)}">${esc(kid.name)}</option>`))
+      .join("");
+    list.innerHTML = state.cards
+      .map((card) => {
+        const kid = state.roster.find((item) => item.id === card.studentId);
+        const who = kid ? kid.name : card.status === "claimed" ? "Missing student" : "Not linked";
+        return `<div class="card-record">
+          <strong>${esc(who)}</strong>
+          <span>${esc(card.status)} · ${esc(card.code.slice(0, 8))}…</span>
+          <select data-relink="${esc(card.code)}" aria-label="Student for ${esc(who)}">${options}</select>
+          <div class="btn-row">
+            <button type="button" class="ghost" data-link-card="${esc(card.code)}">Re-link</button>
+            <button type="button" class="danger" data-retire-card="${esc(card.code)}">Retire</button>
+          </div>
+        </div>`;
+      })
+      .join("");
+  }
+
+  function blankCardInner(card, qrSize) {
+    const src = qrDataUrl(P.qrPayload(card.code), qrSize);
+    return `<img class="qr" alt="Blank check-in card" src="${src}" />
+      <div class="blank-fields">
+        <img class="mini-logo card-logo" src="${esc(LOGO)}" alt="" />
+        <p class="write"><span>Name</span><span class="line"></span></p>
+        <p class="write"><span>Class</span><span class="line"></span></p>
+        <p class="write"><span>Belt</span><span class="line"></span></p>
+      </div>`;
+  }
+
+  function renderBlankCards(cards, layout) {
+    state.cardLayout = layout;
+    const root = $("cardView");
+    const title = layout === "blank-full" ? "Blank full-page cards" : "Blank wallet cards";
+    const body =
+      layout === "blank-full"
+        ? cards.map((card) => `<article class="card-page blank-card" data-code="${esc(card.code)}">${blankCardInner(card, 480)}</article>`).join("")
+        : `<div class="wallet-grid">${cards
+            .map((card) => `<article class="wallet-card blank-card" data-code="${esc(card.code)}">${blankCardInner(card, 220)}</article>`)
+            .join("")}</div>`;
+    root.innerHTML = `<div class="no-print"><h2>${title}</h2><p>Write the name and class on a card, then scan it to add the student.</p></div>${body}`;
+  }
+
+  async function printBlankCards(layout) {
+    if (!isAdmin()) {
+      toast("An admin prints blank cards.");
+      return;
+    }
+    const raw = Number($("blankCount").value);
+    const count = Math.max(1, Math.min(24, Number.isFinite(raw) && raw > 0 ? Math.round(raw) : 8));
+    $("blankCount").value = String(count);
+    try {
+      const body = await window.BJJ_API.send("POST", "/api/cards", { count });
+      (body.cards || []).forEach(rememberCard);
+      renderBlankCards(body.cards || [], layout);
+      renderCardRecords();
+      setView("cards");
+      toast(count === 1 ? "Blank card is ready to print." : `${count} blank cards are ready to print.`);
+    } catch (err) {
+      toast(err.message || "Could not make blank cards.");
+    }
+  }
+
   function showScanResult(result) {
     const el = $("checkinStatus");
     if (!el) return;
@@ -2584,7 +2832,7 @@ function sparringSection(plan) {
     if (!video || video.readyState < 2) return;
     const ids = await decodeSource(video);
     if (!ids.length) return;
-    showScanResult(await markPresent(ids));
+    await handleScans(ids);
   }
 
   async function startCamera() {
@@ -2632,7 +2880,12 @@ function sparringSection(plan) {
       image.src = url;
       await image.decode();
       const ids = await decodeSource(image);
-      showScanResult(await markPresent(ids));
+      if (!ids.length) {
+        $("checkinStatus").textContent = "No Grace card in that photo.";
+        $("checkinStatus").className = "checkin-status";
+        return;
+      }
+      await handleScans(ids);
     } catch (err) {
       toast("Could not read that photo.");
     } finally {
@@ -2997,6 +3250,8 @@ function sparringSection(plan) {
       if (event.key === "Escape") {
         closeModal();
         closeSheetEditor();
+        document.body.classList.remove("menu-open");
+        if ($("menuToggle")) $("menuToggle").setAttribute("aria-expanded", "false");
       }
     });
 
@@ -3080,6 +3335,42 @@ function sparringSection(plan) {
     $("printFullBtn").addEventListener("click", () => showCards("full"));
     $("printWalletBtn").addEventListener("click", () => showCards("wallet"));
     $("printSigninBtn").addEventListener("click", () => showCards("signin"));
+    if ($("blankWalletBtn")) $("blankWalletBtn").addEventListener("click", () => printBlankCards("blank-wallet"));
+    if ($("blankFullBtn")) $("blankFullBtn").addEventListener("click", () => printBlankCards("blank-full"));
+    if ($("claimForm")) $("claimForm").addEventListener("submit", (event) => submitClaim(event));
+    if ($("claimCancel")) $("claimCancel").addEventListener("click", () => {
+      closeClaim();
+      $("checkinStatus").textContent = "Card not linked.";
+      $("checkinStatus").className = "checkin-status";
+    });
+    if ($("cardRecordList")) {
+      $("cardRecordList").addEventListener("click", async (event) => {
+        const retire = event.target.closest("[data-retire-card]");
+        const link = event.target.closest("[data-link-card]");
+        if (!retire && !link) return;
+        const code = (retire || link).dataset.retireCard || (retire || link).dataset.linkCard;
+        try {
+          if (retire) {
+            const saved = await window.BJJ_API.send("POST", `/api/cards/${code}/retire`);
+            rememberCard(saved.card);
+            toast("Card retired.");
+          } else {
+            const select = $("cardRecordList").querySelector(`[data-relink="${CSS.escape(code)}"]`);
+            const studentId = select ? select.value : "";
+            if (!studentId) {
+              toast("Choose a student on the roster.");
+              return;
+            }
+            const saved = await window.BJJ_API.send("PATCH", `/api/cards/${code}`, { studentId });
+            rememberCard(saved.card);
+            toast("Card linked.");
+          }
+          renderCardRecords();
+        } catch (err) {
+          toast(err.message || "Could not update that card.");
+        }
+      });
+    }
     $("printTheseBtn").addEventListener("click", () => printCards());
     window.addEventListener("beforeprint", () => {
       if (state.view === "cards" && !document.body.dataset.print) {
@@ -3088,6 +3379,21 @@ function sparringSection(plan) {
     });
     window.addEventListener("afterprint", () => {
       delete document.body.dataset.print;
+    });
+
+    const menuToggle = $("menuToggle");
+    const menuScrim = $("menuScrim");
+    if (menuToggle) {
+      menuToggle.addEventListener("click", () => {
+        const open = !document.body.classList.contains("menu-open");
+        document.body.classList.toggle("menu-open", open);
+        menuToggle.setAttribute("aria-expanded", open ? "true" : "false");
+        if (open && $("sidebar")) $("sidebar").focus();
+      });
+    }
+    if (menuScrim) menuScrim.addEventListener("click", () => {
+      document.body.classList.remove("menu-open");
+      if (menuToggle) menuToggle.setAttribute("aria-expanded", "false");
     });
 
     $("logoutBtn").addEventListener("click", async () => {
@@ -3100,16 +3406,28 @@ function sparringSection(plan) {
     });
     $("passwordForm").addEventListener("submit", async (event) => {
       event.preventDefault();
+      const current = $("currentPassword").value;
+      const next = $("nextPassword").value;
+      if (!current) {
+        setFormNote("passwordNote", "Enter the current password.");
+        toast("Enter the current password.");
+        return;
+      }
+      if (next.length < 10) {
+        setFormNote("passwordNote", "Use at least 10 characters.");
+        toast("Use at least 10 characters.");
+        return;
+      }
       try {
-        await window.BJJ_API.send("POST", "/api/password", {
-          current: $("currentPassword").value,
-          next: $("nextPassword").value,
-        });
+        await window.BJJ_API.send("POST", "/api/password", { current, next });
         $("currentPassword").value = "";
         $("nextPassword").value = "";
+        setFormNote("passwordNote", "Password changed.", true);
         toast("Password changed.");
       } catch (err) {
-        toast(err.message || "Could not change the password.");
+        const message = err.message || "Could not change the password.";
+        setFormNote("passwordNote", message);
+        toast(message);
       }
     });
     $("featuredSave").addEventListener("click", async () => {
@@ -3141,18 +3459,33 @@ function sparringSection(plan) {
     });
     $("userForm").addEventListener("submit", async (event) => {
       event.preventDefault();
+      const username = $("newUsername").value.trim();
+      const password = $("newUserPassword").value;
+      if (username.length < 3) {
+        setFormNote("userNote", "Usernames are 3–32 letters, numbers, dots, or dashes.");
+        toast("Usernames are 3–32 letters, numbers, dots, or dashes.");
+        return;
+      }
+      if (password.length < 10) {
+        setFormNote("userNote", "Use at least 10 characters.");
+        toast("Use at least 10 characters.");
+        return;
+      }
       try {
         await window.BJJ_API.send("POST", "/api/users", {
-          username: $("newUsername").value.trim(),
-          password: $("newUserPassword").value,
+          username,
+          password,
           role: $("newUserRole").value,
         });
         $("newUsername").value = "";
         $("newUserPassword").value = "";
+        setFormNote("userNote", "Login added.", true);
         toast("Login added.");
         await refreshUsers();
       } catch (err) {
-        toast(err.message || "Could not add that login.");
+        const message = err.message || "Could not add that login.";
+        setFormNote("userNote", message);
+        toast(message);
       }
     });
     $("exportServerBtn").addEventListener("click", async () => {
@@ -3187,7 +3520,7 @@ function sparringSection(plan) {
     $("userList").innerHTML = (body.users || [])
       .map(
         (user) =>
-          `<p>${esc(user.username)} · ${esc(user.role)} <button type="button" data-user="${esc(user.id)}">Remove</button></p>`
+          `<p>${esc(user.username)} · ${esc(user.role)} <button class="ghost" type="button" data-user="${esc(user.id)}">Remove</button></p>`
       )
       .join("");
   }

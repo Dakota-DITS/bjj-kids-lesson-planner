@@ -1020,7 +1020,7 @@ body:not(.role-admin) .admin-only { display: none !important; }
   box-sizing: border-box;
 }
 #printTheseBtn { margin: 16px auto; }
-#checkinView input, #accountPanel input, #accountPanel select, .roster-admin input, .roster-admin select {
+#checkinView input, #checkinView select, #accountPanel input, #accountPanel select, .roster-admin input, .roster-admin select {
   font: inherit;
   color: var(--ui-text);
   background: #1c1917;
@@ -1028,6 +1028,8 @@ body:not(.role-admin) .admin-only { display: none !important; }
   border-radius: 6px;
   padding: 8px;
   min-height: 40px;
+  width: 100%;
+  box-sizing: border-box;
 }
 
 @media (max-width: 980px) {
@@ -1041,7 +1043,7 @@ body:not(.role-admin) .admin-only { display: none !important; }
 
 @media print {
   body { background: white; color: black; }
-  .sidebar, .toolbar, .toast, .modal-back, .reroll, .reps-ctrl, .no-print, .name-live { display: none !important; }
+  .sidebar, .toolbar, .toast, .modal-back, .reroll, .reps-ctrl, .no-print, .name-live, .phone-bar, .scrim { display: none !important; }
   .name-print { display: inline !important; }
   .app { display: block; }
   .stage { padding: 0; }
@@ -1212,6 +1214,66 @@ body:not(.role-admin) .admin-only { display: none !important; }
 .wallet-card img.qr { width: 92px; height: 92px; }
 .wallet-card .mini-logo { height: 28px; }
 
+.blank-card { color: #111; background: #fff; }
+.blank-fields { min-width: 0; }
+.blank-card .write {
+  display: flex;
+  align-items: flex-end;
+  gap: 8px;
+  margin: 8px 0 0;
+  font-family: var(--doc-sans);
+  font-size: 14px;
+  font-weight: 700;
+}
+.blank-card .write span:first-child { width: 3.4em; flex: none; }
+.blank-card .line {
+  flex: 1;
+  border-bottom: 1.5px solid #111;
+  min-height: 1.15em;
+}
+.wallet-card.blank-card { min-height: 2.35in; align-items: center; }
+.card-page.blank-card .card-logo { height: 64px; }
+.card-page.blank-card .blank-fields { width: min(100%, 5.4in); }
+.card-page.blank-card .write { font-size: 22px; margin-top: 16px; }
+
+.claim-form {
+  border: 2px solid #111;
+  border-radius: 12px;
+  padding: 14px;
+  margin: 12px 0 16px;
+  background: #fff;
+}
+.claim-form .hint { color: #4a4a4a; }
+.claim-form .field label { color: #44403c; }
+.claim-form .form-note.bad { color: #9f1239; }
+.claim-form .form-note.ok { color: #166534; }
+.work-view button.ghost,
+.work-view button.danger {
+  color: #1c1917;
+  background: #fff;
+  border-color: #44403c;
+}
+.work-view button.danger { color: #7f1d1d; border-color: #7f1d1d; }
+.work-view .hint { color: #4a4a4a; }
+.blank-tools { margin-top: 18px; }
+.blank-tools h3, #cardRecords summary { margin: 0 0 8px; }
+#cardRecords { margin-top: 16px; }
+#cardRecords summary {
+  min-height: 44px;
+  display: flex;
+  align-items: center;
+  font-weight: 700;
+  cursor: pointer;
+}
+.card-record {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  border-top: 1px solid #ddd;
+  padding: 12px 0;
+}
+.card-record select, .card-record button { min-height: 44px; width: 100%; }
+
 .signin-sheet { color: #111; }
 .signin-row {
   display: grid;
@@ -1236,4 +1298,91 @@ body:not(.role-admin) .admin-only { display: none !important; }
   width: 100%;
   min-height: 72px;
   font: inherit;
+}
+
+.form-note {
+  min-height: 1.4em;
+  margin: 8px 0;
+  font-size: 0.95rem;
+  font-weight: 700;
+}
+.form-note.bad { color: #fecaca; }
+.form-note.ok { color: #bbf7d0; }
+#userList p { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+#userList button { min-height: 44px; }
+
+.phone-bar, .scrim { display: none; }
+
+@media screen and (max-width: 860px) {
+  .stage button, .stage input, .stage select, .stage textarea, .claim-form, .blank-card {
+    scroll-margin-top: 72px;
+    scroll-margin-bottom: 24px;
+  }
+  .phone-bar {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    position: sticky;
+    top: 0;
+    z-index: 20;
+    background: #1c1917;
+    color: var(--ui-text);
+    padding: 8px 12px;
+    border-bottom: 1px solid var(--ui-line);
+  }
+  .menu-toggle { min-height: 44px; min-width: 72px; }
+  .scrim {
+    position: fixed;
+    inset: 0;
+    z-index: 24;
+    border: 0;
+    padding: 0;
+    background: rgba(0, 0, 0, 0.5);
+  }
+  body.menu-open .scrim { display: block; }
+  body.menu-open { overflow: hidden; }
+  .app { display: block; }
+  .sidebar {
+    position: fixed;
+    z-index: 26;
+    top: 0;
+    bottom: 0;
+    left: 0;
+    width: min(22rem, 88vw);
+    max-height: 100vh;
+    transform: translateX(-105%);
+    transition: transform 0.18s ease;
+  }
+  body.menu-open .sidebar { transform: translateX(0); }
+  .stage { padding: 16px 12px 48px; }
+  .toolbar { flex-direction: column; align-items: stretch; }
+  .paper { padding: 20px 16px 32px; min-height: 0; }
+  .paper.sheet-page, .sheet-page { padding: 16px; }
+  .paper > h1.title { font-size: 26px; letter-spacing: 0.04em; }
+  .grid-2 { grid-template-columns: 1fr; }
+  .seg.ages, .seg.views { grid-template-columns: 1fr 1fr; }
+  .seg.ages button, .seg.views button, .stepper button, button, .btn {
+    min-height: 44px;
+  }
+  .field input, .field select, .field textarea, #checkinView input, #checkinView select, #accountPanel input, #accountPanel select {
+    font-size: 16px;
+    min-height: 44px;
+  }
+  .stepper { grid-template-columns: 44px 1fr 44px; }
+  .staff-table td:first-child { white-space: normal; width: auto; }
+  .block-title { flex-wrap: wrap; gap: 6px; font-size: 18px; }
+  .block-title .when { white-space: normal; }
+  #checkinView .btn-row, .toolbar .btn-row { flex-direction: column; }
+  #checkinView .btn-row button, .toolbar .btn-row button { width: 100%; }
+  #checkinVideo { max-height: 240px; }
+  .work-view { margin: 12px 0 32px; padding: 16px; }
+  .wallet-grid { grid-template-columns: 1fr; }
+}
+
+@media print {
+  .staff-table td:first-child { white-space: nowrap; width: 28%; }
+  .block-title { flex-wrap: nowrap; font-size: 22px; }
+  .block-title .when { white-space: nowrap; }
+  .sidebar { transform: none !important; }
+  body { overflow: visible; }
 }

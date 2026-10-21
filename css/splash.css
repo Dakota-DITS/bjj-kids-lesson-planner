@@ -114,8 +114,12 @@ h2 { margin: 0 0 8px; font-size: 1.7rem; }
 }
 .big:hover, .big:focus { background: var(--red-dark); }
 .teacher {
-  display: inline-block;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
   margin-top: 14px;
+  min-height: 44px;
+  padding: 8px 12px;
   font-size: 0.95rem;
 }
 .extra { font-size: 0.95rem; }
@@ -124,6 +128,16 @@ footer {
   padding: 10px 0 28px;
   color: #4a403a;
   font-size: 0.9rem;
+}
+
+@media screen and (max-width: 640px) {
+  .big {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 100%;
+  }
+  .logo { width: min(320px, 88vw); }
 }
 
 @media (min-width: 720px) {
