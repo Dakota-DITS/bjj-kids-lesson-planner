@@ -75,13 +75,18 @@ body {
   align-items: stretch;
   gap: 8px;
   margin-bottom: 8px;
+  min-width: 0;
+  max-width: 100%;
 }
 
 .brand-logo {
   width: 100%;
+  max-width: 100%;
+  min-width: 0;
   height: auto;
   background: transparent;
   display: block;
+  object-fit: contain;
 }
 
 .brand-text {
@@ -736,12 +741,17 @@ button.danger {
   font-weight: 700;
   align-items: center;
   gap: 12px;
+  min-width: 0;
+  max-width: 100%;
 }
 
 .plan-logo {
   height: 58px;
   width: auto;
+  max-width: 100%;
+  min-width: 0;
   display: block;
+  object-fit: contain;
 }
 
 .plan-kicker { flex: 1; }
@@ -752,11 +762,15 @@ button.danger {
   display: flex;
   justify-content: flex-end;
   margin: 0 0 4px;
+  min-width: 0;
+  max-width: 100%;
 }
 
 .sheet-logo {
   height: 42px;
   width: auto;
+  max-width: 100%;
+  min-width: 0;
 }
 
 .paper .req,
@@ -1190,8 +1204,8 @@ body:not(.role-admin) .admin-only { display: none !important; }
   background: #fff;
 }
 
-.card-page img.qr { width: 320px; height: 320px; }
-.card-page .card-logo { height: 72px; }
+.card-page img.qr { width: 320px; height: 320px; max-width: 100%; }
+.card-page .card-logo { height: 72px; width: auto; max-width: 100%; min-width: 0; }
 
 .wallet-grid {
   display: grid;
@@ -1211,8 +1225,8 @@ body:not(.role-admin) .admin-only { display: none !important; }
   background: #fff;
 }
 
-.wallet-card img.qr { width: 92px; height: 92px; }
-.wallet-card .mini-logo { height: 28px; }
+.wallet-card img.qr { width: 92px; height: 92px; max-width: 100%; }
+.wallet-card .mini-logo { height: 28px; width: auto; max-width: 100%; min-width: 0; }
 
 .blank-card { color: #111; background: #fff; }
 .blank-fields { min-width: 0; }
@@ -1377,6 +1391,29 @@ body:not(.role-admin) .admin-only { display: none !important; }
   #checkinVideo { max-height: 240px; }
   .work-view { margin: 12px 0 32px; padding: 16px; }
   .wallet-grid { grid-template-columns: 1fr; }
+  .sidebar, .stage, .paper, .work-view, .toolbar, .plan-running-header, .phone-bar {
+    min-width: 0;
+    max-width: 100%;
+  }
+  .brand-logo { width: min(100%, 200px); }
+  .plan-logo, .sheet-logo, .card-logo, .mini-logo {
+    width: auto;
+    height: auto;
+    max-width: min(100%, 200px);
+    max-height: 64px;
+    object-fit: contain;
+  }
+  .card-page { min-width: 0; max-width: 100%; }
+  .card-page img.qr, .wallet-card img.qr, .signin-row img.qr {
+    width: min(100%, 240px);
+    height: auto;
+    max-width: 100%;
+  }
+  .wallet-card {
+    grid-template-columns: minmax(72px, 34%) minmax(0, 1fr);
+    min-width: 0;
+  }
+  .signin-row { grid-template-columns: 28px minmax(0, 1fr) 68px; min-width: 0; }
 }
 
 @media print {

@@ -39,10 +39,12 @@ a { color: var(--red-dark); }
 }
 .skip:focus { top: 12px; }
 
-.wrap { width: min(920px, calc(100% - 32px)); margin: 0 auto; }
-header.hero { padding: 28px 0 8px; text-align: center; }
+.wrap { width: min(920px, calc(100% - 32px)); max-width: 100%; min-width: 0; margin: 0 auto; }
+header.hero { padding: 28px 0 8px; text-align: center; min-width: 0; }
 .logo {
   width: min(440px, 92vw);
+  max-width: 100%;
+  min-width: 0;
   height: auto;
   background: transparent;
   display: block;
@@ -130,14 +132,19 @@ footer {
   font-size: 0.9rem;
 }
 
+@media screen {
+  .logo { width: min(100%, clamp(148px, 64vw, 440px)); }
+}
+
 @media screen and (max-width: 640px) {
   .big {
     display: flex;
     align-items: center;
     justify-content: center;
     width: 100%;
+    max-width: 100%;
   }
-  .logo { width: min(320px, 88vw); }
+  .actions, .actions .big, .teacher { max-width: 100%; min-width: 0; }
 }
 
 @media (min-width: 720px) {
