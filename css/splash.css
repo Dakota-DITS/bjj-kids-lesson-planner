@@ -55,8 +55,17 @@ h1, h2, .values strong {
   font-weight: 400;
   letter-spacing: 0.02em;
 }
+.eyebrow {
+  margin: 16px 0 0;
+  color: var(--red-dark);
+  font-size: 0.92rem;
+  font-weight: 600;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+}
 h1 { font-size: clamp(2.2rem, 8vw, 3.4rem); margin: 18px 0 8px; color: var(--red); }
-.welcome { font-size: 1.15rem; max-width: 38rem; margin: 0 auto 8px; }
+.eyebrow + h1 { margin-top: 2px; text-wrap: balance; }
+.welcome { font-size: 1.15rem; max-width: 38rem; margin: 0 auto 8px; text-wrap: balance; }
 
 .values {
   display: grid;
@@ -404,35 +413,34 @@ h2 { margin: 0 0 8px; font-size: 1.7rem; }
   left: 50%;
   top: 50%;
   transform: translate(-50%, -50%);
-  display: inline-flex;
+  display: flex;
   align-items: center;
   justify-content: center;
   box-sizing: border-box;
-  width: max-content;
-  min-width: 76px;
-  height: 44px;
-  min-height: 44px;
+  width: 72px;
+  height: 72px;
   margin: 0;
-  padding: 0 16px;
+  padding: 0;
   border: 0;
-  border-radius: 999px;
+  border-radius: 50%;
   background: var(--red);
   color: #fff;
-  font-family: "Luckiest Guy", "Arial Black", sans-serif;
-  font-size: 1rem;
-  font-weight: 400;
-  font-style: normal;
-  line-height: 1;
-  letter-spacing: 0.03em;
-  text-align: center;
+  pointer-events: none;
 }
-/* Luckiest Guy's letters sit above the em-box center. The shift is a fraction of the font size so it stays centered in Chrome and iOS Safari. */
-.video-play-label {
+.video-play svg {
   display: block;
-  padding: 0;
-  margin: 0;
-  line-height: 1;
-  transform: translate(0.08em, 0.17em);
+  width: 32px;
+  height: 32px;
+  transform: translateX(3px);
+}
+.video-facade:hover .video-play { background: var(--red-dark); }
+.video-facade:active .video-play {
+  background: #64190b;
+  transform: translate(-50%, -50%) scale(0.96);
+}
+.video-facade:focus-visible .video-play {
+  outline: 3px solid #fff;
+  outline-offset: 4px;
 }
 .video-fallback { margin-bottom: 0; }
 .visually-hidden {
@@ -489,6 +497,8 @@ footer {
     max-width: 100%;
   }
   .actions, .actions .big, .gi-shop, .teacher { max-width: 100%; min-width: 0; }
+  .video-play { width: 60px; height: 60px; }
+  .video-play svg { width: 26px; height: 26px; transform: translateX(2px); }
 }
 
 @media (prefers-reduced-motion: reduce) {

@@ -49,20 +49,29 @@ assert.ok(html.includes('frame.title = "How to Practice Jiu Jitsu with Your Kids
 assert.ok(html.includes("https://www.youtube.com/watch?v=QPy386CpuQg"));
 assert.ok(html.includes("https://i.ytimg.com/vi/QPy386CpuQg/hqdefault.jpg"));
 assert.ok(html.includes('loading="lazy"'));
-assert.ok(html.includes('class="video-play-label"'), "the Play label can be centered inside the button");
+assert.ok(html.includes('aria-label="Play video"'));
+assert.ok(html.includes('class="video-play"'));
+assert.ok(html.includes('fill="currentColor"'));
+assert.equal(html.includes("video-play-label"), false);
+assert.equal(html.includes(">Play</span>"), false);
 const playCss = fs.readFileSync(path.join(root, "css/splash.css"), "utf8");
 const playRule = playCss.slice(playCss.indexOf(".video-play {"), playCss.indexOf(".video-fallback"));
-assert.ok(playRule.includes("display: inline-flex"));
-assert.ok(playRule.includes("align-items: center"));
-assert.ok(playRule.includes("justify-content: center"));
-assert.ok(playRule.includes("line-height: 1"));
-assert.ok(playRule.includes("padding: 0 16px"));
-assert.ok(playRule.includes("translate(0.08em, 0.17em)"), "Luckiest Guy is nudged so the ink sits in the middle");
+assert.ok(playRule.includes("border-radius: 50%"));
+assert.ok(playRule.includes("width: 72px"));
+assert.ok(playRule.includes("height: 72px"));
+assert.ok(playRule.includes("translate(-50%, -50%)"));
+assert.ok(playRule.includes("translateX(3px)"));
+assert.ok(playRule.includes(".video-facade:hover .video-play"));
+assert.ok(playRule.includes(".video-facade:active .video-play"));
+assert.ok(playRule.includes(".video-facade:focus-visible .video-play"));
+assert.ok(playCss.includes(".video-play { width: 60px; height: 60px; }"));
+assert.equal(playCss.includes("video-play-label"), false);
+assert.equal(playRule.includes("Luckiest Guy"), false);
 
 const publicList = sw.split("const PUBLIC_ASSETS")[1].split("const STAFF_ASSETS")[0];
 assert.equal(publicList.includes("/img/gi/"), false);
 assert.ok(sw.includes('path.startsWith("/img/gi/")'));
 assert.equal((sw.match(/"\/api\//g) || []).length, 1);
-assert.ok(sw.includes('const VERSION = "20261021-20"'));
+assert.ok(sw.includes('const VERSION = "20261021-21"'));
 
 console.log("welcome gi checks passed");
