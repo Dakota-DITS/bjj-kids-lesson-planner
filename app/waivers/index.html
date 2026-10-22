@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>Enrollment forms · Grace BJJ Staff</title>
   <link rel="icon" href="/icons/staff-favicon-32.png" type="image/png" sizes="32x32" />
-  <script src="/pwa.js?v=20261021-25" defer></script>
+  <script src="/pwa.js?v=20261021-26" defer></script>
   <style>
     :root { color-scheme: dark; }
     body {
@@ -61,6 +61,7 @@
     const status = document.getElementById("status");
     const list = document.getElementById("list");
     const detail = document.getElementById("detail");
+    let csrf = "";
 
     function text(value) {
       return String(value || "");
@@ -108,6 +109,38 @@
       }
       addSig("Signature", body.signature);
       addSig("Parent signature", body.parentSignature);
+      if (body.kind === "kids") {
+        const mark = document.createElement("button");
+        mark.type = "button";
+        mark.className = "ghost";
+        if (body.addedToRoster) {
+          mark.disabled = true;
+          mark.textContent = "This child is on the roster";
+        } else {
+          mark.textContent = "This child is on the roster";
+          mark.addEventListener("click", async () => {
+            mark.disabled = true;
+            const saved = await fetch("/api/waivers/" + encodeURIComponent(id) + "/roster", {
+              method: "POST",
+              credentials: "same-origin",
+              headers: { "Content-Type": "application/json", "X-CSRF-Token": csrf },
+              body: "{}",
+            });
+            const payload = await saved.json().catch(() => ({}));
+            if (!saved.ok) {
+              mark.disabled = false;
+              status.textContent = payload.error || "Could not update that form.";
+              return;
+            }
+            mark.disabled = true;
+            mark.textContent = "This child is on the roster";
+            status.textContent = "That form will not be counted again.";
+          });
+        }
+        const row = document.createElement("p");
+        row.append(mark);
+        detail.append(row);
+      }
     }
 
     fetch("/api/me", { credentials: "same-origin" })
@@ -124,6 +157,7 @@
           status.textContent = "An admin reviews enrollment forms.";
           return;
         }
+        csrf = me.csrf || "";
         const res = await fetch("/api/waivers", { credentials: "same-origin" });
         const body = await res.json().catch(() => ({}));
         if (!res.ok) {

@@ -24,6 +24,8 @@ The kids page shows the church address and an email for questions. Phone and a s
 
 `/waiver/` is the adult enrollment form (ages 11 and up). `/kids/waiver/` is the parent form for the kids class. Both can be printed. Saving a submission is off until `waiverSubmissionsEnabled` in `waiver-config.json` is `true`. Admins review saved forms at `/app/waivers/`. Teachers do not. Turning the flag on does not by itself publish a new legal clause; Pastor Pierre still needs to review the kids parent-consent wording before that flag changes.
 
+The kids class holds 12 students ages 3–10 across both groups. That count is the roster plus kids forms that are not yet on the roster. The same child is not counted twice. An admin can change the number in the staff app. Teachers cannot. The kids page shows spots left only while submissions are on. When the class is full, the kids form stops taking another submission. The adult class has no cap.
+
 ## Coloring sheets
 
 Parents pick a built-in sheet, type a child's name, optionally pick a belt color to color in, and add a move of the week. Print or save a PDF from the browser. If a teacher sets “this week's sheet” in the staff app, the coloring page shows that caption. The public API returns only a sheet id and a caption, plus sheets an admin has published. It does not return student names, attendance, or notes.

@@ -1,10 +1,13 @@
 (function () {
   const kind = document.body.dataset.kind === "kids" ? "kids" : "adult";
+  const FULL_TEXT = "Kids class is full right now. Email dits+bjj@mail.grokbot.com to ask about the next opening.";
   const form = document.getElementById("waiverForm");
   const note = document.getElementById("formNote");
   const submitBtn = document.getElementById("submitBtn");
   const closed = document.getElementById("closedNote");
+  const fullNote = document.getElementById("fullNote");
   let open = false;
+  let full = false;
 
   function pacificToday() {
     return new Intl.DateTimeFormat("en-CA", {
@@ -29,10 +32,20 @@
     note.textContent = message || "";
   }
 
+  function applyGate() {
+    const blocked = kind === "kids" && open && full;
+    const canSubmit = open && !blocked;
+    if (submitBtn) {
+      submitBtn.disabled = !canSubmit;
+      submitBtn.hidden = blocked;
+    }
+    if (closed) closed.hidden = open || blocked;
+    if (fullNote) fullNote.hidden = !blocked;
+  }
+
   function setOpen(enabled) {
     open = enabled === true;
-    if (submitBtn) submitBtn.disabled = !open;
-    if (closed) closed.hidden = open;
+    applyGate();
   }
 
   const signedOn = document.getElementById("signedOn");
@@ -159,10 +172,19 @@
 
   if (dob) dob.addEventListener("change", refreshAge);
 
-  fetch("/waiver-config.json", { cache: "no-store", credentials: "same-origin" })
-    .then((res) => (res.ok ? res.json() : { waiverSubmissionsEnabled: false }))
-    .then((data) => setOpen(data && data.waiverSubmissionsEnabled === true))
-    .catch(() => setOpen(false));
+  Promise.all([
+    fetch("/waiver-config.json", { cache: "no-store", credentials: "same-origin" })
+      .then((res) => (res.ok ? res.json() : { waiverSubmissionsEnabled: false }))
+      .catch(() => ({ waiverSubmissionsEnabled: false })),
+    kind === "kids"
+      ? fetch("/api/public/kids-enrollment", { cache: "no-store", credentials: "same-origin" })
+          .then((res) => (res.ok ? res.json() : null))
+          .catch(() => null)
+      : Promise.resolve(null),
+  ]).then(([data, enrollment]) => {
+    full = !!(enrollment && enrollment.full === true);
+    setOpen(data && data.waiverSubmissionsEnabled === true);
+  });
 
   document.getElementById("printBtn").addEventListener("click", () => window.print());
 
@@ -178,6 +200,10 @@
   form.addEventListener("submit", (event) => {
     event.preventDefault();
     say("");
+    if (kind === "kids" && open && full) {
+      say(FULL_TEXT);
+      return;
+    }
     if (!open) {
       say("Do not submit yet. Enrollment is not open.");
       return;
@@ -225,12 +251,18 @@
     })
       .then(async (res) => {
         const payload = await res.json().catch(() => ({}));
-        if (!res.ok) throw new Error(payload.error || "Enrollment is not open.");
+        if (!res.ok) {
+          if (payload && payload.full) {
+            full = true;
+            applyGate();
+          }
+          throw new Error(payload.error || "Enrollment is not open.");
+        }
         form.hidden = true;
         say("Enrollment saved. The church office has your form.");
       })
       .catch((err) => {
-        submitBtn.disabled = !open;
+        applyGate();
         say(err.message || "Enrollment could not be saved.");
       });
   });

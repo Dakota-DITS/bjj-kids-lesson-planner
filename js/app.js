@@ -34,6 +34,7 @@
     cards: [],
     pendingCard: "",
     session: null,
+    kidsEnrollment: { cap: 12, enrolled: 0, spotsOpen: 12, full: false, submissionsEnabled: false },
     featured: { sheetId: "", caption: "" },
     serverSheets: [],
     staff: [],
@@ -2352,10 +2353,11 @@ function sparringSection(plan) {
         <article class="home-card"><strong>Next class</strong><p>${esc(nextLabel)}, 5:30–6:15 PM</p><p>Opens with a short prayer.</p><p>Teacher ${esc(instructorName() || "the teacher")}</p>${
           P.isCombo(state.ageGroup) ? `<p>${esc(P.comboLabel(state.ageGroup))}</p>` : ""
         }</article>
-        <article class="home-card"><strong>Roster</strong><p>${esc(groups.join(" · "))}${outside ? esc(` · Other ages: ${outside}`) : ""}</p></article>
+        <article class="home-card"><strong>Roster</strong><p>${esc(enrollmentLine())}</p><p>${esc(groups.join(" · "))}${outside ? esc(` · Other ages: ${outside}`) : ""}</p></article>
         <article class="home-card"><strong>Close to a stripe</strong><p>${closeText}</p></article>
         <article class="home-card"><strong>Belt hint</strong><p>${beltText}</p></article>
       </div>`;
+    paintEnrollment();
   }
 
   function updateMeta() {
@@ -2890,7 +2892,9 @@ function sparringSection(plan) {
     state.serverSheets = body.sheets || [];
     state.cards = (Array.isArray(body.cards) ? body.cards : []).map(normalizeCard).filter(Boolean);
     state.staff = (Array.isArray(body.staff) ? body.staff : []).map(normalizeStaff).filter(Boolean);
+    state.kidsEnrollment = body.kidsEnrollment || state.kidsEnrollment;
     document.body.classList.toggle("role-admin", isAdmin());
+    paintEnrollment();
     const who = $("whoami");
     if (who && state.session) who.textContent = `${sessionDisplayName()} · ${state.session.role}`;
     const banner = $("importBanner");
@@ -2908,6 +2912,26 @@ function sparringSection(plan) {
     select.value = state.featured.sheetId || "";
     if (!select.value) select.value = "";
     if ($("featuredCaption")) $("featuredCaption").value = state.featured.caption || "";
+  }
+
+  function enrollmentLine() {
+    const snap = state.kidsEnrollment || { enrolled: 0, cap: 12 };
+    const enrolled = Number(snap.enrolled);
+    const cap = Number(snap.cap);
+    if (!Number.isFinite(enrolled) || !Number.isFinite(cap)) return "";
+    return enrolled + " of " + cap + " enrolled";
+  }
+
+  function paintEnrollment() {
+    const line = enrollmentLine();
+    const roster = $("kidsEnrolled");
+    if (roster) roster.textContent = line;
+    const plan = $("planEnrolled");
+    if (plan) plan.textContent = line;
+    const input = $("kidsCap");
+    if (input && document.activeElement !== input && state.kidsEnrollment && state.kidsEnrollment.cap != null) {
+      input.value = String(state.kidsEnrollment.cap);
+    }
   }
 
   async function addKid() {
@@ -2928,15 +2952,47 @@ function sparringSection(plan) {
       stripes: $("rosterStripes").value,
     });
     if (!kid) return;
+    async function post(extra) {
+      return window.BJJ_API.send("POST", "/api/students", Object.assign({}, kid, extra || {}));
+    }
+    let saved;
     try {
-      const saved = await window.BJJ_API.send("POST", "/api/students", kid);
-      state.roster.push(P.sanitizeRosterKid(saved));
-      $("rosterName").value = "";
-      renderRoster();
-      syncPlanCounts();
-      toast(`${saved.name} is on the roster.`);
+      saved = await post();
     } catch (err) {
-      toast(err.message || "Could not add that student.");
+      if (!(err.status === 409 && err.needsConfirm)) {
+        toast(err.message || "Could not add that student.");
+        return;
+      }
+      if (!window.confirm(err.message)) return;
+      try {
+        saved = await post({ confirmOverCap: true });
+      } catch (err2) {
+        toast(err2.message || "Could not add that student.");
+        return;
+      }
+    }
+    if (saved.kidsEnrollment) state.kidsEnrollment = saved.kidsEnrollment;
+    state.roster.push(P.sanitizeRosterKid(saved));
+    $("rosterName").value = "";
+    renderRoster();
+    paintEnrollment();
+    syncPlanCounts();
+    toast(`${saved.name} is on the roster.`);
+  }
+
+  async function saveKidsCap() {
+    const cap = Number($("kidsCap") && $("kidsCap").value);
+    if (!isAdmin()) {
+      toast("An admin sets the kids class size.");
+      return;
+    }
+    try {
+      state.kidsEnrollment = await window.BJJ_API.send("PUT", "/api/kids-cap", { cap });
+      paintEnrollment();
+      renderHome();
+      toast("Kids class size saved.");
+    } catch (err) {
+      toast(err.message || "Could not save the kids class size.");
     }
   }
 
@@ -4684,6 +4740,7 @@ function sparringSection(plan) {
       onClassField("kidCount");
     });
     $("addKidBtn").addEventListener("click", addKid);
+    if ($("saveKidsCap")) $("saveKidsCap").addEventListener("click", saveKidsCap);
     $("rosterName").addEventListener("keydown", (event) => {
       if (event.key === "Enter") {
         event.preventDefault();
@@ -4727,7 +4784,8 @@ function sparringSection(plan) {
       const card = btn.closest(".roster-card");
       const id = card.dataset.id;
       try {
-        await window.BJJ_API.send("DELETE", `/api/students/${id}`);
+        const removed = await window.BJJ_API.send("DELETE", `/api/students/${id}`);
+        if (removed && removed.kidsEnrollment) state.kidsEnrollment = removed.kidsEnrollment;
       } catch (err) {
         toast(err.message || "Could not remove that student.");
         return;
@@ -5535,10 +5593,13 @@ function sparringSection(plan) {
         const data = JSON.parse(raw);
         const progress = { ...(data.progress || {}) };
         delete progress.stripe;
-        await window.BJJ_API.send("POST", "/api/import", {
-          roster: data.roster || [],
-          progress,
-        });
+        const payload = { roster: data.roster || [], progress };
+        try {
+          await window.BJJ_API.send("POST", "/api/import", payload);
+        } catch (err) {
+          if (!(err.status === 409 && err.needsConfirm) || !window.confirm(err.message)) throw err;
+          await window.BJJ_API.send("POST", "/api/import", Object.assign({ confirmOverCap: true }, payload));
+        }
         localStorage.removeItem(IMPORT_KEY);
         await resync();
         toast("Imported the saved roster and attendance.");

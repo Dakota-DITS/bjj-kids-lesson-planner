@@ -6,7 +6,7 @@
   <title>Privacy Policy · Grace BJJ</title>
   <meta name="description" content="How Grace BJJ and Grace BJJ Kids handle information at Grace Baptist Church in Salem." />
   <link rel="icon" href="/icons/favicon-32.png" type="image/png" sizes="32x32" />
-  <link rel="stylesheet" href="/css/waiver.css?v=20261021-25" />
+  <link rel="stylesheet" href="/css/waiver.css?v=20261021-26" />
 </head>
 <body>
   <a class="skip" href="#main">Skip to content</a>
@@ -48,7 +48,7 @@
       <p>A failed sign-in stores the network address and the time, so repeated tries can be slowed down. Those rows are deleted after 2 hours.</p>
 
       <h3>Roster, check-in, notes, and lesson plans</h3>
-      <p>For students on the roster we store a name, an age as a number (not a birth date), a belt, and stripes. We also store which classes they attended, technique progress, and an optional note of up to 800 characters.</p>
+      <p>For students on the roster we store a name, an age as a number, a belt, and stripes. When a kids enrollment form is linked to a student so the same child is not counted twice, we also store that child's date of birth on the roster. We also store which classes they attended, technique progress, and an optional note of up to 800 characters.</p>
       <p>Check-in cards store a code that can be linked to a student. The code on the card is an id and a checksum. It is not the child's name, and it is not a web address.</p>
       <p>Lesson plans store the class date, age group, what is planned, and which staff names are on the plan. The staff list stores a name, belt, stripes, and whether that person has a login.</p>
       <p>An admin can mark a class day as skipped or added and can type a short reason.</p>
@@ -58,7 +58,8 @@
       <p>The adult form at <a href="/waiver/">/waiver/</a> and the kids form at <a href="/kids/waiver/">/kids/waiver/</a> can be read and printed. Saving a submission is turned off. The submit button does not send the form, and the server refuses it. We are not storing those submissions today.</p>
       <p>If saving is turned on later, the adult form would store the student's name, address, email, phone, date of birth, goals, emergency contact name and phone, the typed name, the printed name, and a picture of the drawn signature. If the date of birth is under 18, it would also store the parent or guardian's name and signature.</p>
       <p>The kids form would store the child's name and date of birth, the parent or guardian's name, address, email, phone, emergency contact name and phone, any injury or medical notes, goals, the typed name, the printed name, and a picture of the drawn signature. A parent or guardian fills out that form.</p>
-      <p>Those saved forms would be visible to an admin only. A teacher login cannot open the list, the signature, or the spreadsheet export. While saving is on, the server may remember a network address in memory for about an hour to limit repeated tries. That list is not written into the database.</p>
+      <p>Those saved forms would be visible to an admin only. A teacher login cannot open the list, the signature, or the spreadsheet export. An admin can mark a kids form as already on the roster. While saving is on, the server may remember a network address in memory for about an hour to limit repeated tries. That list is not written into the database.</p>
+      <p>The kids class has a size limit. It counts students ages 3–10 already on the roster, plus kids forms that are not yet on the roster. The same child is not counted twice when the name and date of birth match, or when an admin has marked the form as added. The adult class has no size limit. An admin can change the kids class size. The number starts at 12.</p>
 
       <h3>Practice video</h3>
       <p>The kids page shows a still picture from YouTube (<code>i.ytimg.com</code>). If someone presses play, the video loads from <code>youtube-nocookie.com</code>. Google may learn that the video was played. We do not send roster or form information with it. Google's privacy policy is at <a href="https://policies.google.com/privacy" target="_blank" rel="noopener noreferrer">policies.google.com/privacy</a>.</p>
@@ -67,14 +68,14 @@
     <section>
       <h2>Children's information</h2>
       <p>We do not knowingly collect information directly from children under 13. A child is not asked to make an account or to send a form to our server.</p>
-      <p>A parent or guardian would fill out the kids enrollment form. Staff enter a student's name and age on the roster. The name on a coloring sheet is typed for printing and stays on that device.</p>
+      <p>A parent or guardian would fill out the kids enrollment form. Staff enter a student's name and age on the roster. If that form is linked to the roster, the date of birth from the form is stored with the student. The name on a coloring sheet is typed for printing and stays on that device.</p>
     </section>
 
     <section>
       <h2>Who can see it</h2>
-      <p>Public pages do not show the roster, notes, or enrollment forms.</p>
-      <p>A logged-in teacher can see and update the roster (name, age, belt, stripes), attendance, technique progress, notes, lesson plans, check-in cards, and the staff list, including login names tied to staff profiles. A teacher can also download a roster spreadsheet and an attendance spreadsheet.</p>
-      <p>An admin can do what a teacher can do, and can also add or remove students, manage logins and passwords, edit the class calendar, publish coloring sheets, download a full backup, and, if enrollment saving is turned on, open enrollment forms and their signature pictures. Removing a student also removes that student's notes and technique progress and retires their check-in card.</p>
+      <p>Public pages do not show the roster, notes, or enrollment forms. When enrollment saving is turned on, the kids page shows how many spots are open. That is a count, not a list of names. When the kids class is full, the kids form says so and does not take another submission.</p>
+      <p>A logged-in teacher can see and update the roster (name, age, belt, stripes, and a date of birth when one is stored), attendance, technique progress, notes, lesson plans, check-in cards, and the staff list, including login names tied to staff profiles. A teacher can also download a roster spreadsheet and an attendance spreadsheet. The spreadsheet is name, age, belt, and stripes. A teacher can see how many kids are enrolled and cannot change the class size.</p>
+      <p>An admin can do what a teacher can do, and can also add or remove students, set the kids class size, manage logins and passwords, edit the class calendar, publish coloring sheets, download a full backup, and, if enrollment saving is turned on, open enrollment forms and their signature pictures. Removing a student also removes that student's notes and technique progress and retires their check-in card. A kids form that was linked to that student counts as not yet on the roster again. The date of birth, when stored, is included in the admin backup.</p>
       <p>Teachers cannot open enrollment forms.</p>
     </section>
 

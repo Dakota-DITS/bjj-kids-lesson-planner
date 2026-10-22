@@ -124,6 +124,18 @@ h2 { margin: 0 0 8px; font-size: 1.7rem; }
   color: var(--red-dark);
   font-weight: 700;
 }
+.spots {
+  display: inline-block;
+  max-width: 100%;
+  margin: 12px 0 0;
+  background: #111;
+  color: #fff;
+  border-radius: 999px;
+  padding: 8px 14px;
+  font-size: 1rem;
+  font-weight: 700;
+}
+.spots[hidden] { display: none !important; }
 .next {
   display: inline-block;
   max-width: 100%;

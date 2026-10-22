@@ -432,6 +432,13 @@ button.danger {
   margin: 8px 0 0;
 }
 
+.enrolled-count {
+  margin: 8px 0 0;
+  font-size: 1rem;
+  font-weight: 700;
+  color: #f5f0e8;
+}
+
 .time-sum {
   font-size: 0.85rem;
   margin-top: 4px;

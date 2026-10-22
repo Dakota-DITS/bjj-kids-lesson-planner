@@ -18,8 +18,8 @@
   <meta name="apple-mobile-web-app-title" content="Grace BJJ Kids" />
   <link rel="icon" href="/icons/favicon-32.png" type="image/png" sizes="32x32" />
   <link rel="apple-touch-icon" href="/icons/apple-touch-icon.png" sizes="180x180" />
-  <link rel="stylesheet" href="/css/splash.css?v=20261021-25" />
-  <script src="/pwa.js?v=20261021-25" defer></script>
+  <link rel="stylesheet" href="/css/splash.css?v=20261021-26" />
+  <script src="/pwa.js?v=20261021-26" defer></script>
 </head>
 <body>
   <a class="skip" href="#main">Skip to content</a>
@@ -40,6 +40,7 @@
       <h1>Strong kids, kind hearts.</h1>
       <p class="welcome">Jiu-jitsu that grows confidence, respect, and friendship, built on God's grace.</p>
       <p class="gi-shop-row"><a class="big" href="/kids/waiver/">Rules and enrollment</a></p>
+      <p class="spots" id="spotsLine" hidden></p>
     </div>
   </header>
   <main id="main">
@@ -265,7 +266,7 @@
     </form>
     <img id="giLightboxImg" alt="" />
   </dialog>
-  <script src="/calendar/class-days.js?v=20261021-25"></script>
+  <script src="/calendar/class-days.js?v=20261021-26"></script>
   <script>
     // Phone and sign-up stay blank. The contact email is in the Location section. The street address is in the page.
     const PUBLIC_INFO = {
@@ -496,6 +497,22 @@
         frame.setAttribute("referrerpolicy", "strict-origin-when-cross-origin");
         play.replaceWith(frame);
       });
+    })();
+
+    (function () {
+      var spots = document.getElementById("spotsLine");
+      if (!spots) return;
+      fetch("/api/public/kids-enrollment", { cache: "no-store", credentials: "same-origin" })
+        .then(function (res) { return res.ok ? res.json() : null; })
+        .then(function (data) {
+          if (!data || data.submissionsEnabled !== true) return;
+          var openSpots = Number(data.spotsOpen);
+          var cap = Number(data.cap);
+          if (!isFinite(openSpots) || !isFinite(cap)) return;
+          spots.hidden = false;
+          spots.textContent = openSpots + " of " + cap + " spots open";
+        })
+        .catch(function () {});
     })();
   </script>
 </body>

@@ -9,7 +9,7 @@ import urllib.error
 import urllib.request
 from http.server import ThreadingHTTPServer
 
-from server.httpapp import Api, config_from_env, hash_password
+from server.httpapp import KIDS_FULL, Api, config_from_env, hash_password
 from server.db import (
     age_group_for_age,
     connect,
@@ -1379,6 +1379,349 @@ class ApiTest(unittest.TestCase):
             self.assertNotIn("data:image", text)
         finally:
             self.api.cfg["waiver_submissions_enabled"] = None
+
+    def _waiver_count(self):
+        conn = connect(self.api.cfg["db_path"])
+        try:
+            return conn.execute("SELECT COUNT(*) AS n FROM waivers").fetchone()["n"]
+        finally:
+            conn.close()
+
+    def test_migrate_adds_kids_cap_columns(self):
+        path = os.path.join(self.tmp.name, "pre-cap.db")
+        conn = connect(path)
+        conn.execute(
+            """
+            CREATE TABLE students (
+              id TEXT PRIMARY KEY,
+              name TEXT NOT NULL,
+              age INTEGER NOT NULL,
+              belt TEXT NOT NULL,
+              stripes INTEGER NOT NULL,
+              created_at TEXT NOT NULL
+            )
+            """
+        )
+        conn.execute(
+            """
+            CREATE TABLE waivers (
+              id TEXT PRIMARY KEY,
+              kind TEXT NOT NULL,
+              submitted_at TEXT NOT NULL,
+              signed_on TEXT NOT NULL,
+              participant_name TEXT NOT NULL,
+              signer_name TEXT NOT NULL,
+              dob TEXT NOT NULL,
+              email TEXT NOT NULL,
+              phone TEXT NOT NULL,
+              payload_json TEXT NOT NULL,
+              signature_png TEXT NOT NULL,
+              parent_signature_png TEXT NOT NULL DEFAULT ''
+            )
+            """
+        )
+        conn.execute(
+            """
+            INSERT INTO waivers (
+              id, kind, submitted_at, signed_on, participant_name, signer_name,
+              dob, email, phone, payload_json, signature_png
+            ) VALUES ('w-old', 'kids', 't', '2026-01-01', 'Old Kid', 'Old Kid', '2019-01-01', 'a@b.co', '5035550100', '{}', 'x')
+            """
+        )
+        conn.commit()
+        migrate(conn)
+        students = {row[1] for row in conn.execute("PRAGMA table_info(students)")}
+        waivers = {row[1] for row in conn.execute("PRAGMA table_info(waivers)")}
+        self.assertIn("dob", students)
+        self.assertIn("added_to_roster", waivers)
+        self.assertIn("roster_student_id", waivers)
+        row = conn.execute("SELECT added_to_roster, roster_student_id FROM waivers WHERE id = 'w-old'").fetchone()
+        self.assertEqual(row["added_to_roster"], 0)
+        self.assertEqual(row["roster_student_id"], "")
+        conn.close()
+
+    def test_kids_enrollment_cap(self):
+        self.api._waiver_posts = []
+        guest = self.client()
+        status, snap = guest.call("GET", "/api/public/kids-enrollment")
+        self.assertEqual(status, 200, snap)
+        self.assertEqual(set(snap), {"cap", "enrolled", "spotsOpen", "full", "submissionsEnabled"})
+        self.assertEqual(snap["cap"], 12)
+        self.assertFalse(snap["submissionsEnabled"])
+        self.assertNotIn("Sam", json.dumps(snap))
+
+        teacher = self.client()
+        teacher.login("alex", "correct-horse")
+        status, denied = teacher.call("PUT", "/api/kids-cap", {"cap": 8})
+        self.assertEqual(status, 403, denied)
+        self.assertIn("admin", denied["error"].lower())
+
+        admin = self.client()
+        admin.login("dakota", "correct-horse")
+        status, boot = admin.call("GET", "/api/bootstrap")
+        self.assertEqual(status, 200, boot)
+        self.assertEqual(boot["kidsEnrollment"]["cap"], 12)
+        status, changed = admin.call("PUT", "/api/kids-cap", {"cap": 9})
+        self.assertEqual(status, 200, changed)
+        self.assertEqual(changed["cap"], 9)
+        status, seen = guest.call("GET", "/api/public/kids-enrollment")
+        self.assertEqual(seen["cap"], 9)
+        self.assertEqual(seen["submissionsEnabled"], False)
+        status, bad = admin.call("PUT", "/api/kids-cap", {"cap": 0})
+        self.assertEqual(status, 400, bad)
+        status, huge = admin.call("PUT", "/api/kids-cap", {"cap": 201})
+        self.assertEqual(status, 400, huge)
+        status, restored = admin.call("PUT", "/api/kids-cap", {"cap": 12})
+        self.assertEqual(restored["cap"], 12)
+
+        base = restored["enrolled"]
+        created = []
+        status, teen = admin.call("POST", "/api/students", {"name": "Cap Teen", "age": 14, "belt": "white", "stripes": 0})
+        self.assertEqual(status, 201, teen)
+        self.assertEqual(teen["kidsEnrollment"]["enrolled"], base)
+        created.append(teen["id"])
+
+        from datetime import date
+
+        year = date.today().year
+        dob = f"{year - 7}-03-03"
+        status, matched = admin.call(
+            "POST",
+            "/api/students",
+            {"name": "Cap Match", "age": 7, "belt": "white", "stripes": 0, "dob": dob},
+        )
+        self.assertEqual(status, 201, matched)
+        self.assertEqual(matched["dob"], dob)
+        self.assertEqual(matched["kidsEnrollment"]["enrolled"], base + 1)
+        created.append(matched["id"])
+
+        self.api.cfg["waiver_submissions_enabled"] = True
+        try:
+            status, same = guest.call(
+                "POST",
+                "/api/public/waivers",
+                self.waiver_body(kind="kids", participantName="Cap Match", dob=dob, parentName="Pat Parent"),
+            )
+            self.assertEqual(status, 201, same)
+            status, still = guest.call("GET", "/api/public/kids-enrollment")
+            self.assertEqual(still["enrolled"], base + 1)
+            self.assertTrue(still["submissionsEnabled"])
+
+            status, tight = admin.call("PUT", "/api/kids-cap", {"cap": still["enrolled"]})
+            self.assertEqual(status, 200, tight)
+            self.assertTrue(tight["full"])
+            status, again = guest.call(
+                "POST",
+                "/api/public/waivers",
+                self.waiver_body(
+                    kind="kids",
+                    participantName="cap  match",
+                    email="match-again@example.com",
+                    dob=dob,
+                    parentName="Pat Parent",
+                ),
+            )
+            self.assertEqual(status, 201, again)
+            status, still_full = guest.call("GET", "/api/public/kids-enrollment")
+            self.assertEqual(still_full["enrolled"], base + 1)
+            status, restored = admin.call("PUT", "/api/kids-cap", {"cap": 12})
+            self.assertEqual(restored["cap"], 12)
+
+            status, pending = guest.call(
+                "POST",
+                "/api/public/waivers",
+                self.waiver_body(
+                    kind="kids",
+                    participantName="Cap Pending",
+                    email="pending@example.com",
+                    dob=f"{year - 6}-03-03",
+                    parentName="Pat Parent",
+                ),
+            )
+            self.assertEqual(status, 201, pending)
+            status, plus = guest.call("GET", "/api/public/kids-enrollment")
+            self.assertEqual(plus["enrolled"], base + 2)
+            status, teacher_mark = teacher.call("POST", f"/api/waivers/{pending['id']}/roster", {})
+            self.assertEqual(status, 403, teacher_mark)
+            status, marked = admin.call("POST", f"/api/waivers/{pending['id']}/roster", {})
+            self.assertEqual(status, 200, marked)
+            self.assertTrue(marked["addedToRoster"])
+            status, back = guest.call("GET", "/api/public/kids-enrollment")
+            self.assertEqual(back["enrolled"], base + 1)
+
+            status, adult = guest.call(
+                "POST",
+                "/api/public/waivers",
+                self.waiver_body(participantName="Cap Adult", email="adult-cap@example.com"),
+            )
+            self.assertEqual(status, 201, adult)
+            status, same_count = guest.call("GET", "/api/public/kids-enrollment")
+            self.assertEqual(same_count["enrolled"], base + 1)
+
+            status, baby = guest.call(
+                "POST",
+                "/api/public/waivers",
+                self.waiver_body(
+                    kind="kids",
+                    participantName="Cap Baby",
+                    email="baby@example.com",
+                    dob=f"{year - 2}-03-03",
+                    parentName="Pat Parent",
+                ),
+            )
+            self.assertEqual(status, 201, baby)
+            status, still_one = guest.call("GET", "/api/public/kids-enrollment")
+            self.assertEqual(still_one["enrolled"], base + 1)
+
+            room = still_one["cap"] - still_one["enrolled"]
+            for n in range(room):
+                status, kid = admin.call(
+                    "POST",
+                    "/api/students",
+                    {"name": f"Cap Fill {n}", "age": 5, "belt": "white", "stripes": 0},
+                )
+                self.assertEqual(status, 201, kid)
+                created.append(kid["id"])
+            status, full = guest.call("GET", "/api/public/kids-enrollment")
+            self.assertTrue(full["full"], full)
+            self.assertEqual(full["spotsOpen"], 0)
+            self.assertEqual(full["enrolled"], full["cap"])
+
+            before_rows = self._waiver_count()
+            status, blocked = guest.call(
+                "POST",
+                "/api/public/waivers",
+                self.waiver_body(
+                    kind="kids",
+                    participantName="Cap Extra",
+                    email="extra@example.com",
+                    dob=f"{year - 8}-03-03",
+                    parentName="Pat Parent",
+                ),
+            )
+            self.assertEqual(status, 409, blocked)
+            self.assertTrue(blocked["full"])
+            self.assertEqual(blocked["error"], KIDS_FULL)
+            self.assertEqual(self._waiver_count(), before_rows)
+
+            status, adult_ok = guest.call(
+                "POST",
+                "/api/public/waivers",
+                self.waiver_body(participantName="Cap Adult Two", email="adult2@example.com"),
+            )
+            self.assertEqual(status, 201, adult_ok)
+
+            status, needs = admin.call(
+                "POST",
+                "/api/students",
+                {"name": "Cap Thirteenth", "age": 6, "belt": "white", "stripes": 0},
+            )
+            self.assertEqual(status, 409, needs)
+            self.assertTrue(needs["needsConfirm"])
+            status, absent = admin.call("GET", "/api/bootstrap")
+            self.assertFalse(any(row["name"] == "Cap Thirteenth" for row in absent["students"]))
+            status, forced = admin.call(
+                "POST",
+                "/api/students",
+                {"name": "Cap Thirteenth", "age": 6, "belt": "white", "stripes": 0, "confirmOverCap": True},
+            )
+            self.assertEqual(status, 201, forced)
+            created.append(forced["id"])
+            self.assertGreater(forced["kidsEnrollment"]["enrolled"], forced["kidsEnrollment"]["cap"])
+
+            status, teacher_add = teacher.call(
+                "POST",
+                "/api/students",
+                {"name": "Cap Teacher", "age": 6, "belt": "white", "stripes": 0},
+            )
+            self.assertEqual(status, 403, teacher_add)
+
+            status, moved = admin.call(
+                "PATCH",
+                f"/api/students/{teen['id']}",
+                {"name": "Cap Teen", "age": 8, "belt": "white", "stripes": 0},
+            )
+            self.assertEqual(status, 409, moved)
+            self.assertTrue(moved["needsConfirm"])
+            status, moved_ok = admin.call(
+                "PATCH",
+                f"/api/students/{teen['id']}",
+                {"name": "Cap Teen", "age": 8, "belt": "white", "stripes": 0, "confirmOverCap": True},
+            )
+            self.assertEqual(status, 200, moved_ok)
+
+            status, blocked_import = admin.call(
+                "POST",
+                "/api/import",
+                {"roster": [{"id": "s-capimport", "name": "Cap Import", "age": 6, "belt": "white", "stripes": 0}]},
+            )
+            self.assertEqual(status, 409, blocked_import)
+            self.assertTrue(blocked_import["needsConfirm"])
+            status, missing_import = admin.call("GET", "/api/bootstrap")
+            self.assertFalse(any(row["id"] == "s-capimport" for row in missing_import["students"]))
+            status, forced_import = admin.call(
+                "POST",
+                "/api/import",
+                {
+                    "roster": [{"id": "s-capimport", "name": "Cap Import", "age": 6, "belt": "white", "stripes": 0}],
+                    "confirmOverCap": True,
+                },
+            )
+            self.assertEqual(status, 200, forced_import)
+            created.append("s-capimport")
+
+            status, before_delete = guest.call("GET", "/api/public/kids-enrollment")
+            status, gone = admin.call("DELETE", f"/api/students/{matched['id']}")
+            self.assertEqual(status, 200, gone)
+            # Both linked forms count again and the roster row is gone, so the total rises by one.
+            self.assertEqual(gone["kidsEnrollment"]["enrolled"], before_delete["enrolled"] + 1)
+
+            current = gone["kidsEnrollment"]["enrolled"]
+            status, opened = admin.call("PUT", "/api/kids-cap", {"cap": min(200, current + 1)})
+            self.assertEqual(status, 200, opened)
+            self.assertEqual(opened["spotsOpen"], 1)
+            self.api._waiver_posts = []
+            results = []
+
+            def post_one(name, email):
+                client = self.client()
+                code, payload = client.call(
+                    "POST",
+                    "/api/public/waivers",
+                    self.waiver_body(
+                        kind="kids",
+                        participantName=name,
+                        email=email,
+                        dob=f"{year - 5}-03-03",
+                        parentName="Pat Parent",
+                    ),
+                )
+                results.append((code, name, payload))
+
+            first = threading.Thread(target=post_one, args=("Cap Race A", "race-a@example.com"))
+            second = threading.Thread(target=post_one, args=("Cap Race B", "race-b@example.com"))
+            first.start()
+            second.start()
+            first.join(20)
+            second.join(20)
+            codes = sorted(item[0] for item in results)
+            self.assertEqual(codes, [201, 409], results)
+            status, after = guest.call("GET", "/api/public/kids-enrollment")
+            self.assertEqual(after["enrolled"], current + 1, after)
+            self.assertTrue(after["full"])
+            self.assertLessEqual(after["enrolled"], after["cap"])
+        finally:
+            self.api.cfg["waiver_submissions_enabled"] = None
+            self.api._waiver_posts = []
+            admin.call("PUT", "/api/kids-cap", {"cap": 12})
+            for sid in created:
+                admin.call("DELETE", f"/api/students/{sid}")
+            conn = connect(self.api.cfg["db_path"])
+            conn.execute("DELETE FROM waivers WHERE participant_name LIKE 'Cap %' OR participant_name LIKE 'cap %'")
+            conn.execute("DELETE FROM students WHERE name LIKE 'Cap %'")
+            conn.execute("DELETE FROM settings WHERE key = 'kids_cap'")
+            conn.commit()
+            conn.close()
 
 
 def _handler(api):

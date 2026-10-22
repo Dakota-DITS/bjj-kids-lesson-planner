@@ -47,6 +47,10 @@ MAX_BODY = 3_000_000
 LOGIN_LIMIT = 8
 LOGIN_WINDOW_MIN = 15
 SESSION_DAYS = 14
+DEFAULT_KIDS_CAP = 12
+KIDS_FULL = (
+    "Kids class is full right now. Email dits+bjj@mail.grokbot.com to ask about the next opening."
+)
 
 
 def config_from_env():
@@ -223,6 +227,7 @@ class Api:
             "age": row["age"],
             "belt": row["belt"],
             "stripes": row["stripes"],
+            "dob": self.cell(row, "dob", "") or "",
         }
 
     def cell(self, row, key, default=""):
@@ -370,6 +375,7 @@ class Api:
             "sheets": sheets,
             "cards": [self.card_json(row) for row in conn.execute("SELECT * FROM cards ORDER BY created_at, code")],
             "staff": staff,
+            "kidsEnrollment": self.enrollment_snapshot(conn),
         }
 
     def staff_json(self, row):
@@ -574,6 +580,8 @@ class Api:
                 return self.public_class_exceptions(handler)
             if method == "GET" and path == "/api/public/sheets":
                 return self.public_sheets(handler)
+            if method == "GET" and path == "/api/public/kids-enrollment":
+                return self.public_kids_enrollment(handler)
             if method == "POST" and path == "/api/public/waivers":
                 return self.submit_waiver(handler)
             image = re.match(r"^/api/public/sheets/([A-Za-z0-9_-]{1,40})/image$", path)
@@ -716,40 +724,16 @@ class Api:
         if path == "/api/students" and method == "POST":
             if not admin:
                 return self.send(handler, 403, {"error": "An admin adds students."})
-            raw = self.sanitize_student(self.read_json(handler))
-            conn.execute(
-                "INSERT INTO students (id, name, age, belt, stripes, created_at) VALUES (?, ?, ?, ?, ?, ?)",
-                (raw["id"], raw["name"], raw["age"], raw["belt"], raw["stripes"], iso(utcnow())),
-            )
-            conn.commit()
-            return self.send(handler, 201, raw)
+            return self.add_student(handler, conn)
         student_match = re.match(r"^/api/students/([A-Za-z0-9_-]{1,40})$", path)
         if student_match and method == "PATCH":
             if not admin:
                 return self.send(handler, 403, {"error": "An admin edits the roster."})
-            sid = student_match.group(1)
-            if not conn.execute("SELECT 1 FROM students WHERE id = ?", (sid,)).fetchone():
-                return self.send(handler, 404, {"error": "That student is not on the roster."})
-            raw = self.sanitize_student(self.read_json(handler), sid)
-            conn.execute(
-                "UPDATE students SET name = ?, age = ?, belt = ?, stripes = ? WHERE id = ?",
-                (raw["name"], raw["age"], raw["belt"], raw["stripes"], sid),
-            )
-            conn.commit()
-            return self.send(handler, 200, raw)
+            return self.patch_student(handler, conn, student_match.group(1))
         if student_match and method == "DELETE":
             if not admin:
                 return self.send(handler, 403, {"error": "An admin removes students."})
-            sid = student_match.group(1)
-            conn.execute("DELETE FROM students WHERE id = ?", (sid,))
-            conn.execute("DELETE FROM levels WHERE student_id = ?", (sid,))
-            conn.execute("DELETE FROM notes WHERE student_id = ?", (sid,))
-            conn.execute(
-                "UPDATE cards SET status = 'retired', retired_at = ? WHERE student_id = ? AND status != 'retired'",
-                (iso(utcnow()), sid),
-            )
-            conn.commit()
-            return self.send(handler, 200, {"ok": True})
+            return self.delete_student(handler, conn, student_match.group(1))
         if path == "/api/cards" and method == "GET":
             rows = conn.execute("SELECT * FROM cards ORDER BY created_at, code").fetchall()
             return self.send(handler, 200, {"cards": [self.card_json(row) for row in rows]})
@@ -859,6 +843,10 @@ class Api:
             return self.save_sheet(handler, conn)
         if path == "/api/import" and method == "POST":
             return self.import_local(handler, conn, admin)
+        if path == "/api/kids-cap" and method == "PUT":
+            if not admin:
+                return self.send(handler, 403, {"error": "An admin sets the kids class size."})
+            return self.save_kids_cap(handler, conn)
         if path == "/api/export" and method == "GET":
             if not admin:
                 return self.send(handler, 403, {"error": "An admin downloads the attendance backup."})
@@ -877,6 +865,11 @@ class Api:
             if not admin:
                 return self.send(handler, 403, {"error": "An admin reviews enrollment forms."})
             return self.send_csv(handler, "grace-waivers.csv", self.waivers_csv(conn))
+        waiver_roster = re.fullmatch(r"/api/waivers/([A-Za-z0-9_-]{1,40})/roster", path)
+        if waiver_roster and method == "POST":
+            if not admin:
+                return self.send(handler, 403, {"error": "An admin reviews enrollment forms."})
+            return self.mark_waiver_on_roster(handler, conn, waiver_roster.group(1))
         waiver_match = re.fullmatch(r"/api/waivers/([A-Za-z0-9_-]{1,40})", path)
         if waiver_match and method == "GET":
             if not admin:
@@ -1511,6 +1504,11 @@ class Api:
         if not admin and roster:
             return self.send(handler, 403, {"error": "An admin imports the roster. Teachers can import attendance after that."})
         id_map = {}
+        confirm = body.get("confirmOverCap") is True
+        before = None
+        if admin and roster:
+            self.lock_kids(conn)
+            before = self.kids_enrolled_count(conn)
         for raw in roster[:200]:
             if not isinstance(raw, dict):
                 continue
@@ -1570,8 +1568,23 @@ class Api:
                 own, attend = 6, 8
             self.put_setting(conn, "stripe_own", str(own))
             self.put_setting(conn, "stripe_attend", str(attend))
+        if before is not None:
+            blocked = self.over_cap(conn, before)
+            if blocked and not confirm:
+                after, cap = blocked
+                conn.rollback()
+                return self.send(
+                    handler,
+                    409,
+                    {
+                        "error": f"This import would pass the kids class size of {cap}. {after} of {cap} would be enrolled.",
+                        "needsConfirm": True,
+                        "enrolled": before,
+                        "cap": cap,
+                    },
+                )
         conn.commit()
-        return self.send(handler, 200, {"ok": True, "students": len(id_map)})
+        return self.send(handler, 200, {"ok": True, "students": len(id_map), "kidsEnrollment": self.enrollment_snapshot(conn)})
 
     def security_headers(self, handler):
         handler.send_header("X-Content-Type-Options", "nosniff")
@@ -1655,6 +1668,286 @@ class Api:
             raise ValueError("Enter a " + label + ".")
         return text
 
+    def norm_name(self, value):
+        return " ".join(str(value or "").casefold().split())
+
+    def clean_dob(self, value):
+        text = clip(str(value or ""), 10)
+        if not re.match(r"^\d{4}-\d{2}-\d{2}$", text):
+            return ""
+        try:
+            born = datetime.strptime(text, "%Y-%m-%d").date()
+        except ValueError:
+            return ""
+        if born.isoformat() != text or born.year < 1900:
+            return ""
+        return text
+
+    def counts_as_kid(self, age):
+        try:
+            number = int(age)
+        except (TypeError, ValueError):
+            return False
+        return 3 <= number <= 10
+
+    def kids_cap(self, conn):
+        try:
+            cap = int(str(self.setting(conn, "kids_cap", str(DEFAULT_KIDS_CAP))).strip())
+        except (TypeError, ValueError):
+            cap = DEFAULT_KIDS_CAP
+        return max(1, min(200, cap))
+
+    def waiver_years(self, dob):
+        try:
+            _text, age = self.waiver_age(dob)
+        except ValueError:
+            return None
+        return age
+
+    def kids_enrolled_count(self, conn):
+        students = list(conn.execute("SELECT id, name, age, dob FROM students"))
+        roster_ids = {row["id"] for row in students}
+        kid_keys = set()
+        kid_count = 0
+        for row in students:
+            if not self.counts_as_kid(row["age"]):
+                continue
+            kid_count += 1
+            dob = self.cell(row, "dob", "") or ""
+            if dob:
+                kid_keys.add((self.norm_name(row["name"]), dob))
+        pending = 0
+        waivers = conn.execute(
+            """
+            SELECT participant_name, dob, added_to_roster, roster_student_id
+            FROM waivers WHERE kind = 'kids'
+            """
+        ).fetchall()
+        for row in waivers:
+            if int(row["added_to_roster"] or 0):
+                continue
+            linked = row["roster_student_id"] or ""
+            if linked and linked in roster_ids:
+                continue
+            if not self.counts_as_kid(self.waiver_years(row["dob"])):
+                continue
+            if (self.norm_name(row["participant_name"]), row["dob"]) in kid_keys:
+                continue
+            pending += 1
+        return kid_count + pending
+
+    def enrollment_snapshot(self, conn):
+        cap = self.kids_cap(conn)
+        enrolled = self.kids_enrolled_count(conn)
+        return {
+            "cap": cap,
+            "enrolled": enrolled,
+            "spotsOpen": max(0, cap - enrolled),
+            "full": enrolled >= cap,
+            "submissionsEnabled": self.waiver_submissions_enabled(),
+        }
+
+    def public_kids_enrollment(self, handler):
+        conn = self.db()
+        try:
+            return self.send(handler, 200, self.enrollment_snapshot(conn))
+        finally:
+            conn.close()
+
+    def lock_kids(self, conn):
+        conn.commit()
+        conn.execute("BEGIN IMMEDIATE")
+
+    def over_cap(self, conn, before):
+        after = self.kids_enrolled_count(conn)
+        cap = self.kids_cap(conn)
+        if after > before and after > cap:
+            return after, cap
+        return None
+
+    def cap_confirm_body(self, before, after, cap):
+        return {
+            "error": f"This would be past the kids class size of {cap}. {after} of {cap} would be enrolled.",
+            "needsConfirm": True,
+            "enrolled": before,
+            "cap": cap,
+        }
+
+    def remember_dob(self, conn, student_id, dob):
+        if not student_id or not dob:
+            return
+        current = conn.execute("SELECT dob FROM students WHERE id = ?", (student_id,)).fetchone()
+        if current and not (current["dob"] or ""):
+            conn.execute("UPDATE students SET dob = ? WHERE id = ?", (dob, student_id))
+
+    def link_waiver_row(self, conn, wid, student_id):
+        conn.execute(
+            "UPDATE waivers SET added_to_roster = 1, roster_student_id = ? WHERE id = ?",
+            (student_id or "", wid),
+        )
+
+    def match_kid(self, conn, name, dob):
+        if not dob:
+            return None
+        target = self.norm_name(name)
+        for row in conn.execute("SELECT id, name, age, dob FROM students"):
+            if not self.counts_as_kid(row["age"]):
+                continue
+            if (row["dob"] or "") == dob and self.norm_name(row["name"]) == target:
+                return row
+        return None
+
+    def attach_new_waiver(self, conn, wid, name, dob, age):
+        if not self.counts_as_kid(age):
+            return
+        match = self.match_kid(conn, name, dob)
+        if match:
+            self.link_waiver_row(conn, wid, match["id"])
+
+    def link_student_forms(self, conn, student_id, name, age, dob, waiver_id=""):
+        if waiver_id:
+            row = conn.execute(
+                "SELECT id, kind, dob FROM waivers WHERE id = ?",
+                (waiver_id,),
+            ).fetchone()
+            if row and row["kind"] == "kids":
+                if not dob:
+                    dob = row["dob"] or ""
+                    self.remember_dob(conn, student_id, dob)
+                self.link_waiver_row(conn, row["id"], student_id)
+        if not dob or not self.counts_as_kid(age):
+            return
+        target = self.norm_name(name)
+        rows = conn.execute(
+            "SELECT id, participant_name, dob FROM waivers WHERE kind = 'kids' AND added_to_roster = 0"
+        ).fetchall()
+        for row in rows:
+            if (row["dob"] or "") == dob and self.norm_name(row["participant_name"]) == target:
+                self.link_waiver_row(conn, row["id"], student_id)
+                self.remember_dob(conn, student_id, dob)
+
+    def unlink_student_forms(self, conn, student_id):
+        conn.execute(
+            "UPDATE waivers SET added_to_roster = 0, roster_student_id = '' WHERE roster_student_id = ?",
+            (student_id,),
+        )
+
+    def student_payload(self, conn, sid):
+        row = conn.execute("SELECT * FROM students WHERE id = ?", (sid,)).fetchone()
+        body = self.student_json(row)
+        body["kidsEnrollment"] = self.enrollment_snapshot(conn)
+        return body
+
+    def add_student(self, handler, conn):
+        body = self.read_json(handler)
+        raw = self.sanitize_student(body)
+        dob = self.clean_dob(body.get("dob"))
+        confirm = body.get("confirmOverCap") is True
+        waiver_id = clean_id(body.get("waiverId")) or ""
+        adding = self.counts_as_kid(raw["age"])
+        before = None
+        if adding:
+            self.lock_kids(conn)
+            before = self.kids_enrolled_count(conn)
+        conn.execute(
+            "INSERT INTO students (id, name, age, belt, stripes, created_at, dob) VALUES (?, ?, ?, ?, ?, ?, ?)",
+            (raw["id"], raw["name"], raw["age"], raw["belt"], raw["stripes"], iso(utcnow()), dob),
+        )
+        self.link_student_forms(conn, raw["id"], raw["name"], raw["age"], dob, waiver_id)
+        if adding:
+            blocked = self.over_cap(conn, before)
+            if blocked and not confirm:
+                after, cap = blocked
+                conn.rollback()
+                return self.send(handler, 409, self.cap_confirm_body(before, after, cap))
+        conn.commit()
+        return self.send(handler, 201, self.student_payload(conn, raw["id"]))
+
+    def patch_student(self, handler, conn, sid):
+        old = conn.execute("SELECT * FROM students WHERE id = ?", (sid,)).fetchone()
+        if not old:
+            return self.send(handler, 404, {"error": "That student is not on the roster."})
+        body = self.read_json(handler)
+        raw = self.sanitize_student(body, sid)
+        dob = old["dob"] or ""
+        if "dob" in body:
+            dob = self.clean_dob(body.get("dob"))
+        confirm = body.get("confirmOverCap") is True
+        growing = self.counts_as_kid(raw["age"]) and not self.counts_as_kid(old["age"])
+        before = None
+        if growing:
+            self.lock_kids(conn)
+            before = self.kids_enrolled_count(conn)
+        conn.execute(
+            "UPDATE students SET name = ?, age = ?, belt = ?, stripes = ?, dob = ? WHERE id = ?",
+            (raw["name"], raw["age"], raw["belt"], raw["stripes"], dob, sid),
+        )
+        self.link_student_forms(conn, sid, raw["name"], raw["age"], dob, "")
+        if growing:
+            blocked = self.over_cap(conn, before)
+            if blocked and not confirm:
+                after, cap = blocked
+                conn.rollback()
+                return self.send(handler, 409, self.cap_confirm_body(before, after, cap))
+        conn.commit()
+        return self.send(handler, 200, self.student_payload(conn, sid))
+
+    def delete_student(self, handler, conn, sid):
+        self.lock_kids(conn)
+        self.unlink_student_forms(conn, sid)
+        conn.execute("DELETE FROM students WHERE id = ?", (sid,))
+        conn.execute("DELETE FROM levels WHERE student_id = ?", (sid,))
+        conn.execute("DELETE FROM notes WHERE student_id = ?", (sid,))
+        conn.execute(
+            "UPDATE cards SET status = 'retired', retired_at = ? WHERE student_id = ? AND status != 'retired'",
+            (iso(utcnow()), sid),
+        )
+        conn.commit()
+        return self.send(handler, 200, {"ok": True, "kidsEnrollment": self.enrollment_snapshot(conn)})
+
+    def save_kids_cap(self, handler, conn):
+        body = self.read_json(handler)
+        try:
+            cap = int(body.get("cap"))
+        except (TypeError, ValueError):
+            raise ValueError("Enter a kids class size from 1 to 200.") from None
+        if cap < 1 or cap > 200:
+            raise ValueError("Enter a kids class size from 1 to 200.")
+        self.put_setting(conn, "kids_cap", str(cap))
+        conn.commit()
+        return self.send(handler, 200, self.enrollment_snapshot(conn))
+
+    def mark_waiver_on_roster(self, handler, conn, wid):
+        length = int(handler.headers.get("Content-Length") or 0)
+        body = self.read_json(handler) if length else {}
+        row = conn.execute("SELECT * FROM waivers WHERE id = ?", (wid,)).fetchone()
+        if not row:
+            return self.send(handler, 404, {"error": "That enrollment form is not on file."})
+        if row["kind"] != "kids":
+            raise ValueError("Only a kids form is tied to the kids roster.")
+        student_id = clean_id(body.get("studentId")) or ""
+        if student_id:
+            student = conn.execute("SELECT id FROM students WHERE id = ?", (student_id,)).fetchone()
+            if not student:
+                return self.send(handler, 404, {"error": "That student is not on the roster."})
+        else:
+            match = self.match_kid(conn, row["participant_name"], row["dob"])
+            student_id = match["id"] if match else ""
+        if student_id:
+            self.remember_dob(conn, student_id, row["dob"])
+        self.link_waiver_row(conn, wid, student_id)
+        conn.commit()
+        return self.send(
+            handler,
+            200,
+            {
+                "ok": True,
+                "addedToRoster": True,
+                "rosterStudentId": student_id,
+                "kidsEnrollment": self.enrollment_snapshot(conn),
+            },
+        )
+
     def submit_waiver(self, handler):
         if not self.waiver_submissions_enabled():
             return self.send(handler, 403, {"error": "Do not submit yet. Enrollment is not open."})
@@ -1718,6 +2011,8 @@ class Api:
         signed_on = today_pacific()
         conn = self.db()
         try:
+            self.lock_kids(conn)
+            before = self.kids_enrolled_count(conn) if kind == "kids" else None
             conn.execute(
                 """
                 INSERT INTO waivers (
@@ -1740,6 +2035,12 @@ class Api:
                     parent_signature,
                 ),
             )
+            if kind == "kids":
+                self.attach_new_waiver(conn, wid, name, dob, age)
+                blocked = self.over_cap(conn, before)
+                if blocked:
+                    conn.rollback()
+                    return self.send(handler, 409, {"error": KIDS_FULL, "full": True})
             conn.commit()
         finally:
             conn.close()
@@ -1756,12 +2057,15 @@ class Api:
             "dob": row["dob"],
             "email": row["email"],
             "phone": row["phone"],
+            "addedToRoster": bool(int(self.cell(row, "added_to_roster", 0) or 0)),
+            "rosterStudentId": self.cell(row, "roster_student_id", "") or "",
         }
 
     def list_waivers(self, handler, conn):
         rows = conn.execute(
             """
-            SELECT id, kind, submitted_at, signed_on, participant_name, signer_name, dob, email, phone
+            SELECT id, kind, submitted_at, signed_on, participant_name, signer_name, dob, email, phone,
+                   added_to_roster, roster_student_id
             FROM waivers ORDER BY submitted_at DESC
             """
         ).fetchall()
@@ -1786,6 +2090,7 @@ class Api:
             "id", "kind", "submitted_at", "signed_on", "participant_name", "dob",
             "email", "phone", "address", "parent_name", "emergency_name", "emergency_phone",
             "goals", "injuries", "print_name", "parent_print_name", "signature", "parent_signature",
+            "added_to_roster",
         ]]
         for row in conn.execute("SELECT * FROM waivers ORDER BY submitted_at"):
             try:
@@ -1812,6 +2117,7 @@ class Api:
                 payload.get("parentPrintName", ""),
                 "yes" if row["signature_png"] else "no",
                 "yes" if row["parent_signature_png"] else "no",
+                "yes" if int(self.cell(row, "added_to_roster", 0) or 0) else "no",
             ])
         return rows
 
