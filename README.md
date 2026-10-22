@@ -29,7 +29,7 @@ Log in at `/login/`, then the planner opens at `/app/`.
 
 ### Age groups
 
-- **4–6 Mighty Mite** — positions and movement only. No submissions and no live sparring.
+- **4–6 Mighty Mite** — positions and movement, plus sparring for a kid with at least one stripe when enough adults are supervising.
 - **7–9 Pee Wee** — partner drills, escapes, sweeps, and a slow americana and armbar from mount.
 - **10–12 Junior** — passes, takedowns, and a few submissions and chains.
 - **13–15 Teen** — the same advanced material, with more volume, plus the step toward adult class.
@@ -42,7 +42,7 @@ Line up by rank and bow in, warm up, base (forward roll, backward roll, hip esca
 
 The lesson keeps its minutes first. If the clock is tight, warm-up and base shrink before the lesson does. The closing game can shrink to about 3 minutes and stays on the plan when you asked for a game. Extra minutes go to the lesson.
 
-Auto theme picks the position that has gone the longest without being taught. You can lock a theme. Live sparring is only for a group older than Mighty Mites, with at least one student who has a stripe, and with enough adults for the 4:1 ratio. Otherwise that block is positional drilling.
+Auto theme picks the position that has gone the longest without being taught. You can lock a theme. Live sparring is for any age group, including 4–6, when a student has at least one stripe and enough adults are supervising for the 4:1 ratio. Otherwise that block is positional drilling.
 
 ### Roster, progress, and attendance
 

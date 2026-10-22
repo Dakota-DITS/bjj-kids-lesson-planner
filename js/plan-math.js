@@ -473,14 +473,13 @@
   function kidCanSpar(kid, ageGroup, ratioOk) {
     if (!ratioOk) return false;
     const stripes = clampInt(kid && kid.stripes, 0, 4, 0);
+    if (stripes < 1) return false;
     if (isCombo(ageGroup)) {
-      if (stripes < 1) return false;
       const group = kidGroupId(kid && kid.age);
-      if (!group || group === "mite") return false;
+      if (!group) return false;
       return parseAgeKey(ageGroup).includes(group);
     }
-    if (ageGroup === "mite" || ageGroup === "toddler") return false;
-    return stripes >= 1;
+    return true;
   }
 
   function sanitizeIdList(list) {
@@ -694,6 +693,55 @@ function sanitizeProgress(raw) {
   return progress;
 }
 
+  function activitySearchText(activity) {
+    if (!activity || typeof activity !== "object") return "";
+    const parts = [];
+    const push = (value) => {
+      if (value == null || value === false) return;
+      if (Array.isArray(value)) {
+        value.forEach(push);
+        return;
+      }
+      if (typeof value === "object") return;
+      parts.push(String(value));
+    };
+    ["name", "how", "say", "extra", "equipment", "position", "drill", "safety", "theme", "themes", "steps", "tags", "after", "sayAfter"].forEach(
+      (key) => push(activity[key])
+    );
+    return parts.join("\n").toLowerCase();
+  }
+
+  function matchesPlanQuery(activity, query) {
+    const q = String(query == null ? "" : query).trim().toLowerCase();
+    if (!q) return true;
+    return activitySearchText(activity).includes(q);
+  }
+
+  function planPickerGroups(library, inPlanIds, query) {
+    const items = Array.isArray(library) ? library.filter((item) => item && item.id != null) : [];
+    const ids = Array.isArray(inPlanIds) ? inPlanIds.map((id) => String(id)) : [];
+    const byId = new Map();
+    items.forEach((item) => {
+      const id = String(item.id);
+      if (!byId.has(id)) byId.set(id, item);
+    });
+    const inPlan = [];
+    ids.forEach((id) => {
+      const item = byId.get(id);
+      if (item && matchesPlanQuery(item, query)) inPlan.push(item);
+    });
+    const used = new Set(ids);
+    const rest = items.filter((item) => !used.has(String(item.id)) && matchesPlanQuery(item, query));
+    return { inPlan, rest, inPlanCount: ids.length };
+  }
+
+  function togglePlanIds(inPlanIds, id) {
+    const ids = Array.isArray(inPlanIds) ? inPlanIds.map((value) => String(value)) : [];
+    const key = String(id);
+    if (ids.includes(key)) return ids.filter((value) => value !== key);
+    return ids.concat(key);
+  }
+
   function takeSequence(items, count, offset) {
     const list = Array.isArray(items) ? items : [];
     const n = Math.max(0, Math.round(Number(count) || 0));
@@ -865,6 +913,10 @@ function sanitizeProgress(raw) {
     themeStaleness,
     themeReason,
     chooseTheme,
+    activitySearchText,
+    matchesPlanQuery,
+    planPickerGroups,
+    togglePlanIds,
     takeSequence,
     CLASS_KEYS,
     qrChecksum,
