@@ -361,7 +361,7 @@
       ageGroup: group,
       totalMin: num("totalMin", 15, 120, 45),
       openingMin: num("openingMin", 0, 30, 2),
-      warmupMin: num("warmupMin", 0, 20, 5),
+      warmupMin: num("warmupMin", 0, 20, 3),
       baseMin: num("baseMin", 0, 20, 4),
       lessonMin: num("lessonMin", 0, 60, 20),
       waterMin: num("waterMin", 0, 10, 1),
@@ -560,6 +560,20 @@
     return arr;
   }
 
+  function prayerItems() {
+    const src = DATA.openingPrayer;
+    if (!src || typeof src !== "object") return [];
+    return [
+      {
+        ...src,
+        catalogMinutes: 2,
+        catalogReps: 1,
+        reps: 1,
+        prefMinutes: 2,
+      },
+    ];
+  }
+
   function openingItems(settings) {
     const toddler = settings.preset === "toddler";
     const src = toddler
@@ -664,7 +678,9 @@ function assembleGrace(content, settings) {
   const base = Array.isArray(content.base) ? content.base : [];
   const lesson = Array.isArray(content.lesson) ? content.lesson : [];
   const games = Array.isArray(content.games) ? content.games : [];
+  const prayer = prayerItems();
   const requested = {
+    prayer: prayer.length ? Number(P.PRAYER_SECONDS) || 120 : 0,
     opening: opening.length ? sec(settings.openingMin) : 0,
     warmup: warmup.length ? sec(settings.warmupMin) : 0,
     base: base.length ? sec(settings.baseMin) : 0,
@@ -674,8 +690,10 @@ function assembleGrace(content, settings) {
     game: games.length ? sec(settings.gameMin) : 0,
     finish: sec(settings.finishMin),
   };
-  const fit = P.fitClassTimes(requested, total);
+  const covered = typeof P.coverOpeningPrayer === "function" ? P.coverOpeningPrayer(requested, total) : requested;
+  const fit = P.fitClassTimes(covered, total);
   const byId = { ...fit.seconds };
+  if (prayer.length && byId.prayer == null) byId.prayer = Number(P.PRAYER_SECONDS) || 120;
   if (!lesson.length && byId.lesson) {
     byId.game += byId.lesson;
     byId.lesson = 0;
@@ -714,6 +732,7 @@ function assembleGrace(content, settings) {
     };
     cursor += dur;
   };
+  placeItems("prayer", prayer);
   placeItems("opening", opening);
   placeItems("warmup", warmup);
   placeItems("base", base);
@@ -750,6 +769,15 @@ function assemble(content, settings) {
     allocated.ids.forEach((id, index) => {
       byId[id] = allocated.seconds[index];
     });
+    if (typeof P.fundOpeningPrayer === "function") {
+      const funded = P.fundOpeningPrayer(byId);
+      Object.keys(byId).forEach((key) => {
+        delete byId[key];
+      });
+      Object.assign(byId, funded);
+    } else if (prayerItems().length) {
+      byId.prayer = Number(P.PRAYER_SECONDS) || 120;
+    }
     let cursor = 0;
     const plan = {
       mode: content.mode,
@@ -786,6 +814,7 @@ function assemble(content, settings) {
       };
       cursor += dur;
     };
+    placeItems("prayer", prayerItems());
     placeItems("opening", content.opening);
     placeItems("warmup", content.warmup);
     placeMark("water1");
@@ -796,9 +825,12 @@ function assemble(content, settings) {
     if (content.sparring) placeMark("sparring");
     placeMark("finish");
     if (cursor !== total && plan.finish) {
-      plan.finish.duration += total - cursor;
-      plan.finish.when = P.clockRange(startMinutes, plan.finish.start, plan.finish.duration);
-      cursor = total;
+      const next = plan.finish.duration + (total - cursor);
+      if (next >= 0) {
+        plan.finish.duration = next;
+        plan.finish.when = P.clockRange(startMinutes, plan.finish.start, plan.finish.duration);
+        cursor = total;
+      }
     }
     plan.end = cursor;
     return plan;
@@ -1069,7 +1101,7 @@ function buildPlan(opts = {}) {
   }
 
   function repsCtrl(item, section) {
-    if (!item?.id || section === "opening") return "";
+    if (!item?.id || section === "opening" || section === "prayer") return "";
     const n = Number(item.reps) || 1;
     const id = esc(item.id);
     const sec = esc(section);
@@ -1081,7 +1113,7 @@ function buildPlan(opts = {}) {
   }
 
   function shuffleBtn(section, id) {
-    if (!state.showItemShuffle || !id) return "";
+    if (!state.showItemShuffle || !id || section === "prayer") return "";
     return `<button class="reroll" type="button" data-swap="${esc(section)}" data-id="${esc(id)}">shuffle</button>`;
   }
 
@@ -1493,6 +1525,14 @@ function sparringSection(plan) {
         <tbody>${staffRows(s)}</tbody>
       </table>
 
+      ${
+        plan.prayer
+          ? `<section class="block prayer-block">
+              <h2 class="block-title"><span class="when">${esc(plan.prayer.when)}</span> Opening prayer <span class="always-first">Always first</span></h2>
+              ${blockItems(plan.prayer).map((item) => renderItem(item, "prayer")).join("")}
+            </section>`
+          : ""
+      }
       ${
         plan.opening
           ? `<section class="block">
@@ -2050,7 +2090,7 @@ function sparringSection(plan) {
     root.innerHTML = `
       <h2>At a glance</h2>
       <div class="home-cards">
-        <article class="home-card"><strong>Next class</strong><p>${esc(nextLabel)}, 5:30–6:15 PM</p>${
+        <article class="home-card"><strong>Next class</strong><p>${esc(nextLabel)}, 5:30–6:15 PM</p><p>Opens with a short prayer.</p>${
           P.isCombo(state.ageGroup) ? `<p>${esc(P.comboLabel(state.ageGroup))}</p>` : ""
         }</article>
         <article class="home-card"><strong>Roster</strong><p>${esc(groups.join(" · "))}${outside ? esc(` · Other ages: ${outside}`) : ""}</p></article>

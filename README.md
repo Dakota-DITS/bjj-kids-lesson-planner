@@ -38,9 +38,9 @@ Log in at `/login/`, then the planner opens at `/app/`.
 
 ### Class shape
 
-Line up by rank and bow in, warm up, base (forward roll, backward roll, hip escape), one technique theme, a water break, then sparring or positional drilling, then a game, then bow out. The technique block is the long one. Steps, the partner drill, and any safety note print on the plan.
+Every class opens with a short prayer, then line up by rank and bow in, warm up, base (forward roll, backward roll, hip escape), one technique theme, a water break, then sparring or positional drilling, then a game, then bow out. The prayer is the first 2 minutes: thanks, good use of the gift, and prayer for someone who needs it. A fresh plan uses a 3 minute warm-up so class still runs 5:30–6:15. The technique block is the long one. Steps, the partner drill, the prayer, and any safety note print on the plan.
 
-The lesson keeps its minutes first. If the clock is tight, warm-up and base shrink before the lesson does. The closing game can shrink to about 3 minutes and stays on the plan when you asked for a game. Extra minutes go to the lesson.
+The lesson keeps its minutes first. The opening prayer stays at 2 minutes. If the clock is tight, warm-up and base shrink before the lesson does. The closing game can shrink to about 3 minutes and stays on the plan when you asked for a game. Extra minutes go to the lesson.
 
 Auto theme picks the position that has gone the longest without being taught. You can lock a theme. Live sparring is for any age group, including 4–6, when a student has at least one stripe and enough adults are supervising for the 4:1 ratio. Otherwise that block is positional drilling.
 

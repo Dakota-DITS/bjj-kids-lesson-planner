@@ -535,12 +535,57 @@
     return lines.map((line) => sanitizeText(line, 160)).filter(Boolean).slice(0, 4);
   }
 
-  const CLASS_KEYS = ["opening", "warmup", "base", "lesson", "water", "sparring", "game", "finish"];
+  const CLASS_KEYS = ["prayer", "opening", "warmup", "base", "lesson", "water", "sparring", "game", "finish"];
+  const PRAYER_SECONDS = 120;
+  const PRAYER_FUND_ORDER = ["warmup", "games", "game", "base", "sparring", "opening", "finish", "water", "water1", "water2"];
+
+  /**
+   * Move 2 minutes into a fixed opening prayer.
+   * Warm-up gives the time first. The lesson is never shortened here.
+   * Used after a plan has already been scaled to the class length.
+   */
+  function fundOpeningPrayer(secondsById) {
+    const seconds = {};
+    const source = secondsById && typeof secondsById === "object" ? secondsById : {};
+    Object.keys(source).forEach((key) => {
+      if (key === "prayer") return;
+      seconds[key] = Math.max(0, Math.round(Number(source[key]) || 0));
+    });
+    let left = PRAYER_SECONDS;
+    PRAYER_FUND_ORDER.forEach((key) => {
+      if (left <= 0 || seconds[key] == null) return;
+      const cut = Math.min(seconds[key], left);
+      seconds[key] -= cut;
+      left -= cut;
+    });
+    seconds.prayer = PRAYER_SECONDS;
+    return seconds;
+  }
+
+  /**
+   * Ask for a 2 minute prayer. If that makes the class long, take the
+   * overage from warm-up before the fitter runs, so a normal 45 minute
+   * plan is not marked as squeezed.
+   */
+  function coverOpeningPrayer(requested, totalSec) {
+    const seconds = {};
+    CLASS_KEYS.forEach((key) => {
+      seconds[key] = Math.max(0, Math.round(Number(requested && requested[key]) || 0));
+    });
+    seconds.prayer = PRAYER_SECONDS;
+    const total = Math.max(0, Math.round(Number(totalSec) || 0));
+    let used = sum(CLASS_KEYS.map((key) => seconds[key]));
+    if (used > total && seconds.warmup > 0) {
+      seconds.warmup -= Math.min(seconds.warmup, used - total);
+    }
+    return seconds;
+  }
 
   /**
    * Fit a 45-minute shape into totalSec.
    * Extra time goes to the lesson. When the clock is short, warm-up and base
    * shrink first. The game can fall to 3 minutes and is not removed.
+   * The opening prayer keeps the minutes it was given.
    * The lesson is the last block that gives time up.
    */
   function fitClassTimes(requested, totalSec) {
@@ -551,6 +596,7 @@
     });
     const gameFloor = seconds.game > 0 ? Math.min(180, seconds.game) : 0;
     const floors = {
+      prayer: seconds.prayer,
       opening: 0,
       warmup: 0,
       base: 0,
@@ -910,6 +956,9 @@ function sanitizeProgress(raw) {
     pacedReps,
     sum,
     fitClassTimes,
+    PRAYER_SECONDS,
+    fundOpeningPrayer,
+    coverOpeningPrayer,
     themeStaleness,
     themeReason,
     chooseTheme,

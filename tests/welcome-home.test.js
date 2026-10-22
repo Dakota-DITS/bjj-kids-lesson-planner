@@ -32,7 +32,7 @@ assert.equal(html.includes("maps.google.com/maps"), false);
 assert.ok(html.includes('location: ""'));
 assert.ok(html.includes('phone: ""'));
 assert.ok(html.includes('email: ""'));
-assert.ok(html.includes('src="/calendar/class-days.js?v=20261021-12"'));
+assert.ok(html.includes('src="/calendar/class-days.js?v=20261021-13"'));
 assert.ok(html.includes("GRACE_CLASS_DAYS"));
 assert.ok(html.includes('aria-live="polite"'));
 assert.ok(html.includes('aria-label="Previous month"'));

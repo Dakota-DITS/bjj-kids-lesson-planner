@@ -1004,6 +1004,13 @@ button.danger {
   white-space: nowrap;
 }
 
+.always-first {
+  margin-left: auto;
+  font-family: var(--doc-sans);
+  font-size: 0.85rem;
+  font-weight: 700;
+}
+
 .item { margin: 0 0 14px; }
 
 .item-title {
@@ -1215,6 +1222,9 @@ body:not(.role-admin) .admin-only { display: none !important; }
     display: none !important;
     break-before: auto;
     page-break-before: auto;
+  }
+  body[data-print="lesson"] .prayer-block .item p.say {
+    display: block !important;
   }
   body[data-print="lesson"] .combo-note {
     display: block !important;
