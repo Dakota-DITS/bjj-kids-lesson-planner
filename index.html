@@ -18,8 +18,8 @@
   <meta name="apple-mobile-web-app-title" content="Grace BJJ Kids" />
   <link rel="icon" href="/icons/favicon-32.png" type="image/png" sizes="32x32" />
   <link rel="apple-touch-icon" href="/icons/apple-touch-icon.png" sizes="180x180" />
-  <link rel="stylesheet" href="/css/splash.css?v=20261021-10" />
-  <script src="/pwa.js?v=20261021-10" defer></script>
+  <link rel="stylesheet" href="/css/splash.css?v=20261021-11" />
+  <script src="/pwa.js?v=20261021-11" defer></script>
 </head>
 <body>
   <a class="skip" href="#main">Skip to content</a>
@@ -38,12 +38,22 @@
         <div><strong>Community</strong></div>
       </section>
 
-      <section class="panel">
+      <section class="panel" id="when">
         <h2>When we meet</h2>
-        <p>2nd and 4th Tuesday of every month, 5:30–6:15 PM. The first class is Tuesday, October 27, 2026.</p>
-        <p class="next" id="nextClass">Next class: …</p>
-        <p class="gi-shop-row"><a class="big" href="/calendar/grace-bjj-kids.ics" download="grace-bjj-kids.ics">Add to calendar</a></p>
-        <p class="hint">This downloads a calendar file. It does not add the class until you open that file.</p>
+        <div class="when-layout">
+          <div class="when-copy">
+            <p>2nd and 4th Tuesday of every month, 5:30–6:15 PM. The first class is Tuesday, October 27, 2026.</p>
+            <p>Grace Baptist Church, 4197 State St, Salem, OR 97301</p>
+            <p class="gi-shop-row"><a class="big" href="https://www.google.com/maps/search/?api=1&amp;query=Grace+Baptist+Church+4197+State+St+Salem+OR+97301" target="_blank" rel="noopener noreferrer">Get directions</a></p>
+            <p class="next" id="nextClass">Next class: …</p>
+            <p class="gi-shop-row"><a class="big" href="/calendar/grace-bjj-kids.ics" download="grace-bjj-kids.ics">Add to calendar</a></p>
+            <p class="hint">This downloads a calendar file. It does not add the class until you open that file.</p>
+          </div>
+          <div class="when-cal">
+            <div id="classCalendar" class="class-calendar"></div>
+            <p class="cal-legend"><span class="cal-swatch" aria-hidden="true"></span> Class: 5:30–6:15 PM at Grace Baptist Church</p>
+          </div>
+        </div>
       </section>
 
       <section class="panel" id="cost">
@@ -214,7 +224,9 @@
 
       <section class="panel" id="visit">
         <h2>Location and contact</h2>
-        <p>Location and contact are coming soon.</p>
+        <p>Grace Baptist Church, 4197 State St, Salem, OR 97301</p>
+        <p class="gi-shop-row"><a class="big" href="https://www.google.com/maps/search/?api=1&amp;query=Grace+Baptist+Church+4197+State+St+Salem+OR+97301" target="_blank" rel="noopener noreferrer">Get directions</a></p>
+        <p>Contact info is coming soon.</p>
       </section>
 
       <div id="later" class="panel extra" hidden></div>
@@ -233,9 +245,9 @@
     </form>
     <img id="giLightboxImg" alt="" />
   </dialog>
+  <script src="/calendar/class-days.js?v=20261021-11"></script>
   <script>
-    // PUBLIC_INFO is the place to add a location, a phone, an email, or a sign-up link later.
-    // Leave a value as "" and this page will not show it.
+    // Phone and email stay blank until Dakota has them. The street address is in the page.
     const PUBLIC_INFO = {
       location: "",
       phone: "",
@@ -244,22 +256,79 @@
       signupLabel: ""
     };
 
-    function nextClassDate(from) {
-      const start = new Date(2026, 9, 27);
-      const cursor = new Date(from.getFullYear(), from.getMonth(), from.getDate());
-      if (cursor < start) return start;
-      for (let i = 0; i < 400; i += 1) {
-        const day = cursor.getDay();
-        const which = Math.floor((cursor.getDate() - 1) / 7) + 1;
-        if (day === 2 && (which === 2 || which === 4) && cursor >= start) return new Date(cursor);
-        cursor.setDate(cursor.getDate() + 1);
-      }
-      return start;
+    const Days = window.GRACE_CLASS_DAYS;
+    const now = new Date();
+    const upcoming = Days.nextClass(now);
+    document.getElementById("nextClass").textContent = "Next class: " + Days.longDate(upcoming.year, upcoming.month, upcoming.day);
+
+    const calendarRoot = document.getElementById("classCalendar");
+    let view = Days.clampMonth(Days.laParts(now).year, Days.laParts(now).month, now);
+
+    function esc(value) {
+      return String(value).replace(/&/g, "&amp;").replace(/"/g, "&quot;").replace(/</g, "&lt;");
     }
 
-    const next = nextClassDate(new Date());
-    const label = next.toLocaleDateString(undefined, { weekday: "long", month: "long", day: "numeric", year: "numeric" });
-    document.getElementById("nextClass").textContent = "Next class: " + label;
+    function renderCalendar() {
+      const today = Days.laParts(now);
+      const next = Days.nextClass(now);
+      view = Days.clampMonth(view.year, view.month, now);
+      const prev = Days.addMonths(view.year, view.month, -1);
+      const following = Days.addMonths(view.year, view.month, 1);
+      const prevOk = Days.canShowMonth(prev.year, prev.month, now);
+      const nextOk = Days.canShowMonth(following.year, following.month, now);
+      const title = Days.monthTitle(view.year, view.month);
+      const cells = Days.monthCells(view.year, view.month);
+      const weeks = [];
+      for (let i = 0; i < cells.length; i += 7) weeks.push(cells.slice(i, i + 7));
+      if (!calendarRoot.querySelector("table")) {
+        const head = Days.WEEKDAYS.map((name) => `<th scope="col" abbr="${esc(name)}">${esc(name.slice(0, 3))}</th>`).join("");
+        calendarRoot.innerHTML = `
+          <div class="cal-nav">
+            <button type="button" data-cal="prev" aria-label="Previous month">Prev</button>
+            <h3 id="calHeading" aria-live="polite"></h3>
+            <button type="button" data-cal="next" aria-label="Next month">Next</button>
+          </div>
+          <table class="month-grid">
+            <caption class="visually-hidden"></caption>
+            <thead><tr>${head}</tr></thead>
+            <tbody></tbody>
+          </table>`;
+      }
+      calendarRoot.querySelector("[data-cal=prev]").disabled = !prevOk;
+      calendarRoot.querySelector("[data-cal=next]").disabled = !nextOk;
+      calendarRoot.querySelector("#calHeading").textContent = title;
+      calendarRoot.querySelector("caption").textContent = "Class days in " + title;
+      const body = weeks
+        .map((week) => {
+          const row = week
+            .map((cell) => {
+              if (!cell.inMonth) return `<td class="is-out"><span aria-hidden="true">${cell.day}</span></td>`;
+              const classDay = Days.isClassDay(cell.year, cell.month, cell.day);
+              const isNext = classDay && cell.year === next.year && cell.month === next.month && cell.day === next.day;
+              const isToday = cell.year === today.year && cell.month === today.month && cell.day === today.day;
+              const classes = ["day"];
+              if (classDay) classes.push("is-class");
+              if (isNext) classes.push("is-next");
+              if (isToday) classes.push("is-today");
+              const label = Days.dayLabel(cell.year, cell.month, cell.day, { classDay, next: isNext, today: isToday });
+              const tag = isNext ? `<span class="day-tag">Next class</span>` : "";
+              return `<td class="${classes.join(" ")}" aria-label="${esc(label)}"><span class="day-num">${cell.day}</span>${tag}</td>`;
+            })
+            .join("");
+          return `<tr>${row}</tr>`;
+        })
+        .join("");
+      calendarRoot.querySelector("tbody").innerHTML = body;
+    }
+
+    calendarRoot.addEventListener("click", (event) => {
+      const btn = event.target.closest("button[data-cal]");
+      if (!btn || btn.disabled) return;
+      const step = btn.dataset.cal === "next" ? 1 : -1;
+      view = Days.addMonths(view.year, view.month, step);
+      renderCalendar();
+    });
+    renderCalendar();
 
     const bits = [];
     if (PUBLIC_INFO.location) bits.push(PUBLIC_INFO.location);
