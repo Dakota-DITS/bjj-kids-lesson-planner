@@ -1011,8 +1011,13 @@ function sanitizeProgress(raw) {
 
   function safeSrc(src) {
     const s = String(src || "").trim();
-    if (/^\/?(sheets|img)\/[A-Za-z0-9_./-]+(\?[A-Za-z0-9_.=-]{1,24})?$/.test(s)) {
-      return s.charAt(0) === "/" ? s : `/${s}`;
+    const rawBase = typeof globalThis.BJJ_BASE === "string" ? globalThis.BJJ_BASE.replace(/\/$/, "") : "";
+    const base = rawBase && rawBase.charAt(0) === "/" && rawBase.charAt(1) !== "/" ? rawBase : "";
+    let path = s;
+    if (base && (path === base || path.indexOf(base + "/") === 0)) path = path.slice(base.length) || "/";
+    if (/^\/?(sheets|img)\/[A-Za-z0-9_./-]+(\?[A-Za-z0-9_.=-]{1,24})?$/.test(path)) {
+      if (path.charAt(0) !== "/") path = "/" + path;
+      return base ? base + path : path;
     }
     if (/^data:image\/(png|jpeg|webp|gif);base64,[A-Za-z0-9+/=\s]+$/.test(s) && s.length < 8_000_000) {
       return s;

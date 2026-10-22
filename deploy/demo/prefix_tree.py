@@ -33,6 +33,14 @@ OG_RE = re.compile(
     r"""(<meta\s+property=["']og:(?:url|image)["']\s+content=["'])https://bjj\.bettrbook\.com(/[^"']*)?(["'])""",
     re.IGNORECASE,
 )
+# Root paths the published copy must keep under /demo/. Comparison needles
+# (startsWith, indexOf, ===) and base + "/app" stay as written: the running
+# page already adds the prefix, and rewriting them would double it.
+SITE_PATH_RE = re.compile(
+    r"""(["'`])(/(?!/)[^"'`\\\n]*)\1"""
+)
+SKIP_FILE_PREFIXES = ("vendor/",)
+SKIP_FILE_NAMES = {"sw.js"}
 
 
 def prefix_url(url, base):
@@ -69,6 +77,61 @@ def prefix_locations(text, base):
     return LOC_RE.sub(repl, text)
 
 
+def is_site_path(url):
+    """True for a root path that is a page, asset, or API on this site."""
+    if not isinstance(url, str) or not url.startswith("/") or url.startswith("//"):
+        return False
+    path = url.split("?", 1)[0].split("#", 1)[0]
+    if path == "/demo" or path.startswith("/demo/"):
+        return True
+    name = path[1:]
+    head = name.split("/", 1)[0]
+    heads = {
+        "api", "app", "kids", "waiver", "privacy", "coloring", "login", "calendar",
+        "css", "img", "icons", "fonts", "sheets", "js", "vendor",
+    }
+    exact = {
+        "adult-class.json", "waiver-config.json", "manifest.webmanifest",
+        "offline.html", "favicon.ico", "pwa.js", "bjj-base.js", "robots.txt",
+        "sw.js", "index.html",
+    }
+    if head in heads or name in exact:
+        return True
+    return bool(re.fullmatch(r"[A-Za-z0-9_.-]+(?:/[A-Za-z0-9_.-]+)+\.[A-Za-z0-9]+", name))
+
+
+def skip_site_literal(text, start, end, url):
+    """Leave strings that are path checks or already joined to the demo base."""
+    before = text[max(0, start - 80):start]
+    if re.search(r"(?:base|workerBase|prefix)\s*\+\s*$", before):
+        return True
+    if re.search(r"(?:startsWith|endsWith|indexOf)\(\s*$", before):
+        return True
+    if re.search(r"(?:===|!==)\s*$", before):
+        return True
+    if url == "/" and re.match(r"\s*:", text[end:end + 8]):
+        return True
+    bare = url.split("?", 1)[0]
+    if bare == "/sw.js" and re.search(r"\bswPath\s*=\s*$", before):
+        return True
+    return False
+
+
+def prefix_script_urls(text, base):
+    """Prefix fetch, href, and other site-path strings in a published copy."""
+
+    def repl(match):
+        url = match.group(2)
+        if not is_site_path(url):
+            return match.group(0)
+        if skip_site_literal(text, match.start(), match.end(), url):
+            return match.group(0)
+        quote = match.group(1)
+        return quote + prefix_url(url, base) + quote
+
+    return SITE_PATH_RE.sub(repl, text)
+
+
 def prefix_og(html, base):
     def repl(match):
         path = match.group(2) or "/"
@@ -90,9 +153,13 @@ def transform(rel, text, base):
         text = prefix_og(text, base)
         text = prefix_attributes(text, base)
         text = prefix_locations(text, base)
-        return text
+        return prefix_script_urls(text, base)
     if ext == ".js":
-        return prefix_locations(text, base)
+        text = prefix_locations(text, base)
+        rel_key = rel.replace("\\", "/")
+        if os.path.basename(rel_key) in SKIP_FILE_NAMES or rel_key.startswith(SKIP_FILE_PREFIXES):
+            return text
+        return prefix_script_urls(text, base)
     if ext == ".css":
         return re.sub(
             r"""url\((['"]?)(/[^)'"]+)\1\)""",

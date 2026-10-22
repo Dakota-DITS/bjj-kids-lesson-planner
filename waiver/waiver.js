@@ -13,6 +13,8 @@
   let open = false;
   let full = false;
   let waitlistOn = false;
+  let serverFull = false;
+  let serverWaitlist = false;
 
   function pacificToday() {
     return new Intl.DateTimeFormat("en-CA", {
@@ -48,6 +50,82 @@
     if (closed) closed.hidden = open || showWaitlist;
     if (fullNote) fullNote.hidden = !showEmailFull;
     if (waitlistBox) waitlistBox.hidden = !showWaitlist;
+    paintDemoStates();
+  }
+
+  function paintDemoStates() {
+    const box = document.getElementById("bjj-demo-states");
+    if (!box) return;
+    const openBtn = box.querySelector('[data-demo-state="open"]');
+    const fullBtn = box.querySelector('[data-demo-state="full"]');
+    if (openBtn) openBtn.setAttribute("aria-pressed", full ? "false" : "true");
+    if (fullBtn) fullBtn.setAttribute("aria-pressed", full ? "true" : "false");
+  }
+
+  function mountDemoStates(enrollment) {
+    if (!window.BJJ_BASE || kind !== "kids" || document.getElementById("bjj-demo-states")) return;
+    const cap = enrollment && Number(enrollment.cap);
+    const enrolled = enrollment && Number(enrollment.enrolled);
+    const count = Number.isFinite(cap) && Number.isFinite(enrolled) ? enrolled + " of " + cap + " enrolled." : "";
+    const style = document.createElement("style");
+    style.id = "bjj-demo-states-style";
+    style.textContent = [
+      "#bjj-demo-states{position:sticky;top:4.5rem;z-index:9999;margin:0 0 16px;padding:12px;background:#ffe14a;color:#1c1917;border:4px solid #9b2a12}",
+      "#bjj-demo-states p{margin:0 0 8px}",
+      "#bjj-demo-states .row{display:flex;flex-wrap:wrap;gap:8px}",
+      "#bjj-demo-states button{min-height:44px;min-width:44px;padding:8px 14px;border-radius:999px;font:inherit;font-weight:700;cursor:pointer}",
+      '#bjj-demo-states button[aria-pressed="true"]{background:#9b2a12;color:#fff7ed;border:2px solid #9b2a12}',
+      '#bjj-demo-states button[aria-pressed="false"]{background:#fff7ed;color:#1c1917;border:2px solid #9b2a12}'
+    ].join("");
+    document.head.appendChild(style);
+    const box = document.createElement("div");
+    box.id = "bjj-demo-states";
+    box.className = "no-print";
+    box.innerHTML = '<p><strong>Demo preview states.</strong> ' + count + "</p>"
+      + '<div class="row"><button type="button" data-demo-state="open">Spots open</button>'
+      + '<button type="button" data-demo-state="full">Class full, waitlist</button></div>'
+      + '<p id="bjjDemoStateNote"></p>';
+    const main = document.getElementById("main");
+    if (main) main.insertBefore(box, main.firstChild);
+    else document.body.insertBefore(box, document.body.firstChild);
+    box.querySelector('[data-demo-state="open"]').addEventListener("click", function () {
+      full = false;
+      applyGate();
+      const note = document.getElementById("bjjDemoStateNote");
+      if (serverFull) {
+        if (submitBtn) {
+          submitBtn.disabled = true;
+          submitBtn.hidden = false;
+        }
+        say("Preview of the enrollment form. Saving stays off while the class is full.");
+        if (note) note.textContent = "Preview of the enrollment form. Saving stays off while the class is full.";
+      } else if (note) {
+        note.textContent = "The enrollment form is open. " + count;
+        say("");
+      }
+    });
+    box.querySelector('[data-demo-state="full"]').addEventListener("click", function () {
+      full = true;
+      waitlistOn = serverWaitlist;
+      applyGate();
+      const note = document.getElementById("bjjDemoStateNote");
+      say("");
+      if (!serverFull) {
+        const submit = document.getElementById("waitlistSubmit");
+        if (submit) submit.disabled = true;
+        const message = "Preview of the waitlist. Joining stays off while a spot is open.";
+        waitSay(message);
+        if (note) note.textContent = message;
+      } else if (note) {
+        note.textContent = "The class is full. The waitlist below is split into 3–6 Mighty Mites and 7–10 Pee Wees. Enter an age to see which list a child joins.";
+        waitSay("");
+      }
+    });
+    paintDemoStates();
+    const note = document.getElementById("bjjDemoStateNote");
+    if (note && serverFull && serverWaitlist) {
+      note.textContent = "The class is full. The waitlist below is split into 3–6 Mighty Mites and 7–10 Pee Wees. Enter an age to see which list a child joins.";
+    }
   }
 
   function setOpen(enabled) {
@@ -189,11 +267,14 @@
           .catch(() => null)
       : Promise.resolve(null),
   ]).then(([data, enrollment]) => {
-    full = !!(enrollment && enrollment.full === true);
-    waitlistOn = !!(enrollment && enrollment.waitlistEnabled === true);
+    serverFull = !!(enrollment && enrollment.full === true);
+    serverWaitlist = !!(enrollment && enrollment.waitlistEnabled === true);
+    full = serverFull;
+    waitlistOn = serverWaitlist;
     const fileOn = !!(data && data.waiverSubmissionsEnabled === true);
     const apiOn = !!(enrollment && enrollment.submissionsEnabled === true);
     setOpen(fileOn || apiOn);
+    mountDemoStates(enrollment);
   });
 
   document.getElementById("printBtn").addEventListener("click", () => window.print());

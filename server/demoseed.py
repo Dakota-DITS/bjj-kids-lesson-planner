@@ -71,10 +71,22 @@ def _ensure_user(conn, username, role, display_name, password, reset_password, n
 
 
 def _insert_examples(conn, now):
+    # Eleven ages 3–10 on the roster, plus the pending Nia waiver below, fill the
+    # cap of 12. Rio is 12 and does not count. The public kids waiver then shows
+    # the real waitlist, and the roster line is "12 of 12 enrolled".
     students = [
         ("demo-milo", "EXAMPLE Mite Milo Preview", 5, "white", 0, "2021-06-01", "FAKE preview data. Not a real student."),
         ("demo-tess", "EXAMPLE Peewee Tess Preview", 8, "grey", 1, "2018-06-01", "FAKE preview data. Not a real student."),
         ("demo-rio", "EXAMPLE Teen Rio Preview", 12, "white", 0, "2014-06-01", "FAKE preview data. Not a real student. Age 12 is not in the kids cap."),
+        ("demo-ada", "EXAMPLE Mite Ada Preview", 3, "white", 0, "2023-04-04", "FAKE preview data. Not a real student."),
+        ("demo-ben", "EXAMPLE Mite Ben Preview", 4, "white", 0, "2022-05-05", "FAKE preview data. Not a real student."),
+        ("demo-cam", "EXAMPLE Mite Cam Preview", 6, "white", 0, "2020-06-06", "FAKE preview data. Not a real student."),
+        ("demo-dee", "EXAMPLE Peewee Dee Preview", 7, "grey", 0, "2019-07-07", "FAKE preview data. Not a real student."),
+        ("demo-eli", "EXAMPLE Peewee Eli Preview", 8, "grey", 0, "2018-08-08", "FAKE preview data. Not a real student."),
+        ("demo-fay", "EXAMPLE Peewee Fay Preview", 9, "grey", 1, "2017-09-09", "FAKE preview data. Not a real student."),
+        ("demo-gus", "EXAMPLE Peewee Gus Preview", 10, "grey", 0, "2016-10-10", "FAKE preview data. Not a real student."),
+        ("demo-hoa", "EXAMPLE Mite Hoa Preview", 5, "white", 0, "2021-01-11", "FAKE preview data. Not a real student."),
+        ("demo-ivo", "EXAMPLE Peewee Ivo Preview", 7, "white", 0, "2019-02-12", "FAKE preview data. Not a real student."),
     ]
     for sid, name, age, belt, stripes, dob, note in students:
         conn.execute(

@@ -125,6 +125,11 @@ assert.ok(P.escapeHtml(nasty.activity.how).includes("&lt;"));
 assert.ok(!P.escapeHtml(`a"b'c`).includes('"'));
 assert.strictEqual(P.safeSrc("sheets/comic/bow-1.png?v=1"), "/sheets/comic/bow-1.png?v=1");
 assert.strictEqual(P.safeSrc("javascript:alert(1)"), "");
+globalThis.BJJ_BASE = "/demo";
+assert.strictEqual(P.safeSrc("sheets/comic/bow-1.png?v=1"), "/demo/sheets/comic/bow-1.png?v=1");
+assert.strictEqual(P.safeSrc("/demo/img/logo/grace-logo-mark-transparent.png"), "/demo/img/logo/grace-logo-mark-transparent.png");
+assert.strictEqual(P.safeSrc("javascript:alert(1)"), "");
+delete globalThis.BJJ_BASE;
 assert.deepStrictEqual(P.sanitizeIdList(["ok", "<bad>", "wu-bear", "ok"]), ["ok", "wu-bear"]);
 
 const kid = P.sanitizeRosterKid({ name: "Sam", age: 99, belt: "not-a-belt", stripes: 9 });

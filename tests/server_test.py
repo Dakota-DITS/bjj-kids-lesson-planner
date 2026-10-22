@@ -2041,8 +2041,10 @@ class DemoIsolationTest(unittest.TestCase):
         conn = connect(path)
         try:
             names = [row["name"] for row in conn.execute("SELECT name FROM students ORDER BY name")]
-            self.assertEqual(len(names), 3)
+            self.assertEqual(len(names), 12)
             self.assertTrue(all(name.startswith("EXAMPLE ") for name in names))
+            capped = conn.execute("SELECT COUNT(*) AS n FROM students WHERE age BETWEEN 3 AND 10").fetchone()["n"]
+            self.assertEqual(capped, 11)
             emails = [row["email"] for row in conn.execute("SELECT email FROM waivers")]
             emails += [row["email"] for row in conn.execute("SELECT email FROM waitlist")]
             self.assertTrue(emails)
@@ -2085,8 +2087,21 @@ class DemoIsolationTest(unittest.TestCase):
         self.assertIn('name="bjj-base" content="/demo"', home)
         self.assertIn('href="/demo/kids/"', home)
         self.assertIn('location.replace("/demo/kids/#"', home)
-        self.assertIn('fetch("/adult-class.json"', home)
+        self.assertIn('fetch("/demo/adult-class.json"', home)
+        self.assertNotIn('fetch("/adult-class.json"', home)
         self.assertNotIn('href="/kids/"', home)
+        app_js = slurp(os.path.join(published, "js", "app.js"))
+        self.assertIn('link.href = "/demo/app/waitlist/"', app_js)
+        self.assertNotIn('link.href = "/app/waitlist/"', app_js)
+        crawl_spec = importlib.util.spec_from_file_location(
+            "crawl_links",
+            os.path.join(os.path.dirname(__file__), "..", "deploy", "demo", "crawl_links.py"),
+        )
+        crawl_links = importlib.util.module_from_spec(crawl_spec)
+        crawl_spec.loader.exec_module(crawl_links)
+        self.assertEqual(crawl_links.self_check(), [])
+        self.assertEqual(crawl_links.mirror_problems(published), [])
+        self.assertEqual(crawl_links.crawl(published), [])
         self.assertIn('content="https://bjj.bettrbook.com/demo/"', home)
         kids = slurp(os.path.join(published, "kids", "index.html"))
         self.assertIn('src="/demo/img/gi/', kids)
