@@ -995,6 +995,8 @@ class ApiTest(unittest.TestCase):
         plan = {
             "mode": "grace",
             "settings": {"ageGroup": "mite", "date": "2026-10-27", "title": "GRACE BJJ KIDS"},
+            "sparringEnabled": True,
+            "sparringChoice": "manual",
             "lesson": {
                 "items": [
                     {"id": "ls-second", "name": "Second", "ageOverride": True},
@@ -1016,6 +1018,8 @@ class ApiTest(unittest.TestCase):
         self.assertEqual([item["id"] for item in items], ["ls-second", "ls-first"])
         self.assertTrue(items[0]["ageOverride"])
         self.assertFalse(items[1]["ageOverride"])
+        self.assertTrue(saved["plan"]["sparringEnabled"])
+        self.assertEqual(saved["plan"]["sparringChoice"], "manual")
         plan["lesson"]["items"] = [
             {"id": "ls-first", "name": "First", "ageOverride": False},
             {"id": "ls-second", "name": "Second", "ageOverride": True},
@@ -1086,6 +1090,8 @@ class ApiTest(unittest.TestCase):
         round_trip = loaded["plan"]["lesson"]["items"]
         self.assertEqual([item["id"] for item in round_trip], ["ls-first", "ls-second"])
         self.assertTrue(round_trip[1]["ageOverride"])
+        self.assertTrue(loaded["plan"]["sparringEnabled"])
+        self.assertEqual(loaded["plan"]["sparringChoice"], "manual")
         status, blocked = teacher.call("DELETE", f"/api/plans/{other['id']}")
         self.assertEqual(status, 403)
         status, removed = admin.call("DELETE", f"/api/plans/{other['id']}")

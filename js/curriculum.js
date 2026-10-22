@@ -333,7 +333,7 @@
       "Roll them over you and come up in mount. Hold a sleeve if you have one. Mighty Mites can hold the shoulder.",
     ],
     "5 reps each side, then switch partners.",
-    "The chop is a push with the shin, not a kick. For Mighty Mites, the teacher does the chop with them, slow, and the partner rolls gently. No gi grips required. Partner taps the mat if they need a reset. Finish in mount. No submissions.",
+    "The chop is a push with the shin, not a kick. For Mighty Mites, the teacher does the chop with them, slow, and the partner rolls gently. No gi grips required. Partner taps the mat if they need a reset. Finish in mount.",
     { themes: ["sweeps"], say: "Foot on the hip. Chop like scissors. Roll them over and sit on top.", tags: ["sweep"] }
   );
   tech(
@@ -349,7 +349,7 @@
       "They fall to that side. Follow them and take mount.",
     ],
     "5 reps each side, then switch partners.",
-    "Bump the chest, not the face. Sit up only as far as you can without posting on a friend. Finish in mount. No submissions.",
+    "Bump the chest, not the face. Sit up only as far as you can without posting on a friend. Finish in mount.",
     { themes: ["sweeps"], tags: ["sweep"] }
   );
   tech(
@@ -365,7 +365,7 @@
       "They tip to that side. Follow them and take mount.",
     ],
     "5 reps each side, then switch partners.",
-    "Bump the hip, not the face. The partner is on their knees, so the fall is a small roll. For Mighty Mites the teacher bumps with them. Finish in mount. No submissions.",
+    "Bump the hip, not the face. The partner is on their knees, so the fall is a small roll. For Mighty Mites the teacher bumps with them. Finish in mount.",
     { themes: ["sweeps"], say: "Sit up, bump the hip, and climb on top.", tags: ["sweep"] }
   );
   tech(
@@ -381,7 +381,7 @@
       "The swing tips them over. Come up in mount.",
     ],
     "5 slow reps each side, then switch partners.",
-    "Pee Wees swing small. No kicking the head. Clear the mats beside you before you swing. Finish in mount. No submissions.",
+    "Pee Wees swing small. No kicking the head. Clear the mats beside you before you swing. Finish in mount.",
     { themes: ["sweeps"], tags: ["sweep"] }
   );
   tech(
@@ -442,7 +442,7 @@
       "Roll them over that shoulder and come up in mount.",
     ],
     "5 reps each side, then switch partners.",
-    "Lift with the hook into the thigh. Do not kick the knee. The partner rolls with the sweep. Finish in mount. No submissions.",
+    "Lift with the hook into the thigh. Do not kick the knee. The partner rolls with the sweep. Finish in mount.",
     { themes: ["sweeps"], say: "Hooks in. Fall to one side. Lift and come up on top.", tags: ["sweep"] }
   );
   tech(
@@ -458,7 +458,7 @@
       "Push the hip, pull the arm, and chop the back of the knee. Come up on top.",
     ],
     "5 reps each side, then switch partners.",
-    "The foot pulls the back of the knee. Do not twist the knee. The partner falls to the open side. Finish on top. No submissions.",
+    "The foot pulls the back of the knee. Do not twist the knee. The partner falls to the open side. Finish on top.",
     { themes: ["sweeps"], say: "Foot on the hip, foot behind the knee. Push, pull, and come up on top.", tags: ["sweep"] }
   );
   tech(
@@ -474,7 +474,7 @@
       "Pull them toward you and scythe that leg so they fall. Come up on top.",
     ],
     "3 slow reps each side, then switch partners.",
-    "Juniors and Teens. The hook takes the heel. Do not twist the knee. If the knee turns, let go. Finish on top. No submissions.",
+    "Juniors and Teens. The hook takes the heel. Do not twist the knee. If the knee turns, let go. Finish on top.",
     { themes: ["sweeps"], say: "Sickle the heel. Foot on the hip. Pull them down and come up on top.", tags: ["sweep"] }
   );
 
@@ -736,7 +736,7 @@
       "They turn away. Follow to the back and clasp a seatbelt on the chest. No choke.",
     ],
     "3 trips through the chain, then switch partners.",
-    "The chain stops at the seatbelt. No submissions unless the teacher adds the rear naked choke as its own drill."
+    "The chain stops at the seatbelt. A rear naked choke is its own drill if the teacher adds it."
   );
 
   game(
@@ -784,9 +784,9 @@
     "Sweep or stand",
     ALL,
     ["sweeps", "guard"],
-    "Pairs. One kid sits in guard and tries to sweep. The partner starts on their knees and tries to stand up. A clean sweep scores, then reset right away. Short rounds. No waiting in line. No submissions.",
+    "Pairs. One kid sits in guard and tries to sweep. The partner starts on their knees and tries to stand up. A clean sweep scores, then reset right away. Short rounds. No waiting in line.",
     "Sweep or stand! You sweep. They try to stand up. Clean sweep, then reset.",
-    "Mighty Mites keep the top partner on their knees if standing up turns into a pile. No submissions."
+    "Mighty Mites keep the top partner on their knees if standing up turns into a pile."
   );
 
   const tug = DATA.activities.find((activity) => activity.id === "gm-tug-of-war");

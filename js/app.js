@@ -738,7 +738,7 @@ function assembleGrace(content, settings) {
   const lesson = Array.isArray(content.lesson) ? content.lesson : [];
   const games = Array.isArray(content.games) ? content.games : [];
   const prayer = prayerItems();
-  const requested = {
+  const requestedBase = {
     prayer: prayer.length ? Number(P.PRAYER_SECONDS) || 120 : 0,
     opening: opening.length ? sec(settings.openingMin) : 0,
     warmup: warmup.length ? sec(settings.warmupMin) : 0,
@@ -749,6 +749,10 @@ function assembleGrace(content, settings) {
     game: games.length ? sec(settings.gameMin) : 0,
     finish: sec(settings.finishMin),
   };
+  const requested =
+    typeof P.applySparringTime === "function"
+      ? P.applySparringTime(requestedBase, !!content.sparring)
+      : requestedBase;
   const covered = typeof P.coverOpeningPrayer === "function" ? P.coverOpeningPrayer(requested, total) : requested;
   const fit = P.fitClassTimes(covered, total);
   const byId = { ...fit.seconds };
@@ -1007,6 +1011,49 @@ function themeGamePrefer(themeId, age) {
       });
   }
 
+  function sparringAge(mode) {
+    if (mode === "toddler") return "toddler";
+    return P.normalizeAgeKey(state.ageGroup);
+  }
+
+  function rosterForSparring(age) {
+    const key = P.normalizeAgeKey(age);
+    if (key === "toddler") {
+      return state.roster.filter((kid) => {
+        const n = Number(kid.age);
+        return n >= 3 && n <= 5;
+      });
+    }
+    const ids = P.parseAgeKey(key);
+    return state.roster.filter((kid) => {
+      const group = groupForAge(kid.age);
+      return !!(group && ids.includes(group.id));
+    });
+  }
+
+  function kidsForSparring(age) {
+    const date = ($("date") && $("date").value) || "";
+    const entry = date ? classFor(date, age) : null;
+    const attended = entry && Array.isArray(entry.attended) ? entry.attended : [];
+    if (attended.length) {
+      return attended.map((id) => state.roster.find((kid) => kid && kid.id === id)).filter(Boolean);
+    }
+    return rosterForSparring(age);
+  }
+
+  function takeSparring(mode) {
+    const age = sparringAge(mode);
+    if (typeof P.resolveSparring !== "function") return { enabled: true, choice: "default", reason: "" };
+    return P.resolveSparring(state.plan, age, kidsForSparring(age));
+  }
+
+  function stampSparring(plan, spar) {
+    if (!plan || !spar) return;
+    plan.sparringEnabled = !!spar.enabled;
+    plan.sparringChoice = spar.choice === "manual" ? "manual" : "default";
+    plan.sparringReason = spar.reason || "";
+  }
+
 function buildPlan(opts = {}) {
   const mode = opts.mode || state.preset || "grace";
   state.preset = mode;
@@ -1077,7 +1124,10 @@ function buildPlan(opts = {}) {
     theme,
     sessionId: opts.keepSession && state.plan?.sessionId ? state.plan.sessionId : uid(),
   };
+  const spar = takeSparring(mode);
+  content.sparring = spar.enabled;
   state.plan = assemble(content, settings);
+  stampSparring(state.plan, spar);
   $("warmupCount").value = String(content.warmup.length);
   $("lessonCount").value = String(content.lesson.length);
   $("gameCount").value = String(content.games.length);
@@ -1104,7 +1154,10 @@ function buildPlan(opts = {}) {
       theme: state.plan.theme || null,
       sessionId: state.plan.sessionId || uid(),
     };
+    const spar = takeSparring(mode);
+    content.sparring = spar.enabled;
     state.plan = assemble(content, settings);
+    stampSparring(state.plan, spar);
     save();
     renderPlan();
     updateMeta();
@@ -1561,28 +1614,38 @@ function bodyHtml(item) {
     };
   }
 
+  function sparringToggle(plan) {
+    const on = !!plan.sparringEnabled;
+    const label = on ? "Remove sparring" : "Add sparring";
+    const reason =
+      !on && plan.sparringChoice !== "manual" && plan.sparringReason
+        ? `<p class="hint sparring-reason">${esc(plan.sparringReason)}</p>`
+        : "";
+    return `<button type="button" class="ghost sparring-toggle no-print" data-sparring-toggle aria-pressed="${
+      on ? "true" : "false"
+    }">${esc(label)}</button>${reason}`;
+  }
+
 function sparringSection(plan) {
-  if (!plan.sparring) return "";
+  const toggle = sparringToggle(plan);
+  if (!plan.sparring) {
+    return `<section class="block no-print"><h2 class="block-title">Sparring</h2>${toggle}</section>`;
+  }
   const ratio = P.ratioStatus(plan.settings.kidCount, plan.settings.adultCount);
   const roster = P.sortByRank(state.roster);
-  const wait = roster.length
-    ? "Live sparring waits for a kid with at least one stripe and enough adults."
-    : "Add the roster before anyone spars. An empty roster drills positions.";
   if (!plan.liveSparring) {
     const theme = plan.theme ? plan.theme.label : "the lesson";
-    const copy = {
-      name: "Positional drilling",
-      how: `No live sparring this class. Use this block to drill ${theme}. No submissions. Reset often and keep the same partners as the lesson. ${wait}`,
-    };
+    const line = `No one can spar yet. Only kids with at least one stripe spar, with enough adults. Use this block to drill ${theme} positions. Reset often and keep the same partners as the lesson.`;
+    const copy = { name: "Positional drilling", how: line };
     const hidden = planQuery("sparring").trim() && !P.matchesPlanQuery(copy, planQuery("sparring"));
     return `
       <section class="block">
         <h2 class="block-title"><span class="when">${esc(plan.sparring.when)}</span> Positional drilling ${countMark(1)}</h2>
+        ${toggle}
         ${searchField("sparring")}
         ${hidden ? `<p class="pick-empty no-print">No matches</p>` : ""}
         <div class="item${hidden ? " is-search-hidden" : ""}">
-          <p>No live sparring this class. Use this block to drill ${esc(theme)}. No submissions. Reset often and keep the same partners as the lesson.</p>
-          <p>${esc(wait)}</p>
+          <p>${esc(line)}</p>
         </div>
         ${comboNoteHtml(P.isCombo(plan.settings.ageGroup) ? P.COMBO_SPARRING_SAFETY : "")}
       </section>`;
@@ -1604,9 +1667,10 @@ function sparringSection(plan) {
     tags: DATA.sparring.points.concat(roster.map((kid) => kid.name)),
   };
   const liveHidden = planQuery("sparring").trim() && !P.matchesPlanQuery(liveCopy, planQuery("sparring"));
-  return `
+    return `
     <section class="block">
       <h2 class="block-title"><span class="when">${esc(plan.sparring.when)}</span> Sparring ${countMark(1)}</h2>
+      ${toggle}
       ${searchField("sparring")}
       ${liveHidden ? `<p class="pick-empty no-print">No matches</p>` : ""}
       <div class="item${liveHidden ? " is-search-hidden" : ""}">
@@ -2913,6 +2977,11 @@ function sparringSection(plan) {
           }
         : null,
     };
+    if (raw.sparringChoice === "manual" || raw.sparringChoice === "default") {
+      plan.sparringChoice = raw.sparringChoice;
+      plan.sparringEnabled = !!raw.sparringEnabled;
+    }
+    if (typeof raw.sparringReason === "string") plan.sparringReason = raw.sparringReason.slice(0, 120);
     ["opening", "warmup", "base", "lesson", "games", "water", "water1", "water2", "sparring", "finish"].forEach((key) => {
       if (raw[key] && typeof raw[key] === "object") plan[key] = raw[key];
     });
@@ -4433,7 +4502,7 @@ function sparringSection(plan) {
         return;
       }
       renderRoster();
-      if (state.plan) renderPlan();
+      if (state.plan) retimePlan();
     });
     $("rosterList").addEventListener("click", async (event) => {
       const btn = event.target.closest("button[data-roster='delete']");
@@ -4739,6 +4808,14 @@ function sparringSection(plan) {
     });
 
     $("plan").addEventListener("click", (event) => {
+      const sparringBtn = event.target.closest("[data-sparring-toggle]");
+      if (sparringBtn && state.plan) {
+        state.plan.sparringChoice = "manual";
+        state.plan.sparringEnabled = !state.plan.sparringEnabled;
+        state.plan.sparringReason = "";
+        retimePlan();
+        return;
+      }
       if (swallowPlanClick) {
         swallowPlanClick = false;
         event.preventDefault();

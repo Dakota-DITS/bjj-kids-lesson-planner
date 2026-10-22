@@ -1014,6 +1014,56 @@ function sanitizeProgress(raw) {
     return source.charAt(0).toLocaleUpperCase() + source.slice(1);
   }
 
+  /**
+   * Sparring starts off for a 4–6 class, when no kids are counted, or when
+   * more than half of the counted kids have no stripes. Otherwise it starts on.
+   * kids are {stripes} from check-in, or from the age-group roster.
+   */
+  function sparringDefault(ageGroup, kids) {
+    const key = normalizeAgeKey(ageGroup);
+    const list = Array.isArray(kids) ? kids : [];
+    if (key === "mite") {
+      return { enabled: false, reason: "Sparring off: 4–6 class" };
+    }
+    if (!list.length) {
+      return { enabled: false, reason: "Sparring off: no kids yet" };
+    }
+    const zeros = list.filter((kid) => clampInt(kid && kid.stripes, 0, 4, 0) < 1).length;
+    if (zeros * 2 > list.length) {
+      return { enabled: false, reason: "Sparring off: most kids have no stripes yet" };
+    }
+    return { enabled: true, reason: "" };
+  }
+
+  /**
+   * A saved plan with no choice uses the default. A hand choice stays as saved.
+   */
+  function resolveSparring(plan, ageGroup, kids) {
+    const stored = plan && (plan.sparringChoice === "manual" || plan.sparringChoice === "default");
+    const choice = stored ? plan.sparringChoice : "default";
+    const def = sparringDefault(ageGroup, kids);
+    if (choice === "manual") {
+      return { enabled: !!(plan && plan.sparringEnabled), choice: "manual", reason: "" };
+    }
+    return { enabled: def.enabled, choice: "default", reason: def.reason };
+  }
+
+  /**
+   * Sparring minutes move onto the game when sparring is off.
+   * The class length does not change.
+   */
+  function applySparringTime(requested, enabled) {
+    const seconds = {};
+    CLASS_KEYS.forEach((key) => {
+      seconds[key] = Math.max(0, Math.round(Number(requested && requested[key]) || 0));
+    });
+    if (!enabled) {
+      seconds.game += seconds.sparring;
+      seconds.sparring = 0;
+    }
+    return seconds;
+  }
+
   function pacedReps(base, ageGroup) {
     const n = Math.max(1, Math.round(Number(base) || 1));
     if (ageGroup === "mite") return Math.max(1, Math.round(n * 0.5));
@@ -1073,6 +1123,9 @@ function sanitizeProgress(raw) {
     canAssistClass,
     ratioStatus,
     kidCanSpar,
+    sparringDefault,
+    resolveSparring,
+    applySparringTime,
     sanitizeIdList,
     sanitizeActivity,
     sanitizeRosterKid,

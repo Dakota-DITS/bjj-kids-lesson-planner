@@ -26,7 +26,7 @@ assert.ok(rulesBlock.includes("assistant takes them"));
 assert.equal(app.includes("rulesNoRolling"), false);
 assert.equal(app.includes("Mighty Mites stay on position and movement."), false);
 assert.ok(app.includes("rules.push(...DATA.rulesSparring)") || app.includes("DATA.rulesCommon.concat(DATA.rulesSparring)"));
-assert.ok(app.includes("Live sparring waits for a kid with at least one stripe and enough adults."));
+assert.ok(app.includes("No one can spar yet. Only kids with at least one stripe spar, with enough adults."));
 assert.equal(/key === "mite"/.test(app), false);
 
 assert.equal(readme.includes("No submissions and no live sparring"), false);

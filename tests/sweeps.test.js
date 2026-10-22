@@ -79,7 +79,8 @@ assert.strictEqual(game.category, "game");
 assert.ok(game.themes.includes("sweeps"));
 assert.deepStrictEqual(Array.from(game.ages), ["mite", "peewee", "junior", "teen"]);
 assert.ok(P.matchesPlanQuery(game, "sweep"));
-assert.ok(game.how.includes("No submissions"));
+assert.ok(game.how.includes("reset right away"));
+assert.ok(!/no submissions/i.test(game.how));
 
 ["mite", "peewee", "junior", "teen"].forEach((age) => {
   assert.ok(scissor.ages.includes(age), age);
