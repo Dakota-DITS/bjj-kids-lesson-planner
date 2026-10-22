@@ -1,3 +1,4 @@
 {
-  "waiverSubmissionsEnabled": false
+  "waiverSubmissionsEnabled": false,
+  "waitlistEnabled": false
 }

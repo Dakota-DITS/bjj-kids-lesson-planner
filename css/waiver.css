@@ -64,7 +64,9 @@ h2 { font-size: 1.3rem; margin: 28px 0 8px; }
   font-weight: 700;
 }
 .closed a { color: #fff7ed; }
-.closed[hidden], button[hidden] { display: none !important; }
+.closed[hidden], button[hidden], .waitlist[hidden] { display: none !important; }
+.waitlist { margin-top: 28px; }
+.waitlist h2 { margin-top: 0; }
 ol.rules, ul.rules { padding-left: 1.2rem; }
 ol.rules li, ul.rules li { margin: 0 0 8px; }
 .legal p { margin: 0 0 10px; }
@@ -79,7 +81,7 @@ legend { font-weight: 700; padding: 0 4px; }
 .field { margin: 0 0 14px; }
 label, .check { font-weight: 700; }
 .hint { font-weight: 400; color: var(--muted); }
-input[type="text"], input[type="email"], input[type="tel"], input[type="date"], textarea {
+input[type="text"], input[type="email"], input[type="tel"], input[type="date"], input[type="number"], select, textarea {
   display: block;
   width: 100%;
   margin-top: 4px;
@@ -143,7 +145,7 @@ button[disabled] { opacity: 0.55; cursor: not-allowed; }
   color: #7c210e;
   font-weight: 700;
 }
-button:focus-visible, a:focus-visible, input:focus-visible, textarea:focus-visible {
+button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-visible {
   outline: 3px solid #9b2a12;
   outline-offset: 2px;
 }

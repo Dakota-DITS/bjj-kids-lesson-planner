@@ -450,6 +450,20 @@ def migrate(conn):
           added_to_roster INTEGER NOT NULL DEFAULT 0,
           roster_student_id TEXT NOT NULL DEFAULT ''
         );
+        CREATE TABLE IF NOT EXISTS waitlist (
+          id TEXT PRIMARY KEY,
+          created_at TEXT NOT NULL,
+          parent_name TEXT NOT NULL,
+          email TEXT NOT NULL,
+          phone TEXT NOT NULL,
+          child_name TEXT NOT NULL,
+          child_age INTEGER NOT NULL,
+          dob TEXT NOT NULL DEFAULT '',
+          age_group TEXT NOT NULL CHECK(age_group IN ('mite', 'upper')),
+          note TEXT NOT NULL DEFAULT '',
+          status TEXT NOT NULL DEFAULT 'waiting' CHECK(status IN ('waiting', 'contacted', 'enrolled', 'removed'))
+        );
+        CREATE INDEX IF NOT EXISTS waitlist_created_idx ON waitlist(created_at, id);
         """
     )
     # Live databases created before this column keep their rows. DEFAULT 0

@@ -1,0 +1,202 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Kids waitlist · Grace BJJ Staff</title>
+  <link rel="icon" href="/icons/staff-favicon-32.png" type="image/png" sizes="32x32" />
+  <script src="/pwa.js?v=20261021-27" defer></script>
+  <style>
+    :root { color-scheme: dark; }
+    body {
+      margin: 0;
+      background: #1c1917;
+      color: #f5f0e8;
+      font-family: "Liberation Sans", "Noto Sans", "Segoe UI", sans-serif;
+      font-size: 1.05rem;
+      line-height: 1.45;
+    }
+    main { width: min(880px, calc(100% - 32px)); margin: 24px auto 48px; }
+    a { color: #ffd7cc; }
+    h1 { font-size: 1.6rem; }
+    h2 { font-size: 1.2rem; margin: 0 0 8px; }
+    button, .button {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      min-height: 44px;
+      padding: 0 14px;
+      border-radius: 999px;
+      border: 0;
+      background: #9b2a12;
+      color: #fff7ed;
+      font: inherit;
+      font-weight: 700;
+      text-decoration: none;
+    }
+    .ghost { background: transparent; color: #f5f0e8; border: 2px solid #a8a29e; }
+    button[disabled] { opacity: 0.55; }
+    ul { list-style: none; padding: 0; }
+    li { margin: 0 0 12px; }
+    .card {
+      background: #292524;
+      border: 1px solid #a8a29e;
+      border-radius: 12px;
+      padding: 14px;
+    }
+    .row { display: flex; flex-wrap: wrap; gap: 8px; }
+    .banner {
+      background: #9b2a12;
+      color: #fff7ed;
+      border-radius: 12px;
+      padding: 12px 14px;
+      font-weight: 700;
+    }
+    .banner[hidden], #tools[hidden] { display: none !important; }
+    button:focus-visible, a:focus-visible { outline: 3px solid #fff7ed; outline-offset: 2px; }
+  </style>
+</head>
+<body>
+  <main>
+    <p><a href="/app/">Back to staff</a></p>
+    <h1>Kids waitlist</h1>
+    <p>This page does not email or text families. An admin contacts them.</p>
+    <p id="spotBanner" class="banner" hidden></p>
+    <p id="status">Checking the login…</p>
+    <div id="tools" hidden class="row">
+      <a class="button" href="/api/waitlist.csv">Download CSV</a>
+    </div>
+    <ul id="list"></ul>
+  </main>
+  <script>
+    const status = document.getElementById("status");
+    const list = document.getElementById("list");
+    const tools = document.getElementById("tools");
+    const spotBanner = document.getElementById("spotBanner");
+    let csrf = "";
+
+    function text(value) {
+      return String(value == null ? "" : value);
+    }
+
+    function joined(value) {
+      const date = new Date(value);
+      if (Number.isNaN(date.getTime())) return text(value);
+      return new Intl.DateTimeFormat("en-US", {
+        timeZone: "America/Los_Angeles",
+        dateStyle: "medium",
+        timeStyle: "short",
+      }).format(date);
+    }
+
+    function line(parent, label) {
+      const p = document.createElement("p");
+      p.textContent = label;
+      parent.append(p);
+    }
+
+    async function act(entry, path, method, message) {
+      if (message && !window.confirm(message)) return;
+      const res = await fetch(path, {
+        method: method,
+        credentials: "same-origin",
+        headers: { "X-CSRF-Token": csrf },
+      });
+      const body = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        status.textContent = body.error || "That update did not save.";
+        return;
+      }
+      paint(body);
+    }
+
+    function paint(body) {
+      const rows = body.entries || [];
+      list.textContent = "";
+      tools.hidden = false;
+      if (body.spotOpen) {
+        spotBanner.hidden = false;
+        const families = rows.length === 1 ? "1 family is" : rows.length + " families are";
+        spotBanner.textContent = "A spot is open. " + families + " on the kids waitlist. This does not email or text them.";
+      } else {
+        spotBanner.hidden = true;
+        spotBanner.textContent = "";
+      }
+      status.textContent = rows.length ? rows.length + " waiting." : "No one is on the waitlist.";
+      rows.forEach((entry) => {
+        const li = document.createElement("li");
+        const card = document.createElement("article");
+        card.className = "card";
+        const title = document.createElement("h2");
+        title.textContent = text(entry.position) + ". " + text(entry.childName);
+        card.append(title);
+        line(card, text(entry.childAge) + " · " + text(entry.ageGroupLabel));
+        line(card, text(entry.parentName));
+        line(card, text(entry.email));
+        line(card, text(entry.phone));
+        if (entry.note) line(card, text(entry.note));
+        line(card, "Joined " + joined(entry.createdAt));
+        line(card, entry.status === "contacted" ? "Contacted" : "Waiting");
+        const row = document.createElement("p");
+        row.className = "row";
+        const contacted = document.createElement("button");
+        contacted.type = "button";
+        contacted.textContent = "Contacted";
+        contacted.disabled = entry.status === "contacted";
+        contacted.addEventListener("click", () => act(entry, "/api/waitlist/" + encodeURIComponent(entry.id) + "/contacted", "POST", ""));
+        const enrolled = document.createElement("button");
+        enrolled.type = "button";
+        enrolled.className = "ghost";
+        enrolled.textContent = "Enrolled";
+        enrolled.addEventListener("click", () => act(
+          entry,
+          "/api/waitlist/" + encodeURIComponent(entry.id) + "/enrolled",
+          "POST",
+          "Mark " + text(entry.childName) + " enrolled? They leave the active list. This does not email or text them."
+        ));
+        const remove = document.createElement("button");
+        remove.type = "button";
+        remove.className = "ghost";
+        remove.textContent = "Remove";
+        remove.addEventListener("click", () => act(
+          entry,
+          "/api/waitlist/" + encodeURIComponent(entry.id),
+          "DELETE",
+          "Remove " + text(entry.childName) + " from the waitlist? This does not email or text them."
+        ));
+        row.append(contacted, enrolled, remove);
+        card.append(row);
+        li.append(card);
+        list.append(li);
+      });
+    }
+
+    fetch("/api/me", { credentials: "same-origin" })
+      .then(async (res) => {
+        if (res.status === 401) {
+          location.href = "/login/";
+          return null;
+        }
+        return res.json();
+      })
+      .then(async (me) => {
+        if (!me) return;
+        if (!me.user || me.user.role !== "admin") {
+          status.textContent = "An admin manages the waitlist.";
+          return;
+        }
+        csrf = me.csrf || "";
+        const res = await fetch("/api/waitlist", { credentials: "same-origin" });
+        const body = await res.json().catch(() => ({}));
+        if (!res.ok) {
+          status.textContent = body.error || "The list could not be loaded.";
+          return;
+        }
+        paint(body);
+      })
+      .catch(() => {
+        status.textContent = "The list could not be loaded.";
+      });
+  </script>
+</body>
+</html>

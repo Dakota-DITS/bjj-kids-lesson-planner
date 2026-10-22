@@ -6,8 +6,13 @@
   const submitBtn = document.getElementById("submitBtn");
   const closed = document.getElementById("closedNote");
   const fullNote = document.getElementById("fullNote");
+  const waitlistBox = document.getElementById("waitlistBox");
+  const waitlistForm = document.getElementById("waitlistForm");
+  const waitlistNote = document.getElementById("waitlistNote");
+  const waitlistDone = document.getElementById("waitlistDone");
   let open = false;
   let full = false;
+  let waitlistOn = false;
 
   function pacificToday() {
     return new Intl.DateTimeFormat("en-CA", {
@@ -33,14 +38,16 @@
   }
 
   function applyGate() {
-    const blocked = kind === "kids" && open && full;
-    const canSubmit = open && !blocked;
+    const showWaitlist = kind === "kids" && full && waitlistOn;
+    const showEmailFull = kind === "kids" && open && full && !waitlistOn;
+    const canSubmit = open && !(kind === "kids" && full);
     if (submitBtn) {
       submitBtn.disabled = !canSubmit;
-      submitBtn.hidden = blocked;
+      submitBtn.hidden = kind === "kids" && full && (open || waitlistOn);
     }
-    if (closed) closed.hidden = open || blocked;
-    if (fullNote) fullNote.hidden = !blocked;
+    if (closed) closed.hidden = open || showWaitlist;
+    if (fullNote) fullNote.hidden = !showEmailFull;
+    if (waitlistBox) waitlistBox.hidden = !showWaitlist;
   }
 
   function setOpen(enabled) {
@@ -183,6 +190,7 @@
       : Promise.resolve(null),
   ]).then(([data, enrollment]) => {
     full = !!(enrollment && enrollment.full === true);
+    waitlistOn = !!(enrollment && enrollment.waitlistEnabled === true);
     setOpen(data && data.waiverSubmissionsEnabled === true);
   });
 
@@ -200,8 +208,8 @@
   form.addEventListener("submit", (event) => {
     event.preventDefault();
     say("");
-    if (kind === "kids" && open && full) {
-      say(FULL_TEXT);
+    if (kind === "kids" && full && (open || waitlistOn)) {
+      say(waitlistOn ? "Kids class is full right now. Join the waitlist and we'll reach out when a spot opens." : FULL_TEXT);
       return;
     }
     if (!open) {
@@ -266,4 +274,113 @@
         say(err.message || "Enrollment could not be saved.");
       });
   });
+
+  function waitValue(id) {
+    const el = document.getElementById(id);
+    return el ? el.value.trim() : "";
+  }
+
+  function waitSay(message) {
+    if (!waitlistNote) return;
+    waitlistNote.textContent = message || "";
+  }
+
+  function digits(value) {
+    return (value.match(/\d/g) || []).length;
+  }
+
+  if (waitlistForm) {
+    waitlistForm.addEventListener("submit", (event) => {
+      event.preventDefault();
+      waitSay("");
+      const parentName = waitValue("waitParent");
+      const email = waitValue("waitEmail");
+      const phone = waitValue("waitPhone");
+      const childName = waitValue("waitChild");
+      const ageText = waitValue("waitAge");
+      const dob = waitValue("waitDob");
+      const ageGroup = waitValue("waitAgeGroup");
+      const noteText = waitValue("waitNote");
+      if (parentName.length < 2) {
+        waitSay("Enter the parent or guardian name.");
+        return;
+      }
+      if (!email.includes("@")) {
+        waitSay("Enter an email address.");
+        return;
+      }
+      if (digits(phone) < 7) {
+        waitSay("Enter a phone number.");
+        return;
+      }
+      if (childName.length < 2) {
+        waitSay("Enter the child's first name.");
+        return;
+      }
+      if (!ageText && !dob) {
+        waitSay("Enter the child's age or date of birth.");
+        return;
+      }
+      let age = null;
+      if (ageText) {
+        age = Number(ageText);
+        if (!Number.isInteger(age)) {
+          waitSay("Enter the child's age.");
+          return;
+        }
+      }
+      if (dob) {
+        const fromDob = ageYears(dob, pacificToday());
+        if (fromDob === null) {
+          waitSay("Enter a date of birth.");
+          return;
+        }
+        if (age !== null && age !== fromDob) {
+          waitSay("The age and date of birth do not match.");
+          return;
+        }
+        if (age === null) age = fromDob;
+      }
+      if (age < 3 || age > 10) {
+        waitSay("The kids class is for ages 3–10.");
+        return;
+      }
+      const expected = age <= 6 ? "mite" : "upper";
+      if (ageGroup !== expected) {
+        waitSay("Choose the age group that matches the child's age.");
+        return;
+      }
+      const submit = document.getElementById("waitlistSubmit");
+      if (submit) submit.disabled = true;
+      const body = {
+        parentName: parentName,
+        email: email,
+        phone: phone,
+        childName: childName,
+        ageGroup: ageGroup,
+        note: noteText,
+      };
+      if (ageText) body.age = age;
+      if (dob) body.dob = dob;
+      fetch("/api/public/waitlist", {
+        method: "POST",
+        credentials: "same-origin",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      })
+        .then(async (res) => {
+          const payload = await res.json().catch(() => ({}));
+          if (!res.ok) throw new Error(payload.error || "The waitlist is not open.");
+          waitlistForm.hidden = true;
+          if (waitlistDone) {
+            waitlistDone.hidden = false;
+            waitlistDone.textContent = "You're on the waitlist.";
+          }
+        })
+        .catch((err) => {
+          if (submit) submit.disabled = false;
+          waitSay(err.message || "The waitlist could not be joined.");
+        });
+    });
+  }
 })();

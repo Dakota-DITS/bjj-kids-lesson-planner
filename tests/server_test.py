@@ -1438,6 +1438,8 @@ class ApiTest(unittest.TestCase):
         row = conn.execute("SELECT added_to_roster, roster_student_id FROM waivers WHERE id = 'w-old'").fetchone()
         self.assertEqual(row["added_to_roster"], 0)
         self.assertEqual(row["roster_student_id"], "")
+        tables = {item[0] for item in conn.execute("SELECT name FROM sqlite_master WHERE type = 'table'")}
+        self.assertIn("waitlist", tables)
         conn.close()
 
     def test_kids_enrollment_cap(self):
@@ -1445,9 +1447,10 @@ class ApiTest(unittest.TestCase):
         guest = self.client()
         status, snap = guest.call("GET", "/api/public/kids-enrollment")
         self.assertEqual(status, 200, snap)
-        self.assertEqual(set(snap), {"cap", "enrolled", "spotsOpen", "full", "submissionsEnabled"})
+        self.assertEqual(set(snap), {"cap", "enrolled", "spotsOpen", "full", "submissionsEnabled", "waitlistEnabled"})
         self.assertEqual(snap["cap"], 12)
         self.assertFalse(snap["submissionsEnabled"])
+        self.assertFalse(snap["waitlistEnabled"])
         self.assertNotIn("Sam", json.dumps(snap))
 
         teacher = self.client()
@@ -1719,6 +1722,206 @@ class ApiTest(unittest.TestCase):
             conn = connect(self.api.cfg["db_path"])
             conn.execute("DELETE FROM waivers WHERE participant_name LIKE 'Cap %' OR participant_name LIKE 'cap %'")
             conn.execute("DELETE FROM students WHERE name LIKE 'Cap %'")
+            conn.execute("DELETE FROM settings WHERE key = 'kids_cap'")
+            conn.commit()
+            conn.close()
+
+
+    def _waitlist_count(self):
+        conn = connect(self.api.cfg["db_path"])
+        try:
+            return conn.execute("SELECT COUNT(*) AS n FROM waitlist").fetchone()["n"]
+        finally:
+            conn.close()
+
+    def test_waitlist_is_admin_only_and_first_come(self):
+        self.api._waitlist_posts = []
+        self.api.cfg["waitlist_enabled"] = None
+        guest = self.client()
+        teacher = self.client()
+        teacher.login("alex", "correct-horse")
+        admin = self.client()
+        admin.login("dakota", "correct-horse")
+        created = []
+
+        def entry(**overrides):
+            body = {
+                "parentName": "Pat Parent",
+                "email": "wait@example.com",
+                "phone": "5035550100",
+                "childName": "Casey",
+                "age": 5,
+                "ageGroup": "mite",
+                "note": "",
+            }
+            body.update(overrides)
+            return body
+
+        try:
+            status, closed = guest.call("POST", "/api/public/waitlist", entry())
+            self.assertEqual(status, 403, closed)
+            self.assertEqual(closed["error"], "The waitlist is not open.")
+            self.assertEqual(self._waitlist_count(), 0)
+
+            status, denied = teacher.call("GET", "/api/waitlist")
+            self.assertEqual(status, 403, denied)
+            self.assertEqual(denied["error"], "An admin manages the waitlist.")
+            status, denied_csv = teacher.call("GET", "/api/waitlist.csv", raw=True)
+            self.assertEqual(status, 403, denied_csv)
+            status, denied_post = teacher.call("POST", "/api/waitlist/q-nope/contacted", {})
+            self.assertEqual(status, 403, denied_post)
+            status, denied_del = teacher.call("DELETE", "/api/waitlist/q-nope")
+            self.assertEqual(status, 403, denied_del)
+
+            status, snap = guest.call("GET", "/api/public/kids-enrollment")
+            self.assertFalse(snap["waitlistEnabled"])
+            self.assertNotIn("waitlistActive", snap)
+            self.assertNotIn("Casey", json.dumps(snap))
+
+            self.api.cfg["waitlist_enabled"] = True
+            self.api._waitlist_posts = []
+            status, before = guest.call("GET", "/api/public/kids-enrollment")
+            self.assertTrue(before["waitlistEnabled"])
+            if before["full"]:
+                admin.call("PUT", "/api/kids-cap", {"cap": min(200, before["enrolled"] + 1)})
+            status, open_spot = guest.call("POST", "/api/public/waitlist", entry(childName="Open Spot"))
+            self.assertEqual(status, 409, open_spot)
+            self.assertEqual(open_spot["error"], "A spot is open right now. Use the enrollment form.")
+            self.assertEqual(self._waitlist_count(), 0)
+
+            status, boot = admin.call("GET", "/api/bootstrap")
+            enrolled = boot["kidsEnrollment"]["enrolled"]
+            if enrolled < 1:
+                status, kid = admin.call(
+                    "POST",
+                    "/api/students",
+                    {"name": "Wait Fill", "age": 6, "belt": "white", "stripes": 0},
+                )
+                self.assertEqual(status, 201, kid)
+                created.append(kid["id"])
+                enrolled = kid["kidsEnrollment"]["enrolled"]
+            status, full = admin.call("PUT", "/api/kids-cap", {"cap": enrolled})
+            self.assertTrue(full["full"], full)
+            self.assertIn("waitlistActive", full)
+
+            self.api.cfg["waitlist_enabled"] = False
+            status, still_closed = guest.call("POST", "/api/public/waitlist", entry(childName="Closed"))
+            self.assertEqual(status, 403, still_closed)
+            self.assertEqual(self._waitlist_count(), 0)
+            self.api.cfg["waitlist_enabled"] = True
+            self.api._waitlist_posts = []
+
+            from datetime import date
+
+            year = date.today().year
+            status, missing = guest.call("POST", "/api/public/waitlist", {"email": "wait@example.com"})
+            self.assertEqual(status, 400, missing)
+            status, too_young = guest.call("POST", "/api/public/waitlist", entry(childName="Tiny", age=2, ageGroup="mite"))
+            self.assertEqual(status, 400, too_young)
+            self.assertIn("3", too_young["error"])
+            status, mismatch = guest.call("POST", "/api/public/waitlist", entry(childName="Mismatch", age=5, ageGroup="upper"))
+            self.assertEqual(status, 400, mismatch)
+            self.assertIn("age group", mismatch["error"])
+            status, dob_mismatch = guest.call(
+                "POST",
+                "/api/public/waitlist",
+                entry(childName="Dob", age=8, ageGroup="upper", dob=f"{year - 5}-03-03"),
+            )
+            self.assertEqual(status, 400, dob_mismatch)
+            self.assertIn("do not match", dob_mismatch["error"])
+            self.assertEqual(self._waitlist_count(), 0)
+
+            status, first = guest.call(
+                "POST",
+                "/api/public/waitlist",
+                entry(childName="Ada", email="ada@example.com", note="After school"),
+            )
+            self.assertEqual(status, 201, first)
+            self.assertEqual(first["position"], 1)
+            status, second = guest.call(
+                "POST",
+                "/api/public/waitlist",
+                entry(childName="Bea", email="bea@example.com", age=8, ageGroup="upper"),
+            )
+            self.assertEqual(status, 201, second)
+            self.assertEqual(second["position"], 2)
+            status, duplicate = guest.call(
+                "POST",
+                "/api/public/waitlist",
+                entry(childName="  ada ", email="Ada@Example.com"),
+            )
+            self.assertEqual(status, 409, duplicate)
+            self.assertEqual(duplicate["error"], "This child is already on the waitlist.")
+
+            status, listed = admin.call("GET", "/api/waitlist")
+            self.assertEqual(status, 200, listed)
+            self.assertEqual([row["childName"] for row in listed["entries"]], ["Ada", "Bea"])
+            self.assertEqual([row["position"] for row in listed["entries"]], [1, 2])
+            self.assertEqual(listed["entries"][0]["note"], "After school")
+            self.assertEqual(listed["entries"][0]["ageGroup"], "mite")
+            self.assertFalse(listed["spotOpen"])
+
+            ada_id = listed["entries"][0]["id"]
+            bea_id = listed["entries"][1]["id"]
+            status, contacted = admin.call("POST", f"/api/waitlist/{ada_id}/contacted", {})
+            self.assertEqual(status, 200, contacted)
+            self.assertEqual(contacted["entries"][0]["status"], "contacted")
+            self.assertEqual(contacted["entries"][0]["position"], 1)
+            status, again = admin.call("POST", f"/api/waitlist/{ada_id}/contacted", {})
+            self.assertEqual(status, 200, again)
+            self.assertEqual(len(again["entries"]), 2)
+
+            status, csv_body = admin.call("GET", "/api/waitlist.csv", raw=True)
+            self.assertEqual(status, 200)
+            csv_text = csv_body.decode()
+            self.assertIn("Ada", csv_text)
+            self.assertIn("Bea", csv_text)
+            self.assertIn("3–6 Mighty Mites", csv_text)
+            self.assertTrue(csv_text.startswith("position,joined,status,"))
+
+            status, wider = admin.call("PUT", "/api/kids-cap", {"cap": min(200, enrolled + 1)})
+            self.assertEqual(status, 200, wider)
+            self.assertTrue(wider["waitlistSpotOpen"], wider)
+            self.assertEqual(wider["waitlistActive"], 2)
+            status, staff = teacher.call("GET", "/api/bootstrap")
+            self.assertTrue(staff["kidsEnrollment"]["waitlistSpotOpen"])
+            self.assertNotIn("Ada", json.dumps(staff["students"]))
+
+            status, enrolled_row = admin.call("POST", f"/api/waitlist/{ada_id}/enrolled", {})
+            self.assertEqual(status, 200, enrolled_row)
+            self.assertEqual([row["childName"] for row in enrolled_row["entries"]], ["Bea"])
+            self.assertEqual(enrolled_row["entries"][0]["position"], 1)
+            status, stale = admin.call("POST", f"/api/waitlist/{ada_id}/contacted", {})
+            self.assertEqual(status, 400, stale)
+            self.assertIn("already off", stale["error"])
+
+            status, removed = admin.call("DELETE", f"/api/waitlist/{bea_id}")
+            self.assertEqual(status, 200, removed)
+            self.assertEqual(removed["entries"], [])
+            self.assertFalse(removed["spotOpen"])
+
+            status, backup = admin.call("GET", "/api/export")
+            self.assertEqual(status, 200, backup)
+            names = {row["childName"] for row in backup["waitlist"]}
+            self.assertEqual(names, {"Ada", "Bea"})
+            self.assertTrue(any(row["status"] == "enrolled" for row in backup["waitlist"]))
+            self.assertTrue(any(row["status"] == "removed" for row in backup["waitlist"]))
+
+            status, tight = admin.call("PUT", "/api/kids-cap", {"cap": enrolled})
+            self.assertTrue(tight["full"], tight)
+            self.api._waitlist_posts = []
+            status, rejoined = guest.call("POST", "/api/public/waitlist", entry(childName="Ada", email="ada@example.com"))
+            self.assertEqual(status, 201, rejoined)
+        finally:
+            self.api.cfg["waitlist_enabled"] = None
+            self.api.cfg["waiver_submissions_enabled"] = None
+            self.api._waitlist_posts = []
+            admin.call("PUT", "/api/kids-cap", {"cap": 12})
+            for sid in created:
+                admin.call("DELETE", f"/api/students/{sid}")
+            conn = connect(self.api.cfg["db_path"])
+            conn.execute("DELETE FROM waitlist")
+            conn.execute("DELETE FROM students WHERE name = 'Wait Fill'")
             conn.execute("DELETE FROM settings WHERE key = 'kids_cap'")
             conn.commit()
             conn.close()

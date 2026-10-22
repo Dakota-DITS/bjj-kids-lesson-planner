@@ -2932,6 +2932,22 @@ function sparringSection(plan) {
     if (input && document.activeElement !== input && state.kidsEnrollment && state.kidsEnrollment.cap != null) {
       input.value = String(state.kidsEnrollment.cap);
     }
+    const banner = $("waitlistBanner");
+    if (banner) {
+      const snap = state.kidsEnrollment || {};
+      const active = Number(snap.waitlistActive) || 0;
+      const show = isAdmin() && snap.waitlistSpotOpen === true && active > 0;
+      banner.classList.toggle("hidden", !show);
+      banner.textContent = "";
+      if (show) {
+        const families = active === 1 ? "1 family is" : active + " families are";
+        banner.append(document.createTextNode("A spot is open. " + families + " on the kids waitlist. This does not email or text them. "));
+        const link = document.createElement("a");
+        link.href = "/app/waitlist/";
+        link.textContent = "Open the waitlist";
+        banner.append(link);
+      }
+    }
   }
 
   async function addKid() {

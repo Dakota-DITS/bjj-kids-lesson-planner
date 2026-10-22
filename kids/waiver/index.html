@@ -8,8 +8,8 @@
   <link rel="manifest" href="/manifest.webmanifest" />
   <meta name="theme-color" content="#9b2a12" />
   <link rel="icon" href="/icons/favicon-32.png" type="image/png" sizes="32x32" />
-  <link rel="stylesheet" href="/css/waiver.css?v=20261021-26" />
-  <script src="/pwa.js?v=20261021-26" defer></script>
+  <link rel="stylesheet" href="/css/waiver.css?v=20261021-27" />
+  <script src="/pwa.js?v=20261021-27" defer></script>
 </head>
 <body data-kind="kids">
   <a class="skip" href="#main">Skip to content</a>
@@ -136,7 +136,55 @@
         <button type="submit" id="submitBtn" disabled>Submit enrollment</button>
       </p>
     </form>
+
+    <section class="waitlist no-print" id="waitlistBox" hidden>
+      <p class="closed" id="waitlistLead">Kids class is full right now. Join the waitlist and we'll reach out when a spot opens.</p>
+      <form id="waitlistForm">
+        <div class="field">
+          <label for="waitParent">Parent or guardian name</label>
+          <input id="waitParent" name="parentName" type="text" autocomplete="name" required maxlength="120" />
+        </div>
+        <div class="field">
+          <label for="waitEmail">Email</label>
+          <input id="waitEmail" name="email" type="email" autocomplete="email" required maxlength="160" />
+        </div>
+        <div class="field">
+          <label for="waitPhone">Phone</label>
+          <input id="waitPhone" name="phone" type="tel" autocomplete="tel" required maxlength="40" />
+        </div>
+        <div class="field">
+          <label for="waitChild">Child's first name</label>
+          <input id="waitChild" name="childName" type="text" autocomplete="given-name" required maxlength="40" />
+        </div>
+        <div class="field">
+          <label for="waitAge">Child's age</label>
+          <input id="waitAge" name="age" type="number" inputmode="numeric" min="3" max="10" />
+        </div>
+        <div class="field">
+          <label for="waitDob">Or date of birth</label>
+          <input id="waitDob" name="dob" type="date" />
+        </div>
+        <div class="field">
+          <label for="waitAgeGroup">Age group</label>
+          <select id="waitAgeGroup" name="ageGroup" required>
+            <option value="">Choose an age group</option>
+            <option value="mite">3–6 Mighty Mites</option>
+            <option value="upper">7–10 Pee Wees</option>
+          </select>
+        </div>
+        <div class="field">
+          <label for="waitNote">Note <span class="hint">(optional)</span></label>
+          <textarea id="waitNote" name="note" maxlength="500"></textarea>
+        </div>
+        <p>By joining you agree to our <a href="/privacy/">Privacy Policy</a>.</p>
+        <p class="error" id="waitlistNote" role="alert"></p>
+        <p class="row">
+          <button type="submit" id="waitlistSubmit">Join the waitlist</button>
+        </p>
+      </form>
+      <p class="closed" id="waitlistDone" hidden></p>
+    </section>
   </main>
-  <script src="/waiver/waiver.js?v=20261021-26"></script>
+  <script src="/waiver/waiver.js?v=20261021-27"></script>
 </body>
 </html>

@@ -1262,6 +1262,21 @@ body:not(.authed) .app { display: none; }
 }
 body.authed .gate { display: none; }
 body:not(.role-admin) .admin-only { display: none !important; }
+.waitlist-banner {
+  background: #9b2a12;
+  color: #fff7ed;
+  border-radius: 12px;
+  padding: 12px 14px;
+  font-weight: 700;
+  margin: 8px 0 0;
+}
+.waitlist-banner a {
+  color: #fff7ed;
+  font-weight: 700;
+  display: inline-flex;
+  align-items: center;
+  min-height: 44px;
+}
 .waiver-link { margin: 8px 0 0; }
 .waiver-link a {
   color: #ffd7cc;
