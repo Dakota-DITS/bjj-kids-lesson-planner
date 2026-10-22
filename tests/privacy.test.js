@@ -30,11 +30,16 @@ assert.equal(/google analytics|facebook pixel|we encrypt the database/i.test(pol
 
 const placeholders = [
   "[Dakota to confirm: effective date]",
-  "[Dakota to confirm: retention period]",
+  "[Dakota to confirm: period after the student stops attending]",
+  "[Dakota to confirm: waitlist cleanup period]",
   "[Dakota to confirm: who can request deletion]",
   "[Dakota to confirm: how we will tell people when this policy changes]",
 ];
 placeholders.forEach((mark) => assert.ok(policy.includes(mark), mark));
+assert.equal(policy.includes("[Dakota to confirm: retention period]"), false);
+assert.ok(policy.includes("We keep signed enrollment and waiver forms for as long as the student is active in the program, and for [Dakota to confirm: period after the student stops attending] after that."));
+assert.ok(policy.includes("We keep waitlist entries until the family is enrolled, asks to be removed, or [Dakota to confirm: waitlist cleanup period]."));
+assert.ok(policy.includes("The software does not delete enrollment forms or waitlist entries on a schedule."));
 
 assert.ok(home.includes('href="/privacy/">Privacy Policy</a>'));
 assert.ok(kids.includes('href="/privacy/">Privacy Policy</a>'));
