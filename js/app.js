@@ -146,6 +146,7 @@
       belt: adultBelts().includes(raw.belt) ? raw.belt : "white",
       stripes: P.clampInt(raw.stripes, 0, 4, 0),
       userId: P.cleanId(raw.userId) || "",
+      username: String(raw.username || "").trim().slice(0, 40),
       login: !!(raw.login || raw.userId),
     };
   }
@@ -173,13 +174,68 @@
     console.error(label, err);
   }
 
+  function staffLabel(name, username) {
+    if (typeof P.displayStaffName === "function") return P.displayStaffName(name, username);
+    const stored = String(name == null ? "" : name).trim();
+    const login = String(username == null ? "" : username).trim();
+    const source = stored || login;
+    if (!source) return "";
+    if (stored && (!login || stored.toLowerCase() !== login.toLowerCase())) return stored;
+    return source.charAt(0).toLocaleUpperCase() + source.slice(1);
+  }
+
+  function loginFor(person) {
+    if (!person) return "";
+    if (person.username) return String(person.username);
+    if (person.userId && state.session && person.userId === state.session.id) return state.session.username || "";
+    return "";
+  }
+
+  function shownStaffName(person) {
+    if (!person) return "";
+    return staffLabel(person.name, loginFor(person));
+  }
+
+  function shownHelperLabel(name) {
+    const raw = String(name == null ? "" : name).trim();
+    if (!raw) return "";
+    const wanted = raw.toLowerCase();
+    const person = staffList().find((item) => {
+      const stored = String(item.name || "").trim().toLowerCase();
+      return stored === wanted || shownStaffName(item).toLowerCase() === wanted;
+    });
+    return person ? shownStaffName(person) : raw;
+  }
+
+  function sessionDisplayName() {
+    if (!state.session) return "";
+    const mine = staffList().find((person) => person.userId && person.userId === state.session.id);
+    if (mine) return shownStaffName(mine);
+    if (state.session.displayName) return String(state.session.displayName);
+    return staffLabel("", state.session.username);
+  }
+
   function instructorName() {
     const person = staffById(state.instructorId);
-    if (person) {
-      if (state.instructorName && state.instructorName.toLowerCase() === person.name.toLowerCase()) return state.instructorName;
-      return person.name;
+    if (person) return shownStaffName(person);
+    const typed = String(state.instructorName || "").trim();
+    if (!typed) return "";
+    const sessionName = state.session && state.session.username ? String(state.session.username) : "";
+    if (sessionName && typed.toLowerCase() === sessionName.toLowerCase()) return staffLabel(typed, sessionName);
+    return staffLabel(typed, "");
+  }
+
+  function displayInstructor(settings) {
+    settings = settings || {};
+    const person = staffById(settings.instructorId) || staffById(state.instructorId);
+    if (person) return shownStaffName(person) || "the teacher";
+    const raw = typeof settings.instructor === "string" ? settings.instructor.trim() : "";
+    if (raw && raw.toLowerCase() !== "the teacher") {
+      const sessionName = state.session && state.session.username ? String(state.session.username) : "";
+      if (sessionName && raw.toLowerCase() === sessionName.toLowerCase()) return staffLabel(raw, sessionName);
+      return staffLabel(raw, "");
     }
-    return state.instructorName || "";
+    return instructorName() || "the teacher";
   }
 
   function assistantPeople() {
@@ -187,12 +243,14 @@
   }
 
   function helperNames() {
-    const names = assistantPeople().map((person) => person.name);
+    const names = assistantPeople().map((person) => shownStaffName(person));
     const pending = Array.isArray(state.pendingHelperNames) ? state.pendingHelperNames : [];
-    if (!state.helpersApplied && pending.length) return pending.slice();
+    if (!state.helpersApplied && pending.length) return pending.map((name) => shownHelperLabel(name));
     const free = Array.isArray(state.freeHelperNames) ? state.freeHelperNames : [];
     return names.concat(
-      free.filter((name) => !names.some((have) => have.toLowerCase() === String(name).toLowerCase()))
+      free
+        .filter((name) => !names.some((have) => have.toLowerCase() === String(name).toLowerCase()))
+        .map((name) => shownHelperLabel(name))
     );
   }
 
@@ -1439,9 +1497,11 @@ function bodyHtml(item) {
         )
         .join("");
     }
-    const teacher = typeof settings.instructor === "string" && settings.instructor.trim() ? settings.instructor.trim() : "the teacher";
-    const namedAssistants = personNames(settings.assistants);
-    const assistants = namedAssistants.length ? namedAssistants : personNames(settings.helper);
+    const teacher = displayInstructor(settings);
+    const namedAssistants = personNames(settings.assistants).map((name) => shownHelperLabel(name)).filter(Boolean);
+    const assistants = namedAssistants.length
+      ? namedAssistants
+      : personNames(settings.helper).map((name) => shownHelperLabel(name)).filter(Boolean);
     const job =
       "Must be a two-stripe white belt or above. Help run drills, supervise sparring, and stay with a child who needs a break.";
     const rows = [
@@ -1611,7 +1671,7 @@ function sparringSection(plan) {
       <div class="plan-running-header">
         <img class="plan-logo" src="${esc(LOGO)}" alt="Grace Jiu-Jitsu" />
         <span class="plan-kicker">Grace BJJ Kids · ${esc(kicker)}</span>
-        <span class="right">Teacher ${esc(s.instructor || "the teacher")}</span>
+        <span class="right">Teacher ${esc(displayInstructor(s))}</span>
       </div>
       <h1 class="title">${esc(s.title)}</h1>
       <p class="class-meta">${esc(s.ages)}<span class="sep"></span>|<span class="sep"></span>${esc(
@@ -2210,7 +2270,7 @@ function sparringSection(plan) {
     root.innerHTML = `
       <h2>At a glance</h2>
       <div class="home-cards">
-        <article class="home-card"><strong>Next class</strong><p>${esc(nextLabel)}, 5:30–6:15 PM</p><p>Opens with a short prayer.</p>${
+        <article class="home-card"><strong>Next class</strong><p>${esc(nextLabel)}, 5:30–6:15 PM</p><p>Opens with a short prayer.</p><p>Teacher ${esc(instructorName() || "the teacher")}</p>${
           P.isCombo(state.ageGroup) ? `<p>${esc(P.comboLabel(state.ageGroup))}</p>` : ""
         }</article>
         <article class="home-card"><strong>Roster</strong><p>${esc(groups.join(" · "))}${outside ? esc(` · Other ages: ${outside}`) : ""}</p></article>
@@ -2374,14 +2434,14 @@ function sparringSection(plan) {
     const current = staffById(state.instructorId);
     const headOptions = [`<option value="">Choose head instructor</option>`];
     if (state.instructorName && !current) {
-      headOptions.push(`<option value="__saved__">${esc(state.instructorName)}</option>`);
+      headOptions.push(`<option value="__saved__">${esc(instructorName() || state.instructorName)}</option>`);
     }
     staffList().forEach((person) => {
       const eligible = canHead(person);
       const disabled = !eligible && (!current || current.id !== person.id) ? " disabled" : "";
       const flag = eligible ? "" : " · below blue";
       headOptions.push(
-        `<option value="${esc(person.id)}"${disabled}>${esc(person.name)} · ${esc(beltStripeLabel(person))}${flag}</option>`
+        `<option value="${esc(person.id)}"${disabled}>${esc(shownStaffName(person))} · ${esc(beltStripeLabel(person))}${flag}</option>`
       );
     });
     head.innerHTML = headOptions.join("");
@@ -2393,7 +2453,7 @@ function sparringSection(plan) {
     );
     assist.innerHTML = choices.length
       ? [`<option value="">Add an assistant</option>`]
-          .concat(choices.map((person) => `<option value="${esc(person.id)}">${esc(person.name)} · ${esc(beltStripeLabel(person))}</option>`))
+          .concat(choices.map((person) => `<option value="${esc(person.id)}">${esc(shownStaffName(person))} · ${esc(beltStripeLabel(person))}</option>`))
           .join("")
       : `<option value="">No one else is a two-stripe white or higher</option>`;
     const list = $("assistantList");
@@ -2401,7 +2461,7 @@ function sparringSection(plan) {
       list.innerHTML = assistantPeople()
         .map(
           (person) =>
-            `<li><span>${esc(person.name)} · ${esc(beltStripeLabel(person))}</span> <button class="ghost" type="button" data-remove-assistant="${esc(person.id)}">Remove</button></li>`
+            `<li><span>${esc(shownStaffName(person))} · ${esc(beltStripeLabel(person))}</span> <button class="ghost" type="button" data-remove-assistant="${esc(person.id)}">Remove</button></li>`
         )
         .join("");
     }
@@ -2409,7 +2469,7 @@ function sparringSection(plan) {
     if (note) {
       note.textContent =
         current && !canHead(current)
-          ? `${current.name} is below a blue belt. A head instructor is a blue belt or higher.`
+          ? `${shownStaffName(current)} is below a blue belt. A head instructor is a blue belt or higher.`
           : "";
     }
   }
@@ -2429,7 +2489,7 @@ function sparringSection(plan) {
           ? `<span class="hint">Login</span>`
           : `<button class="ghost" type="button" data-staff-remove="${esc(person.id)}">Remove</button>`;
         return `<div class="staff-row" data-staff-id="${esc(person.id)}">
-          <input data-staff-name="${esc(person.id)}" value="${esc(person.name)}" maxlength="40" aria-label="Name" />
+          <input data-staff-name="${esc(person.id)}" value="${esc(person.name)}" maxlength="40" aria-label="Name on the plan" />
           <select data-staff-belt="${esc(person.id)}" aria-label="Belt">${adultBeltOptions(person.belt)}</select>
           <select data-staff-stripes="${esc(person.id)}" aria-label="Stripes">${stripeOptions(person.stripes)}</select>
           ${remove}
@@ -2638,7 +2698,7 @@ function sparringSection(plan) {
     state.staff = (Array.isArray(body.staff) ? body.staff : []).map(normalizeStaff).filter(Boolean);
     document.body.classList.toggle("role-admin", isAdmin());
     const who = $("whoami");
-    if (who && state.session) who.textContent = `${state.session.username} · ${state.session.role}`;
+    if (who && state.session) who.textContent = `${sessionDisplayName()} · ${state.session.role}`;
     const banner = $("importBanner");
     if (banner) banner.classList.toggle("hidden", !localStorage.getItem(IMPORT_KEY));
   }
@@ -2719,6 +2779,22 @@ function sparringSection(plan) {
     renderSheetList();
   }
 
+  function exportedPlan() {
+    if (!state.plan) return state.plan;
+    const settings = readSettings();
+    return {
+      ...state.plan,
+      settings: {
+        ...(state.plan.settings || {}),
+        instructor: settings.instructor,
+        instructorId: settings.instructorId,
+        helper: settings.helper,
+        assistants: settings.assistants,
+        assistantIds: settings.assistantIds,
+      },
+    };
+  }
+
   async function exportBackup() {
     const payload = {
       version: 2,
@@ -2728,7 +2804,7 @@ function sparringSection(plan) {
       pinned: state.pinned,
       reps: state.reps,
       settings: readSettings(),
-      plan: state.plan,
+      plan: exportedPlan(),
       uploads: state.uploads,
     };
     const blob = new Blob([JSON.stringify(payload, null, 2)], { type: "application/json" });
@@ -3066,7 +3142,7 @@ function sparringSection(plan) {
       .join("");
     root.innerHTML = `
       <h2>Review class</h2>
-      <p>${esc(classLabel(plan.settings.ageGroup))}${plan.theme ? ` · ${esc(plan.theme.reason)}` : ""}${date ? ` · ${esc(date)}` : ""}</p>
+      <p>Teacher ${esc(instructorName() || "the teacher")} · ${esc(classLabel(plan.settings.ageGroup))}${plan.theme ? ` · ${esc(plan.theme.reason)}` : ""}${date ? ` · ${esc(date)}` : ""}</p>
       <h3>Who was here</h3>
       <div class="chip-row">${chips}</div>
       ${blocks}
@@ -3400,6 +3476,7 @@ function sparringSection(plan) {
       : `<p class="stripe-hint-readonly">Stripe hint: ${esc(state.progress.stripe.own)} techniques on their own + ${esc(state.progress.stripe.attend)} classes (set by admin)</p>`;
     root.innerHTML = `
       <h2>Progress · ${esc(heading)}</h2>
+      <p>Teacher ${esc(instructorName() || "the teacher")}</p>
       ${stripeSettings}
       <h3>Log a past class</h3>
       <div class="past-class">
@@ -5019,7 +5096,10 @@ function sparringSection(plan) {
     const dialog = $("resetPasswordDialog");
     if (!dialog || !userId) return;
     dialog.dataset.userId = userId;
-    $("resetPasswordWho").textContent = `Set a temporary password for ${username}.`;
+    const shown = username ? staffLabel("", username) : "";
+    $("resetPasswordWho").textContent = username
+      ? `Set a temporary password for ${shown} (login ${username}).`
+      : "Set a temporary password.";
     $("resetPasswordInput").value = "";
     $("resetPasswordReveal").hidden = true;
     $("resetPasswordValue").textContent = "";
@@ -5044,10 +5124,11 @@ function sparringSection(plan) {
     $("userList").innerHTML = (body.users || [])
       .map((user) => {
         const pending = user.mustChangePassword ? " · temporary password" : "";
+        const shown = user.displayName || staffLabel("", user.username);
         const reset = user.id === mine
           ? ""
           : `<button class="ghost" type="button" data-reset="${esc(user.id)}" data-username="${esc(user.username)}">Reset password</button>`;
-        return `<p><span>${esc(user.username)} · ${esc(user.role)}${pending}</span>${reset}<button class="ghost" type="button" data-user="${esc(user.id)}">Remove</button></p>`;
+        return `<p><span>${esc(shown)} · ${esc(user.role)}${pending} · login ${esc(user.username)}</span>${reset}<button class="ghost" type="button" data-user="${esc(user.id)}">Remove</button></p>`;
       })
       .join("");
   }
@@ -5168,8 +5249,9 @@ function sparringSection(plan) {
     if (panel) panel.hidden = false;
     const who = $("mustChangeWho");
     if (who) {
-      who.textContent = username
-        ? `${username} has a temporary password. Choose a new one before using the staff page.`
+      const shown = username ? staffLabel("", username) : "";
+      who.textContent = shown
+        ? `${shown} has a temporary password. Choose a new one before using the staff page.`
         : "This login has a temporary password. Choose a new one before using the staff page.";
     }
     if (mustChangeBound) return;

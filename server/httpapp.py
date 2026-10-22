@@ -160,13 +160,43 @@ class Api:
         )
         return token, csrf, expires
 
-    def public_user(self, user, csrf):
+    def display_staff_name(self, name, username=""):
+        stored = "" if name is None else str(name).strip()
+        login = "" if username is None else str(username).strip()
+        source = stored or login
+        if not source:
+            return ""
+        if stored and (not login or stored.lower() != login.lower()):
+            return stored
+        return source[:1].upper() + source[1:]
+
+    def display_name_for_user(self, conn, user):
+        row = conn.execute(
+            """
+            SELECT staff.name AS name
+            FROM users
+            LEFT JOIN staff ON staff.user_id = users.id
+            WHERE users.id = ?
+            """,
+            (user["id"],),
+        ).fetchone()
+        if not row:
+            return self.display_staff_name("", user.get("username"))
+        return self.display_staff_name(row["name"], user.get("username"))
+
+    def public_user(self, user, csrf, conn=None):
+        shown = (
+            self.display_name_for_user(conn, user)
+            if conn is not None
+            else self.display_staff_name("", user.get("username"))
+        )
         return {
             "user": {
                 "id": user["id"],
                 "username": user["username"],
                 "role": user["role"],
                 "mustChangePassword": bool(user.get("mustChangePassword")),
+                "displayName": shown,
             },
             "csrf": csrf,
         }
@@ -284,10 +314,7 @@ class Api:
         try:
             if self.ensure_login_staff(conn):
                 conn.commit()
-            staff = [
-                self.staff_json(row)
-                for row in conn.execute("SELECT * FROM staff ORDER BY name COLLATE NOCASE")
-            ]
+            staff = [self.staff_json(row) for row in self.staff_rows(conn)]
         except sqlite3.Error:
             staff = []
         students = [self.student_json(row) for row in conn.execute("SELECT * FROM students ORDER BY name")]
@@ -337,14 +364,29 @@ class Api:
             stripes = int(stripes)
         except (TypeError, ValueError):
             stripes = 0
+        name = self.cell(row, "name")
+        username = self.cell(row, "username", "")
         return {
             "id": self.cell(row, "id"),
-            "name": self.cell(row, "name"),
+            "name": name,
             "belt": self.cell(row, "belt") or "white",
             "stripes": max(0, min(4, stripes)),
             "userId": user_id,
+            "username": username,
+            "displayName": self.display_staff_name(name, username),
             "login": bool(user_id),
         }
+
+    def staff_rows(self, conn, where="", params=()):
+        sql = (
+            "SELECT staff.id AS id, staff.name AS name, staff.belt AS belt, staff.stripes AS stripes, "
+            "staff.user_id AS user_id, staff.created_at AS created_at, users.username AS username "
+            "FROM staff LEFT JOIN users ON users.id = staff.user_id"
+        )
+        if where:
+            sql += " WHERE " + where
+        sql += " ORDER BY staff.name COLLATE NOCASE, staff.id"
+        return conn.execute(sql, params).fetchall()
 
     def ensure_login_staff(self, conn):
         rows = conn.execute(
@@ -524,7 +566,7 @@ class Api:
                 if path == "/api/me" and method == "GET":
                     if not user:
                         return self.send(handler, 401, {"error": "Log in first."})
-                    return self.send(handler, 200, self.public_user(user, csrf))
+                    return self.send(handler, 200, self.public_user(user, csrf, conn))
                 if (
                     user
                     and user.get("mustChangePassword")
@@ -545,7 +587,7 @@ class Api:
                     if not user:
                         return self.send(handler, 401, {"error": "Log in first."})
                     body = self.bootstrap(conn)
-                    body.update(self.public_user(user, csrf))
+                    body.update(self.public_user(user, csrf, conn))
                     return self.send(handler, 200, body)
                 if method in ("POST", "PUT", "PATCH", "DELETE") and not self.require_csrf(handler, csrf if user else ""):
                     if path != "/api/logout":
@@ -570,7 +612,13 @@ class Api:
             if not admin:
                 return self.send(handler, 403, {"error": "An admin manages logins."})
             rows = conn.execute(
-                "SELECT id, username, role, must_change_password FROM users ORDER BY username"
+                """
+                SELECT users.id AS id, users.username AS username, users.role AS role,
+                       users.must_change_password AS must_change_password, staff.name AS staff_name
+                FROM users
+                LEFT JOIN staff ON staff.user_id = users.id
+                ORDER BY users.username
+                """
             ).fetchall()
             return self.send(
                 handler,
@@ -582,6 +630,7 @@ class Api:
                             "username": row["username"],
                             "role": row["role"],
                             "mustChangePassword": bool(row["must_change_password"]),
+                            "displayName": self.display_staff_name(row["staff_name"], row["username"]),
                         }
                         for row in rows
                     ]
@@ -594,7 +643,7 @@ class Api:
         if path == "/api/staff" and method == "GET":
             if self.ensure_login_staff(conn):
                 conn.commit()
-            rows = conn.execute("SELECT * FROM staff ORDER BY name COLLATE NOCASE").fetchall()
+            rows = self.staff_rows(conn)
             return self.send(handler, 200, {"staff": [self.staff_json(row) for row in rows]})
         if path == "/api/staff" and method == "POST":
             if not admin:
@@ -820,7 +869,7 @@ class Api:
                 "role": row["role"],
                 "mustChangePassword": bool(row["must_change_password"]),
             }
-            self.send(handler, 200, self.public_user(user, csrf), set_cookie=token)
+            self.send(handler, 200, self.public_user(user, csrf, own), set_cookie=token)
         finally:
             if conn is None:
                 own.close()
@@ -987,8 +1036,8 @@ class Api:
             (sid, raw["name"], raw["belt"], raw["stripes"], iso(utcnow())),
         )
         conn.commit()
-        row = conn.execute("SELECT * FROM staff WHERE id = ?", (sid,)).fetchone()
-        return self.send(handler, 201, self.staff_json(row))
+        rows = self.staff_rows(conn, "staff.id = ?", (sid,))
+        return self.send(handler, 201, self.staff_json(rows[0]))
 
     def patch_staff(self, handler, conn, sid):
         row = conn.execute("SELECT * FROM staff WHERE id = ?", (sid,)).fetchone()
@@ -1000,8 +1049,8 @@ class Api:
             (raw["name"], raw["belt"], raw["stripes"], sid),
         )
         conn.commit()
-        updated = conn.execute("SELECT * FROM staff WHERE id = ?", (sid,)).fetchone()
-        return self.send(handler, 200, self.staff_json(updated))
+        updated = self.staff_rows(conn, "staff.id = ?", (sid,))
+        return self.send(handler, 200, self.staff_json(updated[0]))
 
     def delete_staff(self, handler, conn, sid):
         row = conn.execute("SELECT * FROM staff WHERE id = ?", (sid,)).fetchone()
