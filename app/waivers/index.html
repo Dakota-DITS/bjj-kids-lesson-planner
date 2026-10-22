@@ -1,0 +1,188 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="robots" content="noindex, nofollow, noarchive, nosnippet">
+  <meta name="googlebot" content="noindex, nofollow">
+  <title>Enrollment forms · Grace BJJ Staff</title>
+  <link rel="icon" href="/icons/staff-favicon-32.png" type="image/png" sizes="32x32" />
+  <script src="/pwa.js?v=20261021-28" defer></script>
+  <style>
+    :root { color-scheme: dark; }
+    body {
+      margin: 0;
+      background: #1c1917;
+      color: #f5f0e8;
+      font-family: "Liberation Sans", "Noto Sans", "Segoe UI", sans-serif;
+      font-size: 1.05rem;
+      line-height: 1.45;
+    }
+    main { width: min(880px, calc(100% - 32px)); margin: 24px auto 48px; }
+    a { color: #ffd7cc; }
+    h1 { font-size: 1.6rem; }
+    button, .button {
+      display: inline-flex;
+      align-items: center;
+      min-height: 44px;
+      padding: 0 14px;
+      border-radius: 999px;
+      border: 0;
+      background: #9b2a12;
+      color: #fff7ed;
+      font: inherit;
+      font-weight: 700;
+      text-decoration: none;
+    }
+    .ghost { background: transparent; color: #f5f0e8; border: 2px solid #a8a29e; }
+    ul { list-style: none; padding: 0; }
+    li { margin: 0 0 10px; }
+    .card {
+      background: #292524;
+      border: 1px solid #a8a29e;
+      border-radius: 12px;
+      padding: 14px;
+    }
+    img.sig { width: min(420px, 100%); background: #fff; border-radius: 8px; }
+    .row { display: flex; flex-wrap: wrap; gap: 8px; }
+    button:focus-visible, a:focus-visible { outline: 3px solid #fff7ed; outline-offset: 2px; }
+  </style>
+</head>
+<body>
+  <main>
+    <p><a href="/app/">Back to staff</a></p>
+    <h1>Enrollment forms</h1>
+    <p id="status">Checking the login…</p>
+    <div id="tools" hidden class="row">
+      <a class="button" href="/api/waivers.csv">Download CSV</a>
+    </div>
+    <ul id="list"></ul>
+    <article id="detail" class="card" hidden></article>
+  </main>
+  <script>
+    const status = document.getElementById("status");
+    const list = document.getElementById("list");
+    const detail = document.getElementById("detail");
+    let csrf = "";
+
+    function text(value) {
+      return String(value || "");
+    }
+
+    async function show(id) {
+      const res = await fetch("/api/waivers/" + encodeURIComponent(id), { credentials: "same-origin" });
+      const body = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        status.textContent = body.error || "That form could not be opened.";
+        return;
+      }
+      const payload = body.payload || {};
+      detail.hidden = false;
+      detail.textContent = "";
+      const title = document.createElement("h2");
+      title.textContent = text(body.participantName) + " · " + text(body.kind);
+      detail.append(title);
+      const lines = [
+        "Signed " + text(body.signedOn),
+        "DOB " + text(body.dob),
+        "Email " + text(body.email),
+        "Phone " + text(body.phone),
+        "Address " + text(payload.address),
+        "Parent " + text(payload.parentName),
+        "Emergency " + text(payload.emergencyName) + " " + text(payload.emergencyPhone),
+        "Goals " + (Array.isArray(payload.goals) ? payload.goals.join(", ") : ""),
+        "Injuries " + text(payload.injuries),
+        "Printed name " + text(payload.printName),
+      ];
+      lines.forEach((line) => {
+        const p = document.createElement("p");
+        p.textContent = line;
+        detail.append(p);
+      });
+      function addSig(label, src) {
+        if (!src) return;
+        const p = document.createElement("p");
+        p.textContent = label;
+        const img = document.createElement("img");
+        img.className = "sig";
+        img.alt = label;
+        img.src = src;
+        detail.append(p, img);
+      }
+      addSig("Signature", body.signature);
+      addSig("Parent signature", body.parentSignature);
+      if (body.kind === "kids") {
+        const mark = document.createElement("button");
+        mark.type = "button";
+        mark.className = "ghost";
+        if (body.addedToRoster) {
+          mark.disabled = true;
+          mark.textContent = "This child is on the roster";
+        } else {
+          mark.textContent = "This child is on the roster";
+          mark.addEventListener("click", async () => {
+            mark.disabled = true;
+            const saved = await fetch("/api/waivers/" + encodeURIComponent(id) + "/roster", {
+              method: "POST",
+              credentials: "same-origin",
+              headers: { "Content-Type": "application/json", "X-CSRF-Token": csrf },
+              body: "{}",
+            });
+            const payload = await saved.json().catch(() => ({}));
+            if (!saved.ok) {
+              mark.disabled = false;
+              status.textContent = payload.error || "Could not update that form.";
+              return;
+            }
+            mark.disabled = true;
+            mark.textContent = "This child is on the roster";
+            status.textContent = "That form will not be counted again.";
+          });
+        }
+        const row = document.createElement("p");
+        row.append(mark);
+        detail.append(row);
+      }
+    }
+
+    fetch("/api/me", { credentials: "same-origin" })
+      .then(async (res) => {
+        if (res.status === 401) {
+          location.href = "/login/";
+          return null;
+        }
+        return res.json();
+      })
+      .then(async (me) => {
+        if (!me) return;
+        if (!me.user || me.user.role !== "admin") {
+          status.textContent = "An admin reviews enrollment forms.";
+          return;
+        }
+        csrf = me.csrf || "";
+        const res = await fetch("/api/waivers", { credentials: "same-origin" });
+        const body = await res.json().catch(() => ({}));
+        if (!res.ok) {
+          status.textContent = body.error || "The list could not be loaded.";
+          return;
+        }
+        document.getElementById("tools").hidden = false;
+        const rows = body.waivers || [];
+        status.textContent = rows.length ? rows.length + " on file." : "No enrollment forms yet.";
+        rows.forEach((row) => {
+          const li = document.createElement("li");
+          const btn = document.createElement("button");
+          btn.type = "button";
+          btn.className = "ghost";
+          btn.textContent = text(row.signedOn) + " · " + text(row.kind) + " · " + text(row.participantName);
+          btn.addEventListener("click", () => show(row.id));
+          li.append(btn);
+          list.append(li);
+        });
+      })
+      .catch(() => {
+        status.textContent = "The list could not be loaded.";
+      });
+  </script>
+</body>
+</html>

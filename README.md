@@ -6,18 +6,27 @@ A welcome page for families, a coloring-sheet page, and a staff planner for clas
 
 | Address | Who can open it |
 | --- | --- |
-| `/` | Anyone. Welcome, values, class time, age groups, what to bring. |
+| `/` | Anyone. Grace BJJ home: adult class, kids link, schedule, affiliation. |
+| `/kids/` | Anyone. Kids welcome page. Old `/#cost` and `/#whats-grace` links land here. |
 | `/coloring/` | Anyone. Print a coloring sheet with a child's name. |
 | `/login/` | Teachers and admins. |
 | `/app/` | Teachers and admins, after login. |
 
 The live site is served from the Debian host described in [DEPLOY.md](DEPLOY.md). Opening the files on disk still shows the splash and the coloring page. The planner and the camera need the attendance server, because those pages ask `/api/bootstrap` before they draw.
 
-## Welcome page
+## Home and kids pages
 
-The splash shows the Grace Jiu Jitsu logo, the values Competence, Connection, and Community, the class schedule, the next class date, the two age groups, and what to bring the first week. A large button goes to the coloring sheets. Teacher login is a small link.
+`/` is the Grace BJJ home page. Adult class facts (schedule, instructor, who can come, and the giving ask) live in `adult-class.json`. Leave a field empty instead of guessing, and do not add a belt rank. `/kids/` is the kids welcome page: logo, values, class calendar, age groups, potty notice, gi, and practice video. A large button goes to the coloring sheets. Teacher login is a small link.
 
-The welcome page shows the church address and an email for questions. Phone and a sign-up link are not on the page yet. Add those in the `PUBLIC_INFO` object in `index.html`. A value left as `""` stays hidden.
+The kids page shows the church address and an email for questions. Phone and a sign-up link are not on the page yet. Add those in the `PUBLIC_INFO` object in `kids/index.html`. A value left as `""` stays hidden.
+
+## Enrollment and waiver
+
+`/waiver/` is the adult enrollment form (ages 11 and up). `/kids/waiver/` is the parent form for the kids class. Both can be printed. Saving a submission is off until `waiverSubmissionsEnabled` in `waiver-config.json` is `true`. Admins review saved forms at `/app/waivers/`. Teachers do not. Turning the flag on does not by itself publish a new legal clause; Pastor Pierre still needs to review the kids parent-consent wording before that flag changes.
+
+The kids class holds 12 students ages 3–10 across both groups. That count is the roster plus kids forms that are not yet on the roster. The same child is not counted twice. An admin can change the number in the staff app. Teachers cannot. The kids page shows spots left only while submissions are on. When the class is full, the kids form stops taking another submission. The adult class has no cap.
+
+A kids waitlist can be turned on separately with `waitlistEnabled` in `waiver-config.json`. It is off. When it is on and the class is full, a family can join from the kids form. The age group comes from the child's age or date of birth, and the parent confirms it. Ages 3–6 and 7–10 each have their own first-come list. The class size stays one combined cap. Admins review them at `/app/waitlist/`. All is the default and lists every family by the date they joined, with each child’s place in their own age group. The page can also show only 3–6 or only 7–10. The CSV matches the list on screen. When a spot opens, the admin banner names the next family in each group, and the admin chooses which group to fill. Teachers cannot open the list. The site does not assign the spot or email or text families.
 
 ## Coloring sheets
 

@@ -1,0 +1,276 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="robots" content="noindex, nofollow, noarchive, nosnippet">
+  <meta name="googlebot" content="noindex, nofollow">
+  <title>Kids waitlist · Grace BJJ Staff</title>
+  <link rel="icon" href="/icons/staff-favicon-32.png" type="image/png" sizes="32x32" />
+  <script src="/pwa.js?v=20261021-28" defer></script>
+  <style>
+    :root { color-scheme: dark; }
+    body {
+      margin: 0;
+      background: #1c1917;
+      color: #f5f0e8;
+      font-family: "Liberation Sans", "Noto Sans", "Segoe UI", sans-serif;
+      font-size: 1.05rem;
+      line-height: 1.45;
+    }
+    main { width: min(880px, calc(100% - 32px)); margin: 24px auto 48px; }
+    a { color: #ffd7cc; }
+    h1 { font-size: 1.6rem; }
+    h2 { font-size: 1.35rem; margin: 22px 0 8px; }
+    h3 { font-size: 1.15rem; margin: 0 0 8px; }
+    button, .button {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      min-height: 44px;
+      padding: 0 14px;
+      border-radius: 999px;
+      border: 0;
+      background: #9b2a12;
+      color: #fff7ed;
+      font: inherit;
+      font-weight: 700;
+      text-decoration: none;
+    }
+    .ghost { background: transparent; color: #f5f0e8; border: 2px solid #a8a29e; }
+    button[disabled] { opacity: 0.55; }
+    ul { list-style: none; padding: 0; }
+    li { margin: 0 0 12px; }
+    .card {
+      background: #292524;
+      border: 1px solid #a8a29e;
+      border-radius: 12px;
+      padding: 14px;
+    }
+    .row { display: flex; flex-wrap: wrap; gap: 8px; }
+    .badge {
+      display: inline-flex;
+      align-items: center;
+      min-height: 28px;
+      padding: 2px 10px;
+      border-radius: 999px;
+      background: #fff7ed;
+      color: #1c1917;
+      font-weight: 700;
+    }
+    .banner {
+      background: #9b2a12;
+      color: #fff7ed;
+      border-radius: 12px;
+      padding: 12px 14px;
+      font-weight: 700;
+    }
+    .banner[hidden], #tools[hidden], #filters[hidden] { display: none !important; }
+    button:focus-visible, a:focus-visible { outline: 3px solid #fff7ed; outline-offset: 2px; }
+  </style>
+</head>
+<body>
+  <main>
+    <p><a href="/app/">Back to staff</a></p>
+    <h1>Kids waitlist</h1>
+    <p>This page does not email or text families. An admin contacts them.</p>
+    <p id="spotBanner" class="banner" hidden></p>
+    <p id="status">Checking the login…</p>
+    <div id="filters" class="row" hidden role="group" aria-label="Which waitlist">
+      <button type="button" data-filter="all" aria-pressed="true">All</button>
+      <button type="button" class="ghost" data-filter="mite" aria-pressed="false">3–6 Mighty Mites</button>
+      <button type="button" class="ghost" data-filter="upper" aria-pressed="false">7–10 Pee Wees</button>
+    </div>
+    <div id="tools" hidden class="row">
+      <a class="button" id="csvLink" href="/api/waitlist.csv?group=all">Download CSV</a>
+    </div>
+    <div id="list"></div>
+  </main>
+  <script>
+    const status = document.getElementById("status");
+    const list = document.getElementById("list");
+    const tools = document.getElementById("tools");
+    const spotBanner = document.getElementById("spotBanner");
+    const filters = document.getElementById("filters");
+    const csvLink = document.getElementById("csvLink");
+    let csrf = "";
+    let filter = "all";
+    let latest = null;
+
+    function text(value) {
+      return String(value == null ? "" : value);
+    }
+
+    function joined(value) {
+      const date = new Date(value);
+      if (Number.isNaN(date.getTime())) return text(value);
+      return new Intl.DateTimeFormat("en-US", {
+        timeZone: "America/Los_Angeles",
+        dateStyle: "medium",
+        timeStyle: "short",
+      }).format(date);
+    }
+
+    function line(parent, label) {
+      const p = document.createElement("p");
+      p.textContent = label;
+      parent.append(p);
+    }
+
+    async function act(entry, path, method, message) {
+      if (message && !window.confirm(message)) return;
+      const res = await fetch(path, {
+        method: method,
+        credentials: "same-origin",
+        headers: { "X-CSRF-Token": csrf },
+      });
+      const body = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        status.textContent = body.error || "That update did not save.";
+        return;
+      }
+      paint(body);
+    }
+
+    function family(head) {
+      if (!head || !head.childName) return "no one waiting";
+      return text(head.childName) + (head.parentName ? " (" + text(head.parentName) + ")" : "");
+    }
+
+    function placeBadge(entry) {
+      const short = entry.ageGroup === "upper" ? "7–10 #" : "3–6 #";
+      return short + text(entry.position);
+    }
+
+    function cardFor(entry) {
+      const li = document.createElement("li");
+      const card = document.createElement("article");
+      card.className = "card";
+      const badge = document.createElement("p");
+      const mark = document.createElement("span");
+      mark.className = "badge";
+      mark.textContent = placeBadge(entry);
+      badge.append(mark);
+      const title = document.createElement("h3");
+      title.textContent = text(entry.childName);
+      card.append(badge, title);
+        line(card, text(entry.childAge) + " · " + text(entry.ageGroupLabel));
+        line(card, text(entry.parentName));
+        line(card, text(entry.email));
+        line(card, text(entry.phone));
+        if (entry.note) line(card, text(entry.note));
+        line(card, "Joined " + joined(entry.createdAt));
+        line(card, entry.status === "contacted" ? "Contacted" : "Waiting");
+        const row = document.createElement("p");
+        row.className = "row";
+        const contacted = document.createElement("button");
+        contacted.type = "button";
+        contacted.textContent = "Contacted";
+        contacted.disabled = entry.status === "contacted";
+        contacted.addEventListener("click", () => act(entry, "/api/waitlist/" + encodeURIComponent(entry.id) + "/contacted", "POST", ""));
+        const enrolled = document.createElement("button");
+        enrolled.type = "button";
+        enrolled.className = "ghost";
+        enrolled.textContent = "Enrolled";
+        enrolled.addEventListener("click", () => act(
+          entry,
+          "/api/waitlist/" + encodeURIComponent(entry.id) + "/enrolled",
+          "POST",
+          "Mark " + text(entry.childName) + " enrolled? They leave the active list. This does not email or text them."
+        ));
+        const remove = document.createElement("button");
+        remove.type = "button";
+        remove.className = "ghost";
+        remove.textContent = "Remove";
+        remove.addEventListener("click", () => act(
+          entry,
+          "/api/waitlist/" + encodeURIComponent(entry.id),
+          "DELETE",
+          "Remove " + text(entry.childName) + " from the waitlist? This does not email or text them."
+        ));
+        row.append(contacted, enrolled, remove);
+        card.append(row);
+        li.append(card);
+        return li;
+    }
+
+    function paint(body) {
+      latest = body;
+      const groups = body.groups || [];
+      const rows = body.entries || [];
+      list.textContent = "";
+      tools.hidden = false;
+      filters.hidden = false;
+      csvLink.href = "/api/waitlist.csv?group=" + filter;
+      if (body.spotOpen) {
+        spotBanner.hidden = false;
+        const next = body.waitlistNext || {};
+        spotBanner.textContent = "A spot is open. Next in 3–6 Mighty Mites: " + family(next.mite) + ". Next in 7–10 Pee Wees: " + family(next.upper) + ". You choose which group to fill. This does not email or text them.";
+      } else {
+        spotBanner.hidden = true;
+        spotBanner.textContent = "";
+      }
+      const visible = filter === "all"
+        ? (body.byJoined || rows)
+        : ((groups.find((group) => group.ageGroup === filter) || {}).entries || []);
+      status.textContent = visible.length
+        ? visible.length + " waiting."
+        : (filter === "all" ? "No one is on the waitlist." : "No one is on this list.");
+      if (filter !== "all") {
+        const group = groups.find((item) => item.ageGroup === filter);
+        const heading = document.createElement("h2");
+        heading.textContent = group ? text(group.label) : "";
+        list.append(heading);
+      }
+      if (!visible.length) {
+        const empty = document.createElement("p");
+        empty.textContent = filter === "all" ? "No one is on the waitlist." : "No one is on this list.";
+        list.append(empty);
+        return;
+      }
+      const ul = document.createElement("ul");
+      visible.forEach((entry) => ul.append(cardFor(entry)));
+      list.append(ul);
+    }
+
+    document.querySelectorAll("[data-filter]").forEach((button) => {
+      button.addEventListener("click", () => {
+        filter = button.dataset.filter || "all";
+        document.querySelectorAll("[data-filter]").forEach((item) => {
+          const on = item.dataset.filter === filter;
+          item.setAttribute("aria-pressed", on ? "true" : "false");
+          item.classList.toggle("ghost", !on);
+        });
+        if (latest) paint(latest);
+      });
+    });
+
+    fetch("/api/me", { credentials: "same-origin" })
+      .then(async (res) => {
+        if (res.status === 401) {
+          location.href = "/login/";
+          return null;
+        }
+        return res.json();
+      })
+      .then(async (me) => {
+        if (!me) return;
+        if (!me.user || me.user.role !== "admin") {
+          status.textContent = "An admin manages the waitlist.";
+          return;
+        }
+        csrf = me.csrf || "";
+        const res = await fetch("/api/waitlist", { credentials: "same-origin" });
+        const body = await res.json().catch(() => ({}));
+        if (!res.ok) {
+          status.textContent = body.error || "The list could not be loaded.";
+          return;
+        }
+        paint(body);
+      })
+      .catch(() => {
+        status.textContent = "The list could not be loaded.";
+      });
+  </script>
+</body>
+</html>

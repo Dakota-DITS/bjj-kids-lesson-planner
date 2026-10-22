@@ -20,6 +20,8 @@
         const err = new Error(data.error || "The server could not do that.");
         err.status = res.status;
         err.mustChangePassword = !!(data && data.mustChangePassword);
+        err.needsConfirm = !!(data && data.needsConfirm);
+        err.full = !!(data && data.full);
         if (data && data.username) err.username = data.username;
         throw err;
       }

@@ -4,7 +4,7 @@ const fs = require("fs");
 const path = require("path");
 
 const root = path.join(__dirname, "..");
-const html = fs.readFileSync(path.join(root, "index.html"), "utf8");
+const html = fs.readFileSync(path.join(root, "kids/index.html"), "utf8");
 const ics = fs.readFileSync(path.join(root, "calendar/grace-bjj-kids.ics"), "utf8").replace(/\r\n/g, "\n");
 
 assert.ok(html.includes('id="whats-grace"'));
@@ -59,7 +59,7 @@ assert.ok(html.includes('email: ""'));
   assert.equal(text.includes("mail.grokbot.com"), false, rel);
   assert.equal(text.includes("dits+bjj"), false, rel);
 });
-assert.ok(html.includes('src="/calendar/class-days.js?v=20261021-22"'));
+assert.ok(html.includes('src="/calendar/class-days.js?v=20261021-28"'));
 assert.ok(html.includes("GRACE_CLASS_DAYS"));
 assert.ok(html.includes('aria-live="polite"'));
 assert.ok(html.includes('aria-label="Previous month"'));

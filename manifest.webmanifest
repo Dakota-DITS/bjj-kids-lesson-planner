@@ -1,11 +1,11 @@
 {
   "id": "/",
-  "name": "Grace BJJ Kids",
-  "short_name": "Grace BJJ Kids",
+  "name": "Grace BJJ",
+  "short_name": "Grace BJJ",
   "start_url": "/",
   "scope": "/",
   "display": "standalone",
-  "background_color": "#fff8f3",
+  "background_color": "#1c1917",
   "theme_color": "#9b2a12",
   "icons": [
     {
