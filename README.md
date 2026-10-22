@@ -6,18 +6,19 @@ A welcome page for families, a coloring-sheet page, and a staff planner for clas
 
 | Address | Who can open it |
 | --- | --- |
-| `/` | Anyone. Welcome, values, class time, age groups, what to bring. |
+| `/` | Anyone. Grace BJJ home: adult class, kids link, schedule, affiliation. |
+| `/kids/` | Anyone. Kids welcome page. Old `/#cost` and `/#whats-grace` links land here. |
 | `/coloring/` | Anyone. Print a coloring sheet with a child's name. |
 | `/login/` | Teachers and admins. |
 | `/app/` | Teachers and admins, after login. |
 
 The live site is served from the Debian host described in [DEPLOY.md](DEPLOY.md). Opening the files on disk still shows the splash and the coloring page. The planner and the camera need the attendance server, because those pages ask `/api/bootstrap` before they draw.
 
-## Welcome page
+## Home and kids pages
 
-The splash shows the Grace Jiu Jitsu logo, the values Competence, Connection, and Community, the class schedule, the next class date, the two age groups, and what to bring the first week. A large button goes to the coloring sheets. Teacher login is a small link.
+`/` is the Grace BJJ home page. Adult class facts (schedule, instructor, who can come, and the giving ask) live in `adult-class.json`. Leave a field empty instead of guessing, and do not add a belt rank. `/kids/` is the kids welcome page: logo, values, class calendar, age groups, potty notice, gi, and practice video. A large button goes to the coloring sheets. Teacher login is a small link.
 
-The welcome page shows the church address and an email for questions. Phone and a sign-up link are not on the page yet. Add those in the `PUBLIC_INFO` object in `index.html`. A value left as `""` stays hidden.
+The kids page shows the church address and an email for questions. Phone and a sign-up link are not on the page yet. Add those in the `PUBLIC_INFO` object in `kids/index.html`. A value left as `""` stays hidden.
 
 ## Coloring sheets
 

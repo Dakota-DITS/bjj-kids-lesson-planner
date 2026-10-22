@@ -4,7 +4,7 @@ const fs = require("fs");
 const path = require("path");
 
 const root = path.join(__dirname, "..");
-const html = fs.readFileSync(path.join(root, "index.html"), "utf8");
+const html = fs.readFileSync(path.join(root, "kids/index.html"), "utf8");
 const sw = fs.readFileSync(path.join(root, "sw.js"), "utf8");
 
 assert.ok(html.includes("Get your gi"));
@@ -72,6 +72,6 @@ const publicList = sw.split("const PUBLIC_ASSETS")[1].split("const STAFF_ASSETS"
 assert.equal(publicList.includes("/img/gi/"), false);
 assert.ok(sw.includes('path.startsWith("/img/gi/")'));
 assert.equal((sw.match(/"\/api\//g) || []).length, 1);
-assert.ok(sw.includes('const VERSION = "20261021-22"'));
+assert.ok(sw.includes('const VERSION = "20261021-23"'));
 
 console.log("welcome gi checks passed");

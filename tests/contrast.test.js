@@ -50,4 +50,28 @@ atLeast("potty text", "#fff7ed", "#292524", 4.5);
 atLeast("potty border on panel", "#a8a29e", "#1c1917", 3);
 atLeast("potty fill on check-in form", "#292524", "#ffffff", 3);
 
+const homeCss = fs.readFileSync(require("path").join(__dirname, "../css/home.css"), "utf8");
+assert.ok(homeCss.includes("--text: #f5f0e8"));
+assert.ok(homeCss.includes("--bg: #1c1917"));
+assert.ok(homeCss.includes("--red: #9b2a12"));
+atLeast("home text", "#f5f0e8", "#1c1917", 4.5);
+atLeast("home text on card", "#f5f0e8", "#292524", 4.5);
+atLeast("home muted", "#d6d3d1", "#1c1917", 4.5);
+atLeast("home link", "#ffd7cc", "#1c1917", 4.5);
+atLeast("home link on card", "#ffd7cc", "#292524", 4.5);
+atLeast("home nav on bar", "#f5f0e8", "#141210", 4.5);
+atLeast("home button", "#fff7ed", "#9b2a12", 4.5);
+atLeast("home card border", "#a8a29e", "#1c1917", 3);
+atLeast("kids site nav", "#f5f0e8", "#1c1917", 4.5);
+atLeast("kids pill text", "#1c1917", "#fff7ed", 4.5);
+atLeast("kids pill on bar", "#fff7ed", "#141210", 3);
+atLeast("kids pill hover text", "#1c1917", "#ffd7cc", 4.5);
+atLeast("home pill text", "#1c1917", "#fff7ed", 4.5);
+atLeast("home pill on kids bar", "#fff7ed", "#1c1917", 3);
+assert.ok(homeCss.includes(".kids-pill"));
+assert.ok(homeCss.includes("min-height: 44px"));
+const splashCss = fs.readFileSync(require("path").join(__dirname, "../css/splash.css"), "utf8");
+assert.ok(splashCss.includes(".site-nav .home-pill"));
+assert.ok(splashCss.includes("min-height: 44px"));
+
 console.log("contrast checks passed");
