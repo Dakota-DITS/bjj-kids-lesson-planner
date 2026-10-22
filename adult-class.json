@@ -1,6 +1,6 @@
 {
-  "_edit": "This file is the only place for adult class facts. Leave a field empty rather than guessing. Do not add a belt rank. schedule.placeholder is used only when days or time is empty.",
-  "instructor": "Master Pierre Rosa",
+  "_edit": "This file is the only place for adult class facts. Leave a field empty rather than guessing. The instructor rank is Dakota's confirmed 4-stripe brown belt. Do not change it to black or coral. schedule.placeholder is used only when days or time is empty.",
+  "instructor": "Master Pierre Rosa, brown belt, 4 stripes",
   "schedule": {
     "days": "Tuesdays and Thursdays",
     "time": "6:30 – ~8:00 PM",
