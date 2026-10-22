@@ -3,14 +3,15 @@
 # This script does not edit production nginx and does not restart bjj-planner.
 # It does not read or write /var/lib/bjj-planner/data.db.
 #
-# Required:
-#   DEMO_STAFF_PASSWORD   10 or more characters. Never commit this.
 # Optional:
 #   DEMO_BRANCH           default cursor/adult-home-c3e3 (PR #27).
 #                         That branch cannot serve /demo/ until it contains this
 #                         prefix work. Until then set DEMO_BRANCH=cursor/demo-preview-c3e3.
 #   DEMO_REPO             default: origin URL of /srv/bjj-planner
-#   DEMO_STAFF_RESET_PASSWORD=1   update the demo and preview logins
+#   DEMO_PASSWORD_DAKOTA  admin login dakota. If unset, a random value is generated.
+#   DEMO_PASSWORD_PIERRE  admin login pierre. If unset, a random value is generated.
+# Passwords are written only to /root/bjj-demo-credentials (mode 600). They are
+# not printed, not logged, and not stored in the systemd unit or demo.env.
 set -euo pipefail
 
 if [[ "$(id -u)" -ne 0 ]]; then
@@ -36,10 +37,50 @@ if [[ "$DEMO_GIT" == "/srv/bjj-planner" || "$DEMO_WWW" == "/srv/bjj-planner" ]];
   echo "Refusing to use the production checkout." >&2
   exit 1
 fi
-if [[ -z "${DEMO_STAFF_PASSWORD:-}" || "${#DEMO_STAFF_PASSWORD}" -lt 10 ]]; then
-  echo "Set DEMO_STAFF_PASSWORD to 10 or more characters. Do not commit it." >&2
-  exit 1
-fi
+CREDENTIALS="/root/bjj-demo-credentials"
+
+read_saved_password() {
+  local user="$1"
+  [[ -f "$CREDENTIALS" ]] || return 0
+  python3 - "$CREDENTIALS" "$user" << 'PY'
+import sys
+path, user = sys.argv[1], sys.argv[2]
+try:
+    lines = open(path, encoding="utf-8").read().splitlines()
+except OSError:
+    raise SystemExit(0)
+for line in lines:
+    if line.startswith(user + "="):
+        sys.stdout.write(line.split("=", 1)[1])
+        break
+PY
+}
+
+resolve_password() {
+  local var_name="$1"
+  local user="$2"
+  local value="${!var_name-}"
+  if [[ -n "$value" ]]; then
+    if [[ "${#value}" -lt 10 || "$value" == *$'\n'* || "$value" == *$'\r'* ]]; then
+      echo "A demo password must be at least 10 characters on one line." >&2
+      exit 1
+    fi
+    return 0
+  fi
+  local saved
+  saved="$(read_saved_password "$user")"
+  if [[ -n "$saved" && "${#saved}" -ge 10 ]]; then
+    printf -v "$var_name" '%s' "$saved"
+    return 0
+  fi
+  local generated
+  generated="$(python3 -c 'import secrets; print(secrets.token_urlsafe(24), end="")')"
+  printf -v "$var_name" '%s' "$generated"
+}
+
+resolve_password DEMO_PASSWORD_DAKOTA dakota
+resolve_password DEMO_PASSWORD_PIERRE pierre
+export DEMO_PASSWORD_DAKOTA DEMO_PASSWORD_PIERRE
 if [[ -z "${DEMO_REPO:-}" ]]; then
   if [[ -d /srv/bjj-planner/.git ]]; then
     DEMO_REPO="$(git -C /srv/bjj-planner remote get-url origin)"
@@ -89,15 +130,35 @@ install -m 644 "$SCRIPT_DIR/prefix_tree.py" "$TOOLS/prefix_tree.py"
 
 "$TOOLS/pull.sh"
 
-reset_args=()
-if [[ "${DEMO_STAFF_RESET_PASSWORD:-}" == "1" ]]; then
-  reset_args+=(--reset-password)
-fi
+umask 077
+python3 - "$CREDENTIALS" << 'PY'
+import os, sys, tempfile
+path = sys.argv[1]
+dakota = os.environ["DEMO_PASSWORD_DAKOTA"]
+pierre = os.environ["DEMO_PASSWORD_PIERRE"]
+directory = os.path.dirname(path) or "/root"
+fd, tmp = tempfile.mkstemp(prefix=".bjj-demo-credentials.", dir=directory)
+try:
+    with os.fdopen(fd, "w", encoding="utf-8") as handle:
+        handle.write("# Demo logins for demo.db only. Not the production database.\n")
+        handle.write("dakota=" + dakota + "\n")
+        handle.write("pierre=" + pierre + "\n")
+    os.chmod(tmp, 0o600)
+    os.replace(tmp, path)
+    os.chmod(path, 0o600)
+except Exception:
+    try:
+        os.unlink(tmp)
+    except OSError:
+        pass
+    raise
+PY
 runuser -u bjj-demo -- env \
-  DEMO_STAFF_PASSWORD="$DEMO_STAFF_PASSWORD" \
+  DEMO_PASSWORD_DAKOTA="$DEMO_PASSWORD_DAKOTA" \
+  DEMO_PASSWORD_PIERRE="$DEMO_PASSWORD_PIERRE" \
   BJJ_SQLITE_JOURNAL=MEMORY \
   PYTHONPATH="$DEMO_GIT" \
-  python3 -m server seed-demo --db "$DEMO_DB" "${reset_args[@]}"
+  python3 -m server seed-demo --db "$DEMO_DB"
 
 install -m 644 "$SOURCE_ROOT/deploy/bjj-planner-demo.service" /etc/systemd/system/bjj-planner-demo.service
 systemctl daemon-reload
@@ -117,5 +178,6 @@ echo "Demo service is enabled. Production bjj-planner was not restarted."
 echo "Nginx was not reloaded. Add this line inside the bjj server block, above location / :"
 echo "    include /etc/nginx/snippets/bjj-demo.conf;"
 echo "Then: nginx -t && systemctl reload nginx"
-echo "Demo login user: demo (admin) and preview (teacher). Password is DEMO_STAFF_PASSWORD."
+echo "Demo admin logins are dakota and pierre, only in demo.db."
+echo "Passwords are in /root/bjj-demo-credentials (mode 600). They were not printed."
 echo "Open https://bjj.bettrbook.com/demo/"

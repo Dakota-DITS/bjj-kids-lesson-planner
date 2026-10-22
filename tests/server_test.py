@@ -9,7 +9,7 @@ import urllib.error
 import urllib.request
 from http.server import ThreadingHTTPServer
 
-from server.httpapp import KIDS_FULL, Api, config_from_env, hash_password
+from server.httpapp import KIDS_FULL, Api, check_password, config_from_env, hash_password
 from server.db import (
     age_group_for_age,
     connect,
@@ -2024,18 +2024,48 @@ class DemoIsolationTest(unittest.TestCase):
     def test_demo_seed_is_fake_and_refuses_production(self):
         from server.demoseed import DemoSeedError, seed_demo
 
+        passwords = {"dakota": "dakota-test-pass", "pierre": "pierre-test-pass"}
         with self.assertRaises(DemoSeedError):
-            seed_demo("/tmp/data.db", "demo-preview-pass")
+            seed_demo("/tmp/data.db", passwords)
         with self.assertRaises(DemoSeedError):
-            seed_demo("/var/lib/bjj-planner/data.db", "demo-preview-pass")
+            seed_demo("/var/lib/bjj-planner/data.db", passwords)
+        with self.assertRaises(DemoSeedError):
+            seed_demo("/tmp/bjj-demo-short.db", {"dakota": "short", "pierre": "pierre-test-pass"})
 
         tmp = tempfile.TemporaryDirectory()
         self.addCleanup(tmp.cleanup)
         path = os.path.join(tmp.name, "demo.db")
+        prod = os.path.join(tmp.name, "data.db")
+        prod_conn = connect(prod)
+        try:
+            migrate(prod_conn)
+            prod_conn.execute(
+                """
+                INSERT INTO users (id, username, password_hash, role, created_at, must_change_password)
+                VALUES ('prod-coach', 'coach', ?, 'admin', ?, 0)
+                """,
+                (hash_password("prod-not-demo"), iso(utcnow())),
+            )
+            prod_conn.commit()
+        finally:
+            prod_conn.close()
         os.environ["BJJ_SQLITE_JOURNAL"] = "MEMORY"
         try:
-            seed_demo(path, "demo-preview-pass")
-            seed_demo(path, "demo-preview-pass")
+            seed_demo(path, passwords)
+            seed_demo(path, passwords)
+            extra = connect(path)
+            try:
+                extra.execute(
+                    """
+                    INSERT INTO users (id, username, password_hash, role, created_at, must_change_password)
+                    VALUES ('demo-user-preview', 'preview', ?, 'teacher', ?, 0)
+                    """,
+                    (hash_password("other-demo-account"), iso(utcnow())),
+                )
+                extra.commit()
+            finally:
+                extra.close()
+            seed_demo(path, passwords)
         finally:
             os.environ.pop("BJJ_SQLITE_JOURNAL", None)
         conn = connect(path)
@@ -2050,14 +2080,25 @@ class DemoIsolationTest(unittest.TestCase):
             self.assertTrue(emails)
             self.assertTrue(all(email.endswith("@example.com") for email in emails))
             users = {row["username"]: row["role"] for row in conn.execute("SELECT username, role FROM users")}
-            self.assertEqual(users, {"demo": "admin", "preview": "teacher"})
-            hashes = [row["password_hash"] for row in conn.execute("SELECT password_hash FROM users")]
-            self.assertTrue(all("demo-preview-pass" not in item for item in hashes))
+            self.assertEqual(users, {"dakota": "admin", "pierre": "admin"})
+            hashes = {row["username"]: row["password_hash"] for row in conn.execute("SELECT username, password_hash FROM users")}
+            self.assertTrue(check_password("dakota-test-pass", hashes["dakota"]))
+            self.assertTrue(check_password("pierre-test-pass", hashes["pierre"]))
+            self.assertFalse(check_password("dakota-test-pass", hashes["pierre"]))
+            self.assertTrue(all(secret not in item for item in hashes.values() for secret in passwords.values()))
             marker = conn.execute("SELECT value FROM settings WHERE key = 'demo_seed'").fetchone()
             self.assertEqual(marker["value"], "1")
             self.assertEqual(conn.execute("SELECT COUNT(*) AS n FROM waitlist").fetchone()["n"], 3)
         finally:
             conn.close()
+        prod_conn = connect(prod)
+        try:
+            prod_users = {row["username"]: row["role"] for row in prod_conn.execute("SELECT username, role FROM users")}
+            self.assertEqual(prod_users, {"coach": "admin"})
+            self.assertNotIn("dakota", prod_users)
+            self.assertNotIn("pierre", prod_users)
+        finally:
+            prod_conn.close()
 
     def test_publish_tree_prefixes_demo_and_leaves_source_closed(self):
         import importlib.util

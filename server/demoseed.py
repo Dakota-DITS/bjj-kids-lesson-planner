@@ -1,8 +1,8 @@
 """Seed the demo database with obviously fake rows.
 
 This module refuses to open a file named data.db. It never reads the
-production database. The demo password comes from DEMO_STAFF_PASSWORD and is
-not stored in the repo.
+production database. Demo logins are dakota and pierre, both admins.
+Their passwords are passed in by the caller and are not stored in the repo.
 """
 
 import os
@@ -32,31 +32,40 @@ def assert_demo_db(path):
     return real
 
 
-def _ensure_user(conn, username, role, display_name, password, reset_password, now):
+DEMO_ADMINS = (
+    ("dakota", "Dakota"),
+    ("pierre", "Pierre"),
+)
+
+
+def _password_ok(password):
+    if not isinstance(password, str) or len(password) < 10:
+        return False
+    return not any(char in password for char in "\r\n\x00")
+
+
+def _ensure_admin(conn, username, display_name, password, now):
     if not USER_RE.match(username):
         raise DemoSeedError("Demo username is not allowed.")
+    if not _password_ok(password):
+        raise DemoSeedError(
+            "Set DEMO_PASSWORD_DAKOTA and DEMO_PASSWORD_PIERRE to 10 or more characters. Do not commit them."
+        )
     row = conn.execute("SELECT id FROM users WHERE username = ?", (username,)).fetchone()
     if row:
-        if reset_password:
-            if len(password) < 10:
-                raise DemoSeedError("DEMO_STAFF_PASSWORD must be at least 10 characters.")
-            conn.execute(
-                "UPDATE users SET password_hash = ?, role = ?, must_change_password = 0 WHERE id = ?",
-                (hash_password(password), role, row["id"]),
-            )
         user_id = row["id"]
+        conn.execute(
+            "UPDATE users SET password_hash = ?, role = 'admin', must_change_password = 0 WHERE id = ?",
+            (hash_password(password), user_id),
+        )
     else:
-        if len(password) < 10:
-            raise DemoSeedError(
-                "Set DEMO_STAFF_PASSWORD to 10 or more characters to create the demo login. Do not commit it."
-            )
         user_id = "demo-user-" + username
         conn.execute(
             """
             INSERT INTO users (id, username, password_hash, role, created_at, must_change_password)
-            VALUES (?, ?, ?, ?, ?, 0)
+            VALUES (?, ?, ?, 'admin', ?, 0)
             """,
-            (user_id, username, hash_password(password), role, now),
+            (user_id, username, hash_password(password), now),
         )
     staff = conn.execute("SELECT id FROM staff WHERE user_id = ?", (user_id,)).fetchone()
     if not staff:
@@ -67,7 +76,20 @@ def _ensure_user(conn, username, role, display_name, password, reset_password, n
             """,
             ("demo-staff-" + username, display_name, user_id, now),
         )
+    else:
+        conn.execute("UPDATE staff SET name = ? WHERE user_id = ?", (display_name, user_id))
     return user_id
+
+
+def _drop_other_users(conn):
+    """The demo database has only dakota and pierre."""
+    keep = {username for username, _display in DEMO_ADMINS}
+    rows = conn.execute("SELECT id, username FROM users").fetchall()
+    for row in rows:
+        if row["username"] in keep:
+            continue
+        conn.execute("DELETE FROM staff WHERE user_id = ?", (row["id"],))
+        conn.execute("DELETE FROM users WHERE id = ?", (row["id"],))
 
 
 def _insert_examples(conn, now):
@@ -154,9 +176,25 @@ def _insert_examples(conn, now):
     conn.execute("INSERT INTO settings (key, value) VALUES ('demo_seed', '1')")
 
 
-def seed_demo(path, password, reset_password=False):
+def seed_demo(path, passwords, reset_password=False):
+    """Write example rows and the two demo admins. reset_password is accepted and ignored.
+
+    Passwords are always applied so demo.db matches the root credentials file.
+    This function does not open the production database.
+    """
     real = assert_demo_db(path)
-    password = password or ""
+    if not isinstance(passwords, dict):
+        raise DemoSeedError(
+            "Set DEMO_PASSWORD_DAKOTA and DEMO_PASSWORD_PIERRE. Do not commit them."
+        )
+    cleaned = {}
+    for username, _display in DEMO_ADMINS:
+        password = passwords.get(username) or ""
+        if not _password_ok(password):
+            raise DemoSeedError(
+                "Set DEMO_PASSWORD_DAKOTA and DEMO_PASSWORD_PIERRE to 10 or more characters. Do not commit them."
+            )
+        cleaned[username] = password
     conn = connect(real)
     try:
         migrate(conn)
@@ -165,14 +203,11 @@ def seed_demo(path, password, reset_password=False):
         if students and not (marker and marker["value"] == "1"):
             raise DemoSeedError("Refusing to write a database that was not created as demo seed data.")
         now = iso(utcnow())
-        if marker and marker["value"] == "1" and reset_password is False and students:
-            pass
-        elif not students:
+        if not students:
             _insert_examples(conn, now)
-        elif reset_password:
-            pass
-        _ensure_user(conn, "demo", "admin", "EXAMPLE Coach Demo", password, reset_password, now)
-        _ensure_user(conn, "preview", "teacher", "EXAMPLE Teacher Preview", password, reset_password, now)
+        _drop_other_users(conn)
+        for username, display_name in DEMO_ADMINS:
+            _ensure_admin(conn, username, display_name, cleaned[username], now)
         conn.commit()
     finally:
         conn.close()

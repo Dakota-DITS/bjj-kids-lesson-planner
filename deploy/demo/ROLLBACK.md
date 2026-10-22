@@ -23,6 +23,7 @@ Remove only the demo files:
 rm -rf /srv/bjj-planner-demo /srv/bjj-planner-demo-www /usr/local/lib/bjj-demo
 rm -rf /var/lib/bjj-planner/demo-data
 rm -f /var/lib/bjj-planner/demo.db /var/lib/bjj-planner/demo.db-wal /var/lib/bjj-planner/demo.db-shm
+rm -f /root/bjj-demo-credentials
 userdel bjj-demo || true
 setfacl -x u:bjj-demo /var/lib/bjj-planner || true
 ```

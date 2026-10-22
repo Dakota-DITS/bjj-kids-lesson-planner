@@ -93,7 +93,7 @@ Copy those two artifacts off the box. Do not commit them. nginx denies `*.db` ev
 
 ## Demo preview
 
-A separate draft serves `https://bjj.bettrbook.com/demo/` from its own checkout, database, and API. Production stays on `/srv/bjj-planner` and `/var/lib/bjj-planner/data.db`. The install, nginx include, and rollback notes are in `deploy/demo/setup.sh`, `deploy/nginx-demo.conf`, and `deploy/demo/ROLLBACK.md`. Do not point the demo service at `data.db`.
+A separate draft serves `https://bjj.bettrbook.com/demo/` from its own checkout, database, and API. Production stays on `/srv/bjj-planner` and `/var/lib/bjj-planner/data.db`. The install, nginx include, and rollback notes are in `deploy/demo/setup.sh`, `deploy/nginx-demo.conf`, and `deploy/demo/ROLLBACK.md`. Do not point the demo service at `data.db`. Demo logins are `dakota` and `pierre`, both admins in `demo.db` only. Passwords come from `DEMO_PASSWORD_DAKOTA` and `DEMO_PASSWORD_PIERRE`, or are generated into `/root/bjj-demo-credentials`. They are not committed.
 
 ## Local check
 

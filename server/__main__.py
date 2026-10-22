@@ -57,10 +57,13 @@ def cmd_create_user(args):
 def cmd_seed_demo(args):
     from server.demoseed import DemoSeedError, seed_demo
 
-    password = os.environ.get("DEMO_STAFF_PASSWORD", "")
+    passwords = {
+        "dakota": os.environ.get("DEMO_PASSWORD_DAKOTA", ""),
+        "pierre": os.environ.get("DEMO_PASSWORD_PIERRE", ""),
+    }
     db_path = args.db or os.environ.get("BJJ_DB") or ""
     try:
-        real = seed_demo(db_path, password, reset_password=args.reset_password)
+        real = seed_demo(db_path, passwords, reset_password=args.reset_password)
     except DemoSeedError as err:
         print(str(err), file=sys.stderr)
         return 1
@@ -137,7 +140,7 @@ def main(argv=None):
     demo.add_argument(
         "--reset-password",
         action="store_true",
-        help="Update the demo and preview logins from DEMO_STAFF_PASSWORD.",
+        help="Accepted for older commands. Passwords always come from DEMO_PASSWORD_DAKOTA and DEMO_PASSWORD_PIERRE.",
     )
     demo.set_defaults(func=cmd_seed_demo)
 
