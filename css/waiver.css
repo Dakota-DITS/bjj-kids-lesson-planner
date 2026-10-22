@@ -67,6 +67,7 @@ h2 { font-size: 1.3rem; margin: 28px 0 8px; }
 .closed[hidden], button[hidden], .waitlist[hidden] { display: none !important; }
 .waitlist { margin-top: 28px; }
 .waitlist h2 { margin-top: 0; }
+#waitGroupLine { font-weight: 700; margin: 0 0 8px; }
 ol.rules, ul.rules { padding-left: 1.2rem; }
 ol.rules li, ul.rules li { margin: 0 0 8px; }
 .legal p { margin: 0 0 10px; }

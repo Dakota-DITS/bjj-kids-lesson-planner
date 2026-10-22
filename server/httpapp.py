@@ -617,6 +617,8 @@ class Api:
                     if not user:
                         return self.send(handler, 401, {"error": "Log in first."})
                     body = self.bootstrap(conn)
+                    if user["role"] == "admin":
+                        body["kidsEnrollment"]["waitlistNext"] = self.waitlist_next(conn)
                     body.update(self.public_user(user, csrf, conn))
                     return self.send(handler, 200, body)
                 if method in ("POST", "PUT", "PATCH", "DELETE") and not self.require_csrf(handler, csrf if user else ""):
@@ -1606,7 +1608,8 @@ class Api:
                     },
                 )
         conn.commit()
-        return self.send(handler, 200, {"ok": True, "students": len(id_map), "kidsEnrollment": self.enrollment_snapshot(conn, staff=True)})
+        snap = self.enrollment_snapshot(conn, staff=True, next_names=admin)
+        return self.send(handler, 200, {"ok": True, "students": len(id_map), "kidsEnrollment": snap})
 
     def security_headers(self, handler):
         handler.send_header("X-Content-Type-Options", "nosniff")
@@ -1767,7 +1770,7 @@ class Api:
             pending += 1
         return kid_count + pending
 
-    def enrollment_snapshot(self, conn, staff=False):
+    def enrollment_snapshot(self, conn, staff=False, next_names=False):
         cap = self.kids_cap(conn)
         enrolled = self.kids_enrolled_count(conn)
         body = {
@@ -1782,6 +1785,8 @@ class Api:
             active = self.active_waitlist_count(conn)
             body["waitlistActive"] = active
             body["waitlistSpotOpen"] = enrolled < cap and active > 0
+            if next_names:
+                body["waitlistNext"] = self.waitlist_next(conn)
         return body
 
     def active_waitlist_count(self, conn):
@@ -1878,7 +1883,7 @@ class Api:
     def student_payload(self, conn, sid):
         row = conn.execute("SELECT * FROM students WHERE id = ?", (sid,)).fetchone()
         body = self.student_json(row)
-        body["kidsEnrollment"] = self.enrollment_snapshot(conn, staff=True)
+        body["kidsEnrollment"] = self.enrollment_snapshot(conn, staff=True, next_names=True)
         return body
 
     def add_student(self, handler, conn):
@@ -1946,7 +1951,7 @@ class Api:
             (iso(utcnow()), sid),
         )
         conn.commit()
-        return self.send(handler, 200, {"ok": True, "kidsEnrollment": self.enrollment_snapshot(conn, staff=True)})
+        return self.send(handler, 200, {"ok": True, "kidsEnrollment": self.enrollment_snapshot(conn, staff=True, next_names=True)})
 
     def save_kids_cap(self, handler, conn):
         body = self.read_json(handler)
@@ -1958,7 +1963,7 @@ class Api:
             raise ValueError("Enter a kids class size from 1 to 200.")
         self.put_setting(conn, "kids_cap", str(cap))
         conn.commit()
-        return self.send(handler, 200, self.enrollment_snapshot(conn, staff=True))
+        return self.send(handler, 200, self.enrollment_snapshot(conn, staff=True, next_names=True))
 
     def mark_waiver_on_roster(self, handler, conn, wid):
         length = int(handler.headers.get("Content-Length") or 0)
@@ -2031,12 +2036,54 @@ class Api:
             """
         ).fetchall()
 
+    def waitlist_grouped(self, conn):
+        grouped = {"mite": [], "upper": []}
+        for row in self.waitlist_active_rows(conn):
+            if row["age_group"] in grouped:
+                grouped[row["age_group"]].append(row)
+        return grouped
+
+    def waitlist_positioned(self, rows):
+        return [self.waitlist_json(row, index + 1) for index, row in enumerate(rows)]
+
+    def waitlist_next(self, conn):
+        grouped = self.waitlist_grouped(conn)
+        nxt = {}
+        for key in ("mite", "upper"):
+            rows = grouped[key]
+            if not rows:
+                nxt[key] = None
+                continue
+            row = rows[0]
+            nxt[key] = {
+                "childName": row["child_name"],
+                "parentName": row["parent_name"],
+                "position": 1,
+                "ageGroup": key,
+                "ageGroupLabel": self.waitlist_group_label(key),
+            }
+        return nxt
+
     def waitlist_payload(self, conn):
-        rows = self.waitlist_active_rows(conn)
+        grouped = self.waitlist_grouped(conn)
+        groups = [
+            {
+                "ageGroup": "mite",
+                "label": self.waitlist_group_label("mite"),
+                "entries": self.waitlist_positioned(grouped["mite"]),
+            },
+            {
+                "ageGroup": "upper",
+                "label": self.waitlist_group_label("upper"),
+                "entries": self.waitlist_positioned(grouped["upper"]),
+            },
+        ]
         snap = self.enrollment_snapshot(conn, staff=True)
         return {
-            "entries": [self.waitlist_json(row, index + 1) for index, row in enumerate(rows)],
+            "groups": groups,
+            "entries": groups[0]["entries"] + groups[1]["entries"],
             "spotOpen": snap["waitlistSpotOpen"],
+            "waitlistNext": self.waitlist_next(conn),
             "enrolled": snap["enrolled"],
             "cap": snap["cap"],
         }
@@ -2045,28 +2092,38 @@ class Api:
         return self.send(handler, 200, self.waitlist_payload(conn))
 
     def waitlist_export(self, conn):
-        rows = conn.execute("SELECT * FROM waitlist ORDER BY created_at, rowid").fetchall()
-        return [self.waitlist_json(row, None) for row in rows]
+        positions = {}
+        for rows in self.waitlist_grouped(conn).values():
+            for index, row in enumerate(rows):
+                positions[row["id"]] = index + 1
+        rows = conn.execute(
+            """
+            SELECT * FROM waitlist
+            ORDER BY CASE age_group WHEN 'mite' THEN 0 ELSE 1 END, created_at, rowid
+            """
+        ).fetchall()
+        return [self.waitlist_json(row, positions.get(row["id"])) for row in rows]
 
     def waitlist_csv(self, conn):
         rows = [[
             "position", "joined", "status", "parent_name", "email", "phone",
             "child_name", "child_age", "dob", "age_group", "note",
         ]]
-        for index, row in enumerate(self.waitlist_active_rows(conn)):
-            rows.append([
-                index + 1,
-                row["created_at"],
-                row["status"],
-                row["parent_name"],
-                row["email"],
-                row["phone"],
-                row["child_name"],
-                row["child_age"],
-                row["dob"] or "",
-                self.waitlist_group_label(row["age_group"]),
-                row["note"] or "",
-            ])
+        for key in ("mite", "upper"):
+            for index, row in enumerate(self.waitlist_grouped(conn)[key]):
+                rows.append([
+                    index + 1,
+                    row["created_at"],
+                    row["status"],
+                    row["parent_name"],
+                    row["email"],
+                    row["phone"],
+                    row["child_name"],
+                    row["child_age"],
+                    row["dob"] or "",
+                    self.waitlist_group_label(row["age_group"]),
+                    row["note"] or "",
+                ])
         return rows
 
     def set_waitlist_status(self, handler, conn, wid, status):
@@ -2120,9 +2177,12 @@ class Api:
             age = dob_age
         if not self.counts_as_kid(age):
             raise ValueError("The kids class is for ages 3–10.")
+        if body.get("confirmAgeGroup") is not True:
+            raise ValueError("Confirm the age group.")
         expected = "mite" if 3 <= age <= 6 else "upper"
         if age_group != expected:
             raise ValueError("Choose the age group that matches the child's age.")
+        age_group = expected
         conn = self.db()
         try:
             self.lock_kids(conn)
@@ -2146,7 +2206,7 @@ class Api:
                 (wid, created, parent, email, phone, child, age, dob, age_group, note),
             )
             conn.commit()
-            rows = self.waitlist_active_rows(conn)
+            rows = [row for row in self.waitlist_active_rows(conn) if row["age_group"] == age_group]
             position = 1
             for index, row in enumerate(rows):
                 if row["id"] == wid:
@@ -2154,7 +2214,16 @@ class Api:
                     break
         finally:
             conn.close()
-        return self.send(handler, 201, {"id": wid, "position": position})
+        return self.send(
+            handler,
+            201,
+            {
+                "id": wid,
+                "position": position,
+                "ageGroup": age_group,
+                "ageGroupLabel": self.waitlist_group_label(age_group),
+            },
+        )
 
     def submit_waiver(self, handler):
         if not self.waiver_submissions_enabled():

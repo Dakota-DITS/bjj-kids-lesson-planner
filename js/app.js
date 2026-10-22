@@ -2940,8 +2940,16 @@ function sparringSection(plan) {
       banner.classList.toggle("hidden", !show);
       banner.textContent = "";
       if (show) {
-        const families = active === 1 ? "1 family is" : active + " families are";
-        banner.append(document.createTextNode("A spot is open. " + families + " on the kids waitlist. This does not email or text them. "));
+        const next = snap.waitlistNext || {};
+        function who(head) {
+          if (!head || !head.childName) return "no one waiting";
+          return head.childName + (head.parentName ? " (" + head.parentName + ")" : "");
+        }
+        banner.append(document.createTextNode(
+          "A spot is open. Next in 3–6 Mighty Mites: " + who(next.mite) +
+          ". Next in 7–10 Pee Wees: " + who(next.upper) +
+          ". You choose which group to fill. This does not email or text them. "
+        ));
         const link = document.createElement("a");
         link.href = "/app/waitlist/";
         link.textContent = "Open the waitlist";

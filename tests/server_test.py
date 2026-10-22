@@ -1752,6 +1752,7 @@ class ApiTest(unittest.TestCase):
                 "childName": "Casey",
                 "age": 5,
                 "ageGroup": "mite",
+                "confirmAgeGroup": True,
                 "note": "",
             }
             body.update(overrides)
@@ -1830,6 +1831,12 @@ class ApiTest(unittest.TestCase):
             self.assertEqual(status, 400, dob_mismatch)
             self.assertIn("do not match", dob_mismatch["error"])
             self.assertEqual(self._waitlist_count(), 0)
+            bare = entry(childName="Skip")
+            bare.pop("confirmAgeGroup")
+            status, unconfirmed = guest.call("POST", "/api/public/waitlist", bare)
+            self.assertEqual(status, 400, unconfirmed)
+            self.assertIn("Confirm", unconfirmed["error"])
+            self.assertEqual(self._waitlist_count(), 0)
 
             status, first = guest.call(
                 "POST",
@@ -1844,7 +1851,16 @@ class ApiTest(unittest.TestCase):
                 entry(childName="Bea", email="bea@example.com", age=8, ageGroup="upper"),
             )
             self.assertEqual(status, 201, second)
-            self.assertEqual(second["position"], 2)
+            self.assertEqual(second["position"], 1)
+            self.assertEqual(second["ageGroup"], "upper")
+            status, third = guest.call(
+                "POST",
+                "/api/public/waitlist",
+                entry(childName="Cam", email="cam@example.com", age=4, ageGroup="mite"),
+            )
+            self.assertEqual(status, 201, third)
+            self.assertEqual(third["position"], 2)
+            self.assertEqual(third["ageGroup"], "mite")
             status, duplicate = guest.call(
                 "POST",
                 "/api/public/waitlist",
@@ -1855,55 +1871,74 @@ class ApiTest(unittest.TestCase):
 
             status, listed = admin.call("GET", "/api/waitlist")
             self.assertEqual(status, 200, listed)
-            self.assertEqual([row["childName"] for row in listed["entries"]], ["Ada", "Bea"])
-            self.assertEqual([row["position"] for row in listed["entries"]], [1, 2])
+            self.assertEqual([row["childName"] for row in listed["entries"]], ["Ada", "Cam", "Bea"])
+            self.assertEqual([row["position"] for row in listed["entries"]], [1, 2, 1])
+            self.assertEqual([group["ageGroup"] for group in listed["groups"]], ["mite", "upper"])
+            self.assertEqual([row["childName"] for row in listed["groups"][0]["entries"]], ["Ada", "Cam"])
+            self.assertEqual([row["childName"] for row in listed["groups"][1]["entries"]], ["Bea"])
             self.assertEqual(listed["entries"][0]["note"], "After school")
             self.assertEqual(listed["entries"][0]["ageGroup"], "mite")
             self.assertFalse(listed["spotOpen"])
 
-            ada_id = listed["entries"][0]["id"]
-            bea_id = listed["entries"][1]["id"]
+            ada_id = listed["groups"][0]["entries"][0]["id"]
+            cam_id = listed["groups"][0]["entries"][1]["id"]
+            bea_id = listed["groups"][1]["entries"][0]["id"]
             status, contacted = admin.call("POST", f"/api/waitlist/{ada_id}/contacted", {})
             self.assertEqual(status, 200, contacted)
             self.assertEqual(contacted["entries"][0]["status"], "contacted")
             self.assertEqual(contacted["entries"][0]["position"], 1)
             status, again = admin.call("POST", f"/api/waitlist/{ada_id}/contacted", {})
             self.assertEqual(status, 200, again)
-            self.assertEqual(len(again["entries"]), 2)
+            self.assertEqual(len(again["entries"]), 3)
 
             status, csv_body = admin.call("GET", "/api/waitlist.csv", raw=True)
             self.assertEqual(status, 200)
             csv_text = csv_body.decode()
             self.assertIn("Ada", csv_text)
             self.assertIn("Bea", csv_text)
+            self.assertIn("Cam", csv_text)
             self.assertIn("3–6 Mighty Mites", csv_text)
+            self.assertIn("7–10 Pee Wees", csv_text)
             self.assertTrue(csv_text.startswith("position,joined,status,"))
+            self.assertIn(",age_group,", csv_text.splitlines()[0])
 
             status, wider = admin.call("PUT", "/api/kids-cap", {"cap": min(200, enrolled + 1)})
             self.assertEqual(status, 200, wider)
             self.assertTrue(wider["waitlistSpotOpen"], wider)
-            self.assertEqual(wider["waitlistActive"], 2)
+            self.assertEqual(wider["waitlistActive"], 3)
+            self.assertEqual(wider["waitlistNext"]["mite"]["childName"], "Ada")
+            self.assertEqual(wider["waitlistNext"]["upper"]["childName"], "Bea")
+            status, admin_boot = admin.call("GET", "/api/bootstrap")
+            self.assertEqual(admin_boot["kidsEnrollment"]["waitlistNext"]["mite"]["childName"], "Ada")
+            self.assertEqual(admin_boot["kidsEnrollment"]["waitlistNext"]["upper"]["parentName"], "Pat Parent")
             status, staff = teacher.call("GET", "/api/bootstrap")
             self.assertTrue(staff["kidsEnrollment"]["waitlistSpotOpen"])
-            self.assertNotIn("Ada", json.dumps(staff["students"]))
+            self.assertNotIn("waitlistNext", staff["kidsEnrollment"])
+            self.assertNotIn("ada@example.com", json.dumps(staff))
 
             status, enrolled_row = admin.call("POST", f"/api/waitlist/{ada_id}/enrolled", {})
             self.assertEqual(status, 200, enrolled_row)
-            self.assertEqual([row["childName"] for row in enrolled_row["entries"]], ["Bea"])
-            self.assertEqual(enrolled_row["entries"][0]["position"], 1)
+            self.assertEqual([row["childName"] for row in enrolled_row["groups"][0]["entries"]], ["Cam"])
+            self.assertEqual(enrolled_row["groups"][0]["entries"][0]["position"], 1)
+            self.assertEqual(enrolled_row["groups"][1]["entries"][0]["childName"], "Bea")
+            self.assertEqual(enrolled_row["groups"][1]["entries"][0]["position"], 1)
+            self.assertEqual(enrolled_row["waitlistNext"]["mite"]["childName"], "Cam")
             status, stale = admin.call("POST", f"/api/waitlist/{ada_id}/contacted", {})
             self.assertEqual(status, 400, stale)
             self.assertIn("already off", stale["error"])
 
             status, removed = admin.call("DELETE", f"/api/waitlist/{bea_id}")
             self.assertEqual(status, 200, removed)
-            self.assertEqual(removed["entries"], [])
-            self.assertFalse(removed["spotOpen"])
+            self.assertEqual([row["childName"] for row in removed["entries"]], ["Cam"])
+            status, cleared = admin.call("DELETE", f"/api/waitlist/{cam_id}")
+            self.assertEqual(status, 200, cleared)
+            self.assertEqual(cleared["entries"], [])
+            self.assertFalse(cleared["spotOpen"])
 
             status, backup = admin.call("GET", "/api/export")
             self.assertEqual(status, 200, backup)
             names = {row["childName"] for row in backup["waitlist"]}
-            self.assertEqual(names, {"Ada", "Bea"})
+            self.assertEqual(names, {"Ada", "Bea", "Cam"})
             self.assertTrue(any(row["status"] == "enrolled" for row in backup["waitlist"]))
             self.assertTrue(any(row["status"] == "removed" for row in backup["waitlist"]))
 

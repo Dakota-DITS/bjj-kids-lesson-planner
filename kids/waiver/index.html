@@ -8,8 +8,8 @@
   <link rel="manifest" href="/manifest.webmanifest" />
   <meta name="theme-color" content="#9b2a12" />
   <link rel="icon" href="/icons/favicon-32.png" type="image/png" sizes="32x32" />
-  <link rel="stylesheet" href="/css/waiver.css?v=20261021-27" />
-  <script src="/pwa.js?v=20261021-27" defer></script>
+  <link rel="stylesheet" href="/css/waiver.css?v=20261021-28" />
+  <script src="/pwa.js?v=20261021-28" defer></script>
 </head>
 <body data-kind="kids">
   <a class="skip" href="#main">Skip to content</a>
@@ -166,11 +166,16 @@
         </div>
         <div class="field">
           <label for="waitAgeGroup">Age group</label>
+          <p id="waitGroupLine">Enter an age or date of birth. The age group comes from that.</p>
           <select id="waitAgeGroup" name="ageGroup" required>
-            <option value="">Choose an age group</option>
+            <option value="">Age group appears here</option>
             <option value="mite">3–6 Mighty Mites</option>
             <option value="upper">7–10 Pee Wees</option>
           </select>
+          <label class="check">
+            <input id="waitConfirmGroup" type="checkbox" />
+            <span>This age group is right.</span>
+          </label>
         </div>
         <div class="field">
           <label for="waitNote">Note <span class="hint">(optional)</span></label>
@@ -185,6 +190,6 @@
       <p class="closed" id="waitlistDone" hidden></p>
     </section>
   </main>
-  <script src="/waiver/waiver.js?v=20261021-27"></script>
+  <script src="/waiver/waiver.js?v=20261021-28"></script>
 </body>
 </html>

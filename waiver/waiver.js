@@ -289,6 +289,45 @@
     return (value.match(/\d/g) || []).length;
   }
 
+  function derivedWaitGroup() {
+    const ageText = waitValue("waitAge");
+    const dob = waitValue("waitDob");
+    let age = null;
+    if (ageText) {
+      const typed = Number(ageText);
+      if (Number.isInteger(typed)) age = typed;
+    }
+    if (dob) {
+      const fromDob = ageYears(dob, pacificToday());
+      if (fromDob !== null && (age === null || age === fromDob)) age = fromDob;
+      if (fromDob !== null && age !== null && age !== fromDob) return null;
+    }
+    if (age === null || age < 3 || age > 10) return null;
+    return age <= 6 ? "mite" : "upper";
+  }
+
+  function showWaitGroup() {
+    const line = document.getElementById("waitGroupLine");
+    const select = document.getElementById("waitAgeGroup");
+    if (!line || !select) return;
+    const group = derivedWaitGroup();
+    if (!group) {
+      line.textContent = "Enter an age or date of birth. The age group comes from that.";
+      if (select.value && !derivedWaitGroup()) select.value = "";
+      return;
+    }
+    const label = group === "mite" ? "3–6 Mighty Mites" : "7–10 Pee Wees";
+    line.textContent = "From this age, this child joins the " + label + " waitlist.";
+    select.value = group;
+  }
+
+  ["waitAge", "waitDob", "waitAgeGroup"].forEach((id) => {
+    const el = document.getElementById(id);
+    if (!el) return;
+    el.addEventListener("input", showWaitGroup);
+    el.addEventListener("change", showWaitGroup);
+  });
+
   if (waitlistForm) {
     waitlistForm.addEventListener("submit", (event) => {
       event.preventDefault();
@@ -350,6 +389,11 @@
         waitSay("Choose the age group that matches the child's age.");
         return;
       }
+      const confirmGroup = document.getElementById("waitConfirmGroup");
+      if (!confirmGroup || !confirmGroup.checked) {
+        waitSay("Confirm the age group.");
+        return;
+      }
       const submit = document.getElementById("waitlistSubmit");
       if (submit) submit.disabled = true;
       const body = {
@@ -358,6 +402,7 @@
         phone: phone,
         childName: childName,
         ageGroup: ageGroup,
+        confirmAgeGroup: true,
         note: noteText,
       };
       if (ageText) body.age = age;
@@ -374,7 +419,9 @@
           waitlistForm.hidden = true;
           if (waitlistDone) {
             waitlistDone.hidden = false;
-            waitlistDone.textContent = "You're on the waitlist.";
+            const place = payload.position ? "number " + payload.position + " on the " : "on the ";
+            const label = payload.ageGroupLabel || "kids";
+            waitlistDone.textContent = "You're " + place + label + " waitlist.";
           }
         })
         .catch((err) => {

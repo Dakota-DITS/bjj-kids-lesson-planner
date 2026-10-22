@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>Kids waitlist · Grace BJJ Staff</title>
   <link rel="icon" href="/icons/staff-favicon-32.png" type="image/png" sizes="32x32" />
-  <script src="/pwa.js?v=20261021-27" defer></script>
+  <script src="/pwa.js?v=20261021-28" defer></script>
   <style>
     :root { color-scheme: dark; }
     body {
@@ -19,7 +19,8 @@
     main { width: min(880px, calc(100% - 32px)); margin: 24px auto 48px; }
     a { color: #ffd7cc; }
     h1 { font-size: 1.6rem; }
-    h2 { font-size: 1.2rem; margin: 0 0 8px; }
+    h2 { font-size: 1.35rem; margin: 22px 0 8px; }
+    h3 { font-size: 1.15rem; margin: 0 0 8px; }
     button, .button {
       display: inline-flex;
       align-items: center;
@@ -66,7 +67,7 @@
     <div id="tools" hidden class="row">
       <a class="button" href="/api/waitlist.csv">Download CSV</a>
     </div>
-    <ul id="list"></ul>
+    <div id="list"></div>
   </main>
   <script>
     const status = document.getElementById("status");
@@ -110,24 +111,42 @@
       paint(body);
     }
 
+    function family(head) {
+      if (!head || !head.childName) return "no one waiting";
+      return text(head.childName) + (head.parentName ? " (" + text(head.parentName) + ")" : "");
+    }
+
     function paint(body) {
+      const groups = body.groups || [];
       const rows = body.entries || [];
       list.textContent = "";
       tools.hidden = false;
       if (body.spotOpen) {
         spotBanner.hidden = false;
-        const families = rows.length === 1 ? "1 family is" : rows.length + " families are";
-        spotBanner.textContent = "A spot is open. " + families + " on the kids waitlist. This does not email or text them.";
+        const next = body.waitlistNext || {};
+        spotBanner.textContent = "A spot is open. Next in 3–6 Mighty Mites: " + family(next.mite) + ". Next in 7–10 Pee Wees: " + family(next.upper) + ". You choose which group to fill. This does not email or text them.";
       } else {
         spotBanner.hidden = true;
         spotBanner.textContent = "";
       }
       status.textContent = rows.length ? rows.length + " waiting." : "No one is on the waitlist.";
-      rows.forEach((entry) => {
+      groups.forEach((group) => {
+        const heading = document.createElement("h2");
+        heading.textContent = text(group.label);
+        list.append(heading);
+        const entries = group.entries || [];
+        if (!entries.length) {
+          const empty = document.createElement("p");
+          empty.textContent = "No one is on this list.";
+          list.append(empty);
+          return;
+        }
+        const ul = document.createElement("ul");
+        entries.forEach((entry) => {
         const li = document.createElement("li");
         const card = document.createElement("article");
         card.className = "card";
-        const title = document.createElement("h2");
+        const title = document.createElement("h3");
         title.textContent = text(entry.position) + ". " + text(entry.childName);
         card.append(title);
         line(card, text(entry.childAge) + " · " + text(entry.ageGroupLabel));
@@ -167,7 +186,9 @@
         row.append(contacted, enrolled, remove);
         card.append(row);
         li.append(card);
-        list.append(li);
+        ul.append(li);
+        });
+        list.append(ul);
       });
     }
 
