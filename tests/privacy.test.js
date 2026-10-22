@@ -32,9 +32,10 @@ const placeholders = [
   "[Dakota to confirm: effective date]",
   "[Dakota to confirm: period after the student stops attending]",
   "[Dakota to confirm: waitlist cleanup period]",
-  "[Dakota to confirm: how we will tell people when this policy changes]",
 ];
 placeholders.forEach((mark) => assert.ok(policy.includes(mark), mark));
+assert.equal(policy.includes("[Dakota to confirm: how we will tell people when this policy changes]"), false);
+assert.ok(policy.includes("If we change this policy, we'll update the date at the top of this page and let families know at the next class."));
 assert.equal(policy.includes("[Dakota to confirm: who can request deletion]"), false);
 assert.ok(policy.includes("Only the parent or guardian who signed the enrollment and waiver form (or the adult student who signed their own form) can ask us to view, correct, or delete that information."));
 assert.ok(policy.includes('href="mailto:dits%2Bbjj@mail.grokbot.com?subject=Grace%20BJJ%20privacy">dits+bjj@mail.grokbot.com</a> from the address on the form, and we may ask you to confirm who you are before making changes.'));
