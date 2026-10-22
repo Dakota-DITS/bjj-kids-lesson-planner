@@ -50,6 +50,7 @@
     planQuery: { warmup: "", base: "", lesson: "", game: "", sparring: "" },
     planFocus: null,
     editingPlanId: "",
+    loadedPlanAge: "",
     savedPlans: [],
   };
 
@@ -101,7 +102,8 @@
     el.textContent = msg;
     el.classList.add("show");
     clearTimeout(toast._t);
-    toast._t = setTimeout(() => el.classList.remove("show"), 2800);
+    const hold = String(msg || "").length > 80 ? 7000 : 2800;
+    toast._t = setTimeout(() => el.classList.remove("show"), hold);
   }
 
   function passwordChangeError(current, next) {
@@ -437,8 +439,10 @@
   }
 
   function ageLabel(id) {
-    const group = DATA.ageGroups[id];
-    return group ? `${group.range} ${group.label}` : "4–6 Mighty Mite";
+    const group = DATA.ageGroups[id] || DATA.ageGroups[P.normalizeAgeKey(id)];
+    if (!group) return "4–7 Mighty Mites";
+    const label = String(group.label || "").trim();
+    return label ? `${group.range} ${label}` : group.range;
   }
 
   function classLabel(id) {
@@ -468,7 +472,8 @@
     if (!blurb) return;
     if (ids.length > 1) {
       const young = DATA.ageGroups[ids[0]];
-      blurb.textContent = `${P.comboLabel(state.ageGroup)}. Technique and games use the ${young.range} ${young.label} level.`;
+      const youngName = young.label ? `${young.range} ${young.label}` : young.range;
+      blurb.textContent = `${P.comboLabel(state.ageGroup)}. Technique and games use the ${youngName} level.`;
     } else {
       const group = DATA.ageGroups[ids[0]] || DATA.ageGroups.mite;
       blurb.textContent = group.focus;
@@ -482,17 +487,19 @@
     if ($("themeLock")) $("themeLock").value = "";
     const key = state.ageGroup;
     const young = DATA.ageGroups[P.youngestAge(key)] || DATA.ageGroups.mite;
+    const youngName = young.label ? `${young.range} ${young.label}` : young.range;
     $("ages").value = P.isCombo(key) ? P.comboLabel(key) : ageLabel(young.id);
     if ($("title").value === "FIRST BJJ CLASS") $("title").value = "GRACE BJJ KIDS";
     fillThemeLock();
     writeClassCounts();
     buildPlan({ mode: "grace" });
     renderHome();
-    toast(P.isCombo(key) ? P.comboLabel(key) : `${young.range} ${young.label}. ${young.pace}`);
+    toast(P.isCombo(key) ? P.comboLabel(key) : `${youngName}. ${young.pace}`);
   }
 
   function setAgeGroup(id, rebuild) {
     const key = P.normalizeAgeKey(id);
+    if (state.loadedPlanAge && P.normalizeAgeKey(state.loadedPlanAge) !== key) state.loadedPlanAge = "";
     state.ageGroup = key === "toddler" ? "mite" : key;
     syncAgeButtons();
     fillThemeLock();
@@ -504,7 +511,9 @@
     const ids = P.parseAgeKey(state.ageGroup);
     const next = ids.includes(id) ? ids.filter((item) => item !== id) : ids.concat(id);
     if (!next.length) return;
-    state.ageGroup = P.ageKey(next);
+    const key = P.ageKey(next);
+    if (state.loadedPlanAge && P.normalizeAgeKey(state.loadedPlanAge) !== key) state.loadedPlanAge = "";
+    state.ageGroup = key;
     syncAgeButtons();
     applyAgeSelection();
   }
@@ -542,8 +551,9 @@
 
   function ageAllows(activity, ageGroup) {
     if (!ageGroup) return true;
-    if (!activity.ages || !activity.ages.length) return true;
-    return activity.ages.includes(ageGroup);
+    const ages = P.canonicalTechniqueAges(activity && activity.ages);
+    if (!ages.length) return true;
+    return ages.includes(ageGroup);
   }
 
   function lessonThemes(item) {
@@ -1889,9 +1899,11 @@ function sparringSection(plan) {
   }
 
   function ageTags(activity) {
-    if (!activity.ages || !activity.ages.length) return "all ages";
-    return activity.ages
-      .map((id) => (id === "toddler" ? "3–5" : DATA.ageGroups[id]?.range || id))
+    const ages = P.canonicalTechniqueAges(activity && activity.ages);
+    if (!ages.length) return "all ages";
+    const legacy = { teen: "13–15" };
+    return ages
+      .map((id) => (id === "toddler" ? "3–5" : DATA.ageGroups[id]?.range || legacy[id] || id))
       .join(" ");
   }
 
@@ -2308,7 +2320,7 @@ function sparringSection(plan) {
     const nextLabel = Number.isNaN(when.getTime())
       ? iso
       : when.toLocaleDateString(undefined, { weekday: "long", month: "long", day: "numeric", year: "numeric" });
-    const groups = ["mite", "peewee", "junior", "teen"].map((id) => {
+    const groups = ["mite", "upper"].map((id) => {
       const group = DATA.ageGroups[id];
       const count = state.roster.filter((kid) => {
         const match = groupForAge(kid.age);
@@ -2588,7 +2600,7 @@ function sparringSection(plan) {
     if ($("actSteps")) $("actSteps").value = asList(activity?.steps).join("\n");
     if ($("actDrill")) $("actDrill").value = activity?.drill || "";
     if ($("actSafety")) $("actSafety").value = activity?.safety || "";
-    const selected = new Set(activity?.ages || []);
+    const selected = new Set(P.canonicalTechniqueAges(activity?.ages || []));
     document.querySelectorAll("#actAges input").forEach((box) => {
       box.checked = selected.has(box.value);
     });
@@ -3010,10 +3022,8 @@ function sparringSection(plan) {
   function groupForAge(age) {
     const n = Number(age);
     if (!Number.isFinite(n)) return null;
-    if (n >= 4 && n <= 6) return DATA.ageGroups.mite || null;
-    if (n >= 7 && n <= 9) return DATA.ageGroups.peewee || null;
-    if (n >= 10 && n <= 12) return DATA.ageGroups.junior || null;
-    if (n >= 13 && n <= 15) return DATA.ageGroups.teen || null;
+    if (n >= 4 && n <= 7) return DATA.ageGroups.mite || null;
+    if (n >= 8 && n <= 15) return DATA.ageGroups.upper || null;
     return null;
   }
 
@@ -3259,17 +3269,18 @@ function sparringSection(plan) {
   }
 
   const PAST_AGES = [
-    ["mite", "Mighty Mite 4–6"],
-    ["peewee", "Pee Wee 7–9"],
-    ["junior", "Junior 10–12"],
-    ["teen", "Teen 13–15"],
+    ["mite", "Mighty Mites 4–7"],
+    ["upper", "8–10"],
     ["toddler", "Toddler 3–5"],
   ];
 
   function pastAgeLabel(id) {
     if (P.isCombo(id)) return P.comboLabel(id);
     const found = PAST_AGES.find((pair) => pair[0] === id);
-    return found ? found[1] : id;
+    if (found) return found[1];
+    const key = P.normalizeAgeKey(id);
+    const mapped = PAST_AGES.find((pair) => pair[0] === key);
+    return mapped ? mapped[1] : classLabel(id);
   }
 
   function selectedPastAgeKey() {
@@ -4031,6 +4042,7 @@ function sparringSection(plan) {
           <p>${esc(prettyDate(plan.classDate))} · ${esc(classLabel(plan.ageGroup))}${editing ? " · Editing" : ""}<br>${esc(plan.savedBy || "A teacher")} · ${esc(prettyStamp(plan.updatedAt))}</p>
           <button class="ghost" type="button" data-plan-edit="${esc(plan.id)}">Edit</button>
           <button class="ghost" type="button" data-plan-print="${esc(plan.id)}">Print</button>
+          <button class="ghost" type="button" data-plan-share="${esc(plan.id)}">Share</button>
           ${remove}
         </article>`;
       })
@@ -4063,7 +4075,15 @@ function sparringSection(plan) {
       toast("Save a plan for a class Tuesday, the 2nd or 4th Tuesday from October 27, 2026.");
       return;
     }
-    const ageGroup = state.preset === "toddler" ? "toddler" : P.normalizeAgeKey(state.ageGroup);
+    let ageGroup = state.preset === "toddler" ? "toddler" : P.normalizeAgeKey(state.ageGroup);
+    if (
+      state.editingPlanId &&
+      state.loadedPlanAge &&
+      state.loadedPlanAge !== ageGroup &&
+      P.normalizeAgeKey(state.loadedPlanAge) === ageGroup
+    ) {
+      ageGroup = state.loadedPlanAge;
+    }
     try {
       await refreshSavedPlans();
     } catch (err) {
@@ -4085,6 +4105,7 @@ function sparringSection(plan) {
         plan,
       });
       state.editingPlanId = saved.id || "";
+      state.loadedPlanAge = saved.ageGroup || ageGroup;
       await refreshSavedPlans();
       toast(existing ? "Saved plan replaced." : "Plan saved.");
     } catch (err) {
@@ -4103,7 +4124,9 @@ function sparringSection(plan) {
     if (body.ageGroup === "toddler" || plan.mode === "toddler") {
       state.preset = "toddler";
       state.ageGroup = "toddler";
+      state.loadedPlanAge = "";
     } else if (body.ageGroup) {
+      state.loadedPlanAge = body.ageGroup;
       state.ageGroup = P.normalizeAgeKey(body.ageGroup);
       syncAgeButtons();
     }
@@ -4120,8 +4143,74 @@ function sparringSection(plan) {
 
   function startNewPlan() {
     state.editingPlanId = "";
+    state.loadedPlanAge = "";
     renderSavedPlans();
     toast("This is a new plan. Save it when you want a copy for this date.");
+  }
+
+  function planPrintLines() {
+    const lines = [];
+    const collect = (root) => {
+      const found = [];
+      if (!root) return found;
+      const clone = root.cloneNode(true);
+      clone.querySelectorAll(".no-print, .reps-ctrl, .reroll, .name-live").forEach((el) => el.remove());
+      clone
+        .querySelectorAll(
+          ".plan-kicker, .plan-running-header .right, h1, h2, h3, p, li, tr, figcaption, .sheet-name, .plan-running-footer, img"
+        )
+        .forEach((el) => {
+          if (el.tagName === "IMG" && (el.classList.contains("plan-logo") || el.classList.contains("sheet-logo"))) return;
+          const raw = el.tagName === "IMG" ? el.getAttribute("alt") || "" : el.textContent || "";
+          const text = String(raw).replace(/\s+/g, " ").trim();
+          if (!text) return;
+          const tag = el.tagName;
+          const kind = tag === "H1" ? "title" : tag === "H2" ? "section" : tag === "H3" ? "item" : "body";
+          found.push({ kind, text });
+        });
+      return found;
+    };
+    lines.push(...collect($("plan")));
+    const sheet = collect($("sheet"));
+    if (sheet.length) {
+      lines.push({ kind: "break", text: "" });
+      lines.push(...sheet);
+    }
+    return lines;
+  }
+
+  function downloadPlanFile(file) {
+    const url = URL.createObjectURL(file);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = (file && file.name) || "grace-bjj-plan.pdf";
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 1500);
+  }
+
+  async function sharePlanPdf() {
+    if (!state.plan) {
+      toast("Generate a class before sharing it.");
+      return;
+    }
+    setView("plan");
+    const settings = state.plan.settings || {};
+    const ageGroup =
+      state.preset === "toddler" || settings.ageGroup === "toddler" ? "toddler" : P.normalizeAgeKey(settings.ageGroup);
+    const name = P.planPdfFilename(settings.date, ageGroup);
+    const bytes = P.buildPlanPdf(planPrintLines());
+    const file = new File([bytes], name, { type: "application/pdf" });
+    const title = settings.title || "Grace BJJ Kids plan";
+    const result = await P.deliverPlanPdf(file, {
+      title,
+      text: `${title} · ${classLabel(ageGroup)}`,
+      canShare: (payload) => (typeof navigator.canShare === "function" ? navigator.canShare(payload) : false),
+      share: (payload) => navigator.share(payload),
+      download: downloadPlanFile,
+    });
+    if (result && result.note) toast(result.note);
   }
 
   async function printBlankCards(layout) {
@@ -4567,6 +4656,11 @@ function sparringSection(plan) {
       setView("plan");
       window.print();
     });
+    if ($("sharePlanBtn")) {
+      $("sharePlanBtn").addEventListener("click", () => {
+        sharePlanPdf().catch((err) => toast((err && err.message) || "Could not share this plan."));
+      });
+    }
     $("printLessonBtn").addEventListener("click", () => {
       document.body.dataset.print = "lesson";
       setView("plan");
@@ -5122,6 +5216,7 @@ function sparringSection(plan) {
       $("savedPlans").addEventListener("click", async (event) => {
         const edit = event.target.closest("[data-plan-edit]");
         const print = event.target.closest("[data-plan-print]");
+        const share = event.target.closest("[data-plan-share]");
         const remove = event.target.closest("[data-plan-delete]");
         try {
           if (edit) {
@@ -5134,6 +5229,12 @@ function sparringSection(plan) {
             delete document.body.dataset.print;
             setView("plan");
             window.print();
+            return;
+          }
+          if (share) {
+            const opened = await loadSavedPlan(share.dataset.planShare, { quiet: true });
+            if (!opened) return;
+            await sharePlanPdf();
             return;
           }
           if (remove) {

@@ -15,7 +15,7 @@ The live site is served from the Debian host described in [DEPLOY.md](DEPLOY.md)
 
 ## Welcome page
 
-The splash shows the Grace Jiu Jitsu logo, the values Competence, Connection, and Community, the class schedule, the next class date, the four age groups, and what to bring the first week. A large button goes to the coloring sheets. Teacher login is a small link.
+The splash shows the Grace Jiu Jitsu logo, the values Competence, Connection, and Community, the class schedule, the next class date, the two age groups, and what to bring the first week. A large button goes to the coloring sheets. Teacher login is a small link.
 
 The welcome page shows the church address and an email for questions. Phone and a sign-up link are not on the page yet. Add those in the `PUBLIC_INFO` object in `index.html`. A value left as `""` stays hidden.
 
@@ -29,10 +29,8 @@ Log in at `/login/`, then the planner opens at `/app/`.
 
 ### Age groups
 
-- **4–6 Mighty Mite** — positions and movement, plus sparring for a kid with at least one stripe when enough adults are supervising.
-- **7–9 Pee Wee** — partner drills, escapes, sweeps, and a slow americana and armbar from mount.
-- **10–12 Junior** — passes, takedowns, and a few submissions and chains.
-- **13–15 Teen** — the same advanced material, with more volume, plus the step toward adult class.
+- **4–7 Mighty Mites** — positions and movement. Sparring starts off for this group, and a kid still needs at least one stripe plus enough adults before it is turned on.
+- **8–10** — partner drills, escapes, sweeps, passes, and a slow americana and armbar from mount. Warm-up counts stay as written.
 
 **Load first class plan** is the toddler intro (ages 3–5). It stays as a preset.
 
@@ -42,7 +40,7 @@ Every class opens with a short prayer, then line up by rank and bow in, warm up,
 
 The lesson keeps its minutes first. The opening prayer stays at 2 minutes. If the clock is tight, warm-up and base shrink before the lesson does. The closing game can shrink to about 3 minutes and stays on the plan when you asked for a game. Extra minutes go to the lesson.
 
-Auto theme picks the position that has gone the longest without being taught. You can lock a theme. Live sparring is for any age group, including 4–6, when a student has at least one stripe and enough adults are supervising for the 4:1 ratio. Otherwise that block is positional drilling.
+Auto theme picks the position that has gone the longest without being taught. You can lock a theme. Live sparring is for any age group, including 4–7, when a student has at least one stripe and enough adults are supervising for the 4:1 ratio. A 4–7 plan starts with sparring off. Otherwise that block is positional drilling.
 
 ### Roster, progress, and attendance
 

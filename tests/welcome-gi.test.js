@@ -49,11 +49,20 @@ assert.ok(html.includes('frame.title = "How to Practice Jiu Jitsu with Your Kids
 assert.ok(html.includes("https://www.youtube.com/watch?v=QPy386CpuQg"));
 assert.ok(html.includes("https://i.ytimg.com/vi/QPy386CpuQg/hqdefault.jpg"));
 assert.ok(html.includes('loading="lazy"'));
+assert.ok(html.includes('class="video-play-label"'), "the Play label can be centered inside the button");
+const playCss = fs.readFileSync(path.join(root, "css/splash.css"), "utf8");
+const playRule = playCss.slice(playCss.indexOf(".video-play {"), playCss.indexOf(".video-fallback"));
+assert.ok(playRule.includes("display: inline-flex"));
+assert.ok(playRule.includes("align-items: center"));
+assert.ok(playRule.includes("justify-content: center"));
+assert.ok(playRule.includes("line-height: 1"));
+assert.ok(playRule.includes("padding: 0 16px"));
+assert.ok(playRule.includes("translate(0.08em, 0.17em)"), "Luckiest Guy is nudged so the ink sits in the middle");
 
 const publicList = sw.split("const PUBLIC_ASSETS")[1].split("const STAFF_ASSETS")[0];
 assert.equal(publicList.includes("/img/gi/"), false);
 assert.ok(sw.includes('path.startsWith("/img/gi/")'));
 assert.equal((sw.match(/"\/api\//g) || []).length, 1);
-assert.ok(sw.includes('const VERSION = "20261021-19"'));
+assert.ok(sw.includes('const VERSION = "20261021-20"'));
 
 console.log("welcome gi checks passed");
