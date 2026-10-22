@@ -59,7 +59,7 @@ assert.ok(html.includes('email: ""'));
   assert.equal(text.includes("mail.grokbot.com"), false, rel);
   assert.equal(text.includes("dits+bjj"), false, rel);
 });
-assert.ok(html.includes('src="/calendar/class-days.js?v=20261022-31"'));
+assert.ok(html.includes('src="/calendar/class-days.js?v=20261022-32"'));
 assert.ok(html.includes("GRACE_CLASS_DAYS"));
 assert.ok(html.includes('aria-live="polite"'));
 assert.ok(html.includes('aria-label="Previous month"'));

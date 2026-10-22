@@ -16,7 +16,7 @@ The live site is served from the Debian host described in [DEPLOY.md](DEPLOY.md)
 
 ## Home and kids pages
 
-`/` is the Grace BJJ home page. Adult class facts (schedule, instructor, who can come, and the giving ask) live in `adult-class.json`. Leave a field empty instead of guessing. The head instructor line includes Dakota's confirmed rank: Master Pierre Rosa, brown belt, 4 stripes. `/kids/` is the kids welcome page: logo, values, class calendar, age groups, potty notice, gi, and practice video. A large button goes to the coloring sheets. Teacher login is a small link.
+`/` is the Grace BJJ home page. Adult class facts (schedule, instructor, who can come, and the giving ask) live in `adult-class.json`. Leave a field empty instead of guessing. The instructor line is Pastor Pierre Rosa, brown belt, 4 stripes. `/kids/` is the kids welcome page: logo, values, class calendar, age groups, potty notice, gi, and practice video. A large button goes to the coloring sheets. Teacher login is a small link.
 
 The kids page shows the church address and an email for questions. Phone and a sign-up link are not on the page yet. Add those in the `PUBLIC_INFO` object in `kids/index.html`. A value left as `""` stays hidden.
 

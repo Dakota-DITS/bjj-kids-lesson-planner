@@ -9,7 +9,7 @@ const kids = fs.readFileSync(path.join(root, "kids/index.html"), "utf8");
 const data = JSON.parse(fs.readFileSync(path.join(root, "adult-class.json"), "utf8"));
 const plan = require("../js/plan-math.js");
 
-assert.equal(data.instructor, "Master Pierre Rosa, brown belt, 4 stripes");
+assert.equal(data.instructor, "Pastor Pierre Rosa, brown belt, 4 stripes");
 assert.equal(data.schedule.days, "Tuesdays and Thursdays");
 assert.equal(data.schedule.time, "6:30 – ~8:00 PM");
 assert.equal(data.schedule.timezone, "PT");
@@ -34,8 +34,11 @@ assert.ok(home.includes('id="affiliation"'));
 assert.ok(home.includes('id="contact"'));
 assert.ok(home.includes('id="grace"'));
 assert.ok(home.includes("Brazilian jiu-jitsu at Grace Baptist Church in Salem."));
-assert.ok(home.includes('"Head instructor: " + data.instructor'));
-assert.ok(home.includes("Grace BJJ is an official affiliate of Lebre Jiu-Jitsu Academy in San Diego. Our head instructor, Master Pierre Rosa, is a 4-stripe brown belt under Professor Regis Lebre."));
+assert.ok(home.includes('"Instructor: " + data.instructor'));
+assert.equal(home.includes("Head instructor"), false);
+assert.equal(home.includes("Master"), false);
+assert.equal(JSON.stringify(data).includes("Master"), false);
+assert.ok(home.includes("Grace BJJ is an official affiliate of Lebre Jiu-Jitsu Academy in San Diego. Our instructor, Pastor Pierre Rosa, is a 4-stripe brown belt under Professor Regis Lebre."));
 assert.ok(home.includes('aria-label="Brown belt, 4 stripes"'));
 assert.equal((home.match(/class="stripe"/g) || []).length, 4);
 assert.equal(home.includes("trains under Professor Regis Lebre"), false);
@@ -62,5 +65,21 @@ assert.ok(kids.includes('content="https://bjj.bettrbook.com/kids/"'));
 assert.ok(kids.includes('href="/">Home</a>'));
 assert.equal(plan.qrPayload("card1").startsWith("GBJJ1|"), true);
 assert.equal(plan.qrPayload("card1").includes("http"), false);
+
+function walkHtml(dir, found) {
+  for (const name of fs.readdirSync(dir)) {
+    if (name === "node_modules" || name === "vendor" || name === ".git") continue;
+    const full = path.join(dir, name);
+    if (fs.statSync(full).isDirectory()) walkHtml(full, found);
+    else if (name.endsWith(".html")) found.push(full);
+  }
+}
+const pages = [];
+walkHtml(root, pages);
+assert.ok(pages.length >= 12);
+pages.forEach((full) => {
+  const text = fs.readFileSync(full, "utf8");
+  assert.equal(text.includes("Master"), false, full);
+});
 
 console.log("adult home checks passed");
