@@ -114,7 +114,7 @@ async function main() {
     await setOffline(browser, shell, true);
     await shell.reload({ waitUntil: "domcontentloaded" });
     const home = await shell.evaluate(() => document.body.innerText);
-    assert.ok(home.includes("Kids class"), home.slice(0, 180));
+    assert.ok(home.includes("Strong kids, kind hearts."), home.slice(0, 180));
     assert.ok(!home.includes("You are offline"));
     await shell.goto(BASE + "/coloring/", { waitUntil: "domcontentloaded" });
     const coloring = await shell.evaluate(() => document.body.innerText);
