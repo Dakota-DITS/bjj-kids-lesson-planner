@@ -335,12 +335,12 @@
     if (firstClass && typeof s.firstClass === "boolean") firstClass.checked = s.firstClass;
     if (typeof s.themeLock === "string") state.pendingTheme = s.themeLock;
     if (s.preset === "toddler" || s.preset === "grace") state.preset = s.preset;
-    if (DATA.ageGroups[s.ageGroup]) setAgeGroup(s.ageGroup, false);
+    if (typeof s.ageGroup === "string") setAgeGroup(s.ageGroup, false);
   }
 
   function readSettings() {
     const num = (id, min, max, fallback) => P.clampNum($(id).value, min, max, fallback);
-    const group = DATA.ageGroups[state.ageGroup] ? state.ageGroup : "mite";
+    const group = P.normalizeAgeKey(state.ageGroup);
     const names = helperNames();
     return {
       title: $("title").value.trim() || "GRACE BJJ KIDS",
@@ -349,7 +349,7 @@
       helper: names.join(", "),
       assistants: names,
       assistantIds: state.assistantIds.slice(),
-      ages: $("ages").value.trim() || ageLabel(group),
+      ages: $("ages").value.trim() || classLabel(group),
       kidCount: num("kidCount", 0, 40, 8),
       adultCount: num("adultCount", 0, 20, 2),
       date: $("date").value,
@@ -379,25 +379,72 @@
     return group ? `${group.range} ${group.label}` : "4–6 Mighty Mite";
   }
 
-  function setAgeGroup(id, rebuild) {
-    const group = DATA.ageGroups[id] ? DATA.ageGroups[id] : DATA.ageGroups.mite;
-    state.ageGroup = group.id;
-    document.querySelectorAll("#ageGroup button").forEach((btn) => {
-      btn.classList.toggle("on", btn.dataset.group === group.id);
-    });
-    if ($("ageBlurb")) $("ageBlurb").textContent = group.focus;
-    fillThemeLock();
-      if (rebuild) {
-      state.preset = "grace";
-      state.themeOffset = 0;
-      state.themeSkip = 0;
-      if ($("themeLock")) $("themeLock").value = "";
-      $("ages").value = ageLabel(group.id);
-      if ($("title").value === "FIRST BJJ CLASS") $("title").value = "GRACE BJJ KIDS";
-      writeClassCounts();
-      buildPlan({ mode: "grace" });
-      toast(`${group.range} ${group.label}. ${group.pace}`);
+  function classLabel(id) {
+    const key = P.normalizeAgeKey(id);
+    if (P.isCombo(key)) return P.comboLabel(key);
+    if (key === "toddler") return "Toddler 3–5";
+    return ageLabel(key);
+  }
+
+  function curriculumAge(ageGroup, mode) {
+    if (mode === "toddler" || ageGroup === "toddler") return "toddler";
+    return P.youngestAge(ageGroup);
+  }
+
+  function syncAgeButtons() {
+    const ids = P.parseAgeKey(state.ageGroup);
+    if (!ids.length) {
+      state.ageGroup = "mite";
+      ids.push("mite");
     }
+    document.querySelectorAll("#ageGroup button").forEach((btn) => {
+      const on = ids.includes(btn.dataset.group);
+      btn.classList.toggle("on", on);
+      btn.setAttribute("aria-pressed", on ? "true" : "false");
+    });
+    const blurb = $("ageBlurb");
+    if (!blurb) return;
+    if (ids.length > 1) {
+      const young = DATA.ageGroups[ids[0]];
+      blurb.textContent = `${P.comboLabel(state.ageGroup)}. Technique and games use the ${young.range} ${young.label} level.`;
+    } else {
+      const group = DATA.ageGroups[ids[0]] || DATA.ageGroups.mite;
+      blurb.textContent = group.focus;
+    }
+  }
+
+  function applyAgeSelection() {
+    state.preset = "grace";
+    state.themeOffset = 0;
+    state.themeSkip = 0;
+    if ($("themeLock")) $("themeLock").value = "";
+    const key = state.ageGroup;
+    const young = DATA.ageGroups[P.youngestAge(key)] || DATA.ageGroups.mite;
+    $("ages").value = P.isCombo(key) ? P.comboLabel(key) : ageLabel(young.id);
+    if ($("title").value === "FIRST BJJ CLASS") $("title").value = "GRACE BJJ KIDS";
+    fillThemeLock();
+    writeClassCounts();
+    buildPlan({ mode: "grace" });
+    renderHome();
+    toast(P.isCombo(key) ? P.comboLabel(key) : `${young.range} ${young.label}. ${young.pace}`);
+  }
+
+  function setAgeGroup(id, rebuild) {
+    const key = P.normalizeAgeKey(id);
+    state.ageGroup = key === "toddler" ? "mite" : key;
+    syncAgeButtons();
+    fillThemeLock();
+    if (rebuild) applyAgeSelection();
+  }
+
+  function toggleAgeGroup(id) {
+    if (!DATA.ageGroups[id]) return;
+    const ids = P.parseAgeKey(state.ageGroup);
+    const next = ids.includes(id) ? ids.filter((item) => item !== id) : ids.concat(id);
+    if (!next.length) return;
+    state.ageGroup = P.ageKey(next);
+    syncAgeButtons();
+    applyAgeSelection();
   }
 
   function defaultReps(activity) {
@@ -756,10 +803,12 @@ function assemble(content, settings) {
   }
 
 function liveSparring(settings, mode) {
-  if (mode !== "grace" || settings.ageGroup === "mite") return false;
+  if (mode !== "grace") return false;
+  const key = settings.ageGroup;
+  if (!P.isCombo(key) && (key === "mite" || key === "toddler")) return false;
   const ratio = P.ratioStatus(settings.kidCount, settings.adultCount);
   if (!ratio.ok) return false;
-  return state.roster.some((kid) => P.kidCanSpar(kid, settings.ageGroup, true));
+  return state.roster.some((kid) => P.kidCanSpar(kid, key, true));
 }
 
 function themesForAge(age) {
@@ -771,7 +820,7 @@ function fillThemeLock() {
   if (!select) return;
   const current = state.pendingTheme || select.value;
   state.pendingTheme = "";
-  const themes = themesForAge(state.ageGroup);
+  const themes = themesForAge(curriculumAge(state.ageGroup));
   select.innerHTML = [`<option value="">Auto — least recently taught</option>`]
     .concat(themes.map((theme) => `<option value="${esc(theme.id)}">${esc(theme.label)}</option>`))
     .join("");
@@ -800,7 +849,7 @@ function pickGraceLessons(age, count) {
     .sort((a, b) => (Number(a.order) || 50) - (Number(b.order) || 50) || a.name.localeCompare(b.name));
   const already = new Set();
   state.progress.classes.forEach((entry) => {
-    if (!entry.taught || entry.ageGroup !== age || entry.theme !== choice.id) return;
+    if (!entry.taught || !P.ageKeyIncludes(entry.ageGroup, age) || entry.theme !== choice.id) return;
     (entry.techniques || []).forEach((tech) => already.add(tech.id));
   });
   const resume = themed.length ? already.size % themed.length : 0;
@@ -852,7 +901,7 @@ function buildPlan(opts = {}) {
   state.preset = mode;
   const settings = readSettings();
   settings.preset = mode;
-  const age = mode === "toddler" ? "toddler" : settings.ageGroup;
+  const age = curriculumAge(settings.ageGroup, mode);
   const keep = opts.keep || {};
   const exclude = opts.exclude || {};
   const prefer = opts.prefer || {};
@@ -947,7 +996,7 @@ function buildPlan(opts = {}) {
     }
     const key = section === "game" ? "games" : section;
     const cat = section === "game" ? "game" : section;
-    const age = state.plan.mode === "toddler" ? "toddler" : readSettings().ageGroup;
+    const age = curriculumAge(readSettings().ageGroup, state.plan.mode);
     const current = cleanItems(state.plan[key]?.items);
     let next = current;
     if (count < current.length) next = current.slice(0, count);
@@ -1112,11 +1161,40 @@ function bodyHtml(item) {
 
   function rulesFor(plan) {
     if (plan.mode === "toddler") return DATA.rules.slice();
+    const key = plan.settings.ageGroup;
+    const groups = P.parseAgeKey(key);
+    const includesMite = key === "mite" || groups.includes("mite");
+    const includesOlder = P.isCombo(key) ? groups.some((id) => id !== "mite") : key !== "mite";
     const rules = [];
-    if (plan.settings.ageGroup === "mite") rules.push(...DATA.rulesNoRolling);
+    if (includesMite) rules.push(...DATA.rulesNoRolling);
     rules.push(...DATA.rulesCommon);
-    if (plan.settings.ageGroup !== "mite") rules.push(...DATA.rulesSparring);
+    if (includesOlder) rules.push(...DATA.rulesSparring);
+    if (P.isCombo(key)) rules.push(P.COMBO_SPARRING_SAFETY);
     return rules;
+  }
+
+  function comboNoteHtml(text) {
+    if (!text) return "";
+    return `<div class="combo-note">${esc(text)}</div>`;
+  }
+
+  function comboPlanNotes(plan) {
+    if (!plan || plan.mode !== "grace" || !P.isCombo(plan.settings.ageGroup)) return { lesson: "", game: "" };
+    const groups = P.parseAgeKey(plan.settings.ageGroup);
+    const young = groups[0];
+    const themeId = plan.theme && plan.theme.id;
+    const lessons = allActivities().filter(
+      (item) => item.category === "lesson" && (!themeId || item.theme === themeId)
+    );
+    const games = allActivities().filter((item) => {
+      if (item.category !== "game") return false;
+      const themes = Array.isArray(item.themes) ? item.themes : [];
+      return themeId ? themes.includes(themeId) : true;
+    });
+    return {
+      lesson: P.olderVariationNote(young, groups, lessons),
+      game: P.olderVariationNote(young, groups, games),
+    };
   }
 
 function sparringSection(plan) {
@@ -1138,10 +1216,12 @@ function sparringSection(plan) {
                 : "Add the roster before anyone spars. An empty roster drills positions."
           )}</p>
         </div>
+        ${comboNoteHtml(P.isCombo(plan.settings.ageGroup) ? P.COMBO_SPARRING_SAFETY : "")}
       </section>`;
   }
   const points = DATA.sparring.points.map((point) => `<li>${esc(point)}</li>`).join("");
   const who = roster
+    .filter((kid) => P.kidFitsClass(kid.age, plan.settings.ageGroup))
     .map((kid) => {
       const ok = P.kidCanSpar(kid, plan.settings.ageGroup, ratio.ok);
       const stripes = P.clampInt(kid.stripes, 0, 4, 0);
@@ -1158,6 +1238,7 @@ function sparringSection(plan) {
         <ul>${points}</ul>
         <ul>${who}</ul>
       </div>
+      ${comboNoteHtml(P.isCombo(plan.settings.ageGroup) ? P.COMBO_SPARRING_SAFETY : "")}
     </section>`;
 }
 
@@ -1193,17 +1274,21 @@ function sparringSection(plan) {
           day: "numeric",
         })}`
       : "";
-    const group = DATA.ageGroups[s.ageGroup];
+    const youngId = curriculumAge(s.ageGroup, plan.mode);
+    const group = DATA.ageGroups[youngId];
+    const notes = comboPlanNotes(plan);
     const kicker =
       plan.mode === "toddler"
         ? "Toddler intro"
-        : group
-          ? `${group.range} ${group.label}`
-          : "Grace BJJ Kids";
+        : P.isCombo(s.ageGroup)
+          ? P.comboLabel(s.ageGroup)
+          : group
+            ? `${group.range} ${group.label}`
+            : "Grace BJJ Kids";
     const paceNote =
       plan.mode === "toddler"
         ? DATA.ageNotes.toddler
-        : DATA.ageNotes[s.ageGroup] || DATA.ageNotes.mite;
+        : DATA.ageNotes[youngId] || DATA.ageNotes.mite;
     $("plan").dataset.editing = state.showItemShuffle ? "true" : "false";
     $("plan").dataset.mode = plan.mode;
     $("plan").dataset.group = s.ageGroup || "";
@@ -1290,6 +1375,7 @@ function sparringSection(plan) {
                   ? `<p class="focus">${esc(plan.theme.reason)}. ${esc(group ? group.focus : "")}</p>`
                   : ""
               }
+              ${comboNoteHtml(notes.lesson)}
               ${blockItems(plan.lesson).map((item) => renderItem(item, "lesson")).join("")}
             </section>`
           : ""
@@ -1304,6 +1390,7 @@ function sparringSection(plan) {
                 plan.games.title || "Games"
               )}</h2>
               ${plan.games.note ? `<p>${esc(plan.games.note)}</p>` : ""}
+              ${comboNoteHtml(notes.game)}
               ${blockItems(plan.games).map((item) => renderItem(item, "game")).join("")}
             </section>`
           : ""
@@ -1788,7 +1875,9 @@ function sparringSection(plan) {
     root.innerHTML = `
       <h2>At a glance</h2>
       <div class="home-cards">
-        <article class="home-card"><strong>Next class</strong><p>${esc(nextLabel)}, 5:30–6:15 PM</p></article>
+        <article class="home-card"><strong>Next class</strong><p>${esc(nextLabel)}, 5:30–6:15 PM</p>${
+          P.isCombo(state.ageGroup) ? `<p>${esc(P.comboLabel(state.ageGroup))}</p>` : ""
+        }</article>
         <article class="home-card"><strong>Roster</strong><p>${esc(groups.join(" · "))}${outside ? esc(` · Other ages: ${outside}`) : ""}</p></article>
         <article class="home-card"><strong>Close to a stripe</strong><p>${closeText}</p></article>
         <article class="home-card"><strong>Belt hint</strong><p>${beltText}</p></article>
@@ -1796,7 +1885,7 @@ function sparringSection(plan) {
   }
 
   function updateMeta() {
-    const age = state.preset === "toddler" ? "toddler" : state.ageGroup;
+    const age = state.preset === "toddler" ? "toddler" : curriculumAge(state.ageGroup);
     const counts = ["warmup", "base", "lesson", "game"].map((cat) => {
       const n = pool(cat, age).length;
       const custom = state.custom.filter((activity) => activity.category === cat).length;
@@ -1817,7 +1906,11 @@ function sparringSection(plan) {
     if (ratioEl) {
       let source = "";
       if (state.ratioSource === "attendance") source = " Kids are who checked in for this date and class.";
-      else if (state.ratioSource === "roster") source = " Kids are everyone on the roster. Nobody is checked in for this date and class.";
+      else if (state.ratioSource === "roster") {
+        source = P.isCombo(state.ageGroup)
+          ? " Kids are everyone on the roster in the selected age groups. Nobody is checked in for this date and class."
+          : " Kids are everyone on the roster. Nobody is checked in for this date and class.";
+      }
       else if (state.ratioSource === "edited") source = " The kid count was typed in.";
       ratioEl.className = ratio.ok ? "hint" : "hint warn";
       ratioEl.textContent = ratio.text + source;
@@ -1871,7 +1964,10 @@ function sparringSection(plan) {
     const attended = entry && Array.isArray(entry.attended) ? entry.attended : [];
     const fromAttendance = attended.length > 0;
     state.ratioSource = fromAttendance ? "attendance" : "roster";
-    const kids = fromAttendance ? attended.length : Array.isArray(state.roster) ? state.roster.length : 0;
+    const rosterKids = (Array.isArray(state.roster) ? state.roster : []).filter((kid) =>
+      P.kidFitsClass(kid.age, state.ageGroup)
+    );
+    const kids = fromAttendance ? attended.length : rosterKids.length;
     const adults = (state.instructorId || state.instructorName ? 1 : 0) + assistantIdList().length;
     if ($("kidCount")) $("kidCount").value = String(P.clampInt(kids, 0, 40, 0));
     if ($("adultCount")) $("adultCount").value = String(P.clampInt(adults, 0, 20, 0));
@@ -2086,7 +2182,7 @@ function sparringSection(plan) {
     const key = blockKey(section);
     const block = state.plan?.[key];
     if (!block) return;
-    const age = state.plan.mode === "toddler" ? "toddler" : state.plan.settings.ageGroup;
+    const age = curriculumAge(state.plan.settings.ageGroup, state.plan.mode);
     const cat = key === "games" ? "game" : key;
     let replacement = [];
     if (cat === "lesson" && state.plan.mode === "grace" && state.plan.theme) {
@@ -2117,7 +2213,7 @@ function sparringSection(plan) {
     if (state.custom.some((activity) => activity.id === id)) {
       state.custom = state.custom.map((activity) => (activity.id === id ? { ...activity, reps: next } : activity));
     }
-    const age = state.plan?.mode === "toddler" ? "toddler" : state.ageGroup;
+    const age = state.plan?.mode === "toddler" ? "toddler" : curriculumAge(state.ageGroup);
     ["warmup", "base", "lesson", "games"].forEach((key) => {
       const item = state.plan?.[key]?.items?.find((entry) => entry.id === id);
       if (!item) return;
@@ -2602,11 +2698,14 @@ function sparringSection(plan) {
     const date = plan.settings.date || "";
     const entry = classFor(date, plan.settings.ageGroup);
     const attendedIds = entry && Array.isArray(entry.attended) ? entry.attended : [];
+    const classKids = P.sortByRank(state.roster).filter(
+      (kid) => attendedIds.includes(kid.id) || P.kidFitsClass(kid.age, plan.settings.ageGroup)
+    );
     const attended =
-      attendOverride || new Set(attendedIds.length ? attendedIds : state.roster.map((kid) => kid.id));
+      attendOverride || new Set(attendedIds.length ? attendedIds : classKids.map((kid) => kid.id));
     const techs = techniquesOf(plan);
-    const chips = state.roster.length
-      ? P.sortByRank(state.roster)
+    const chips = classKids.length
+      ? classKids
           .map((kid) => {
             const on = attended.has(kid.id) ? " on" : "";
             return `<button type="button" class="chip${on}" data-attend="${esc(kid.id)}">${esc(kid.name)}</button>`;
@@ -2615,7 +2714,7 @@ function sparringSection(plan) {
       : `<p>Add the roster, then check them in or tap who was here.</p>`;
     const blocks = techs
       .map((tech) => {
-        const rows = P.sortByRank(state.roster)
+        const rows = classKids
           .map((kid) => {
             const level = (state.progress.levels[kid.id] || {})[tech.id] || "";
             const buttons = P.LEVELS.map(
@@ -2632,7 +2731,7 @@ function sparringSection(plan) {
       .join("");
     root.innerHTML = `
       <h2>Review class</h2>
-      <p>${esc(plan.theme ? plan.theme.reason : "Technique")}${date ? ` · ${esc(date)}` : ""}</p>
+      <p>${esc(classLabel(plan.settings.ageGroup))}${plan.theme ? ` · ${esc(plan.theme.reason)}` : ""}${date ? ` · ${esc(date)}` : ""}</p>
       <h3>Who was here</h3>
       <div class="chip-row">${chips}</div>
       ${blocks}
@@ -2686,8 +2785,54 @@ function sparringSection(plan) {
   ];
 
   function pastAgeLabel(id) {
+    if (P.isCombo(id)) return P.comboLabel(id);
     const found = PAST_AGES.find((pair) => pair[0] === id);
     return found ? found[1] : id;
+  }
+
+  function selectedPastAgeKey() {
+    const boxes = [...document.querySelectorAll('#pastAge input[name="pastAge"]:checked')].map((box) => box.value);
+    if (boxes.length === 1 && boxes[0] === "toddler") return "toddler";
+    const grace = boxes.filter((id) => id !== "toddler");
+    if (!grace.length) return boxes.includes("toddler") ? "toddler" : P.normalizeAgeKey(state.ageGroup);
+    return P.ageKey(grace);
+  }
+
+  function pastCurriculumAge() {
+    const key = selectedPastAgeKey();
+    return curriculumAge(key);
+  }
+
+  function refreshPastClassFields() {
+    const box = document.activeElement;
+    if (box && box.name === "pastAge") {
+      if (box.value === "toddler" && box.checked) {
+        document.querySelectorAll('#pastAge input[name="pastAge"]').forEach((input) => {
+          if (input !== box) input.checked = false;
+        });
+      } else if (box.checked) {
+        const toddler = document.querySelector('#pastAge input[value="toddler"]');
+        if (toddler) toddler.checked = false;
+      }
+      const checked = [...document.querySelectorAll('#pastAge input[name="pastAge"]:checked')];
+      if (!checked.length) box.checked = true;
+    }
+    const age = pastCurriculumAge();
+    const themes = themesForAge(age);
+    const current = $("pastTheme") ? $("pastTheme").value : "";
+    if ($("pastTheme")) {
+      $("pastTheme").innerHTML =
+        `<option value="">No theme</option>` +
+        themes.map((theme) => `<option value="${esc(theme.id)}">${esc(theme.label)}</option>`).join("");
+      if ([...$("pastTheme").options].some((option) => option.value === current)) $("pastTheme").value = current;
+    }
+    if ($("pastTechs")) $("pastTechs").innerHTML = pastTechMarkup(age, $("pastTheme") ? $("pastTheme").value : "");
+    if ($("pastAttend")) {
+      const on = [...document.querySelectorAll("#pastAttend .chip.on")]
+        .map((btn) => btn.getAttribute("data-past-kid"))
+        .filter(Boolean);
+      $("pastAttend").innerHTML = attendanceChips(on, (kid) => `data-past-kid="${esc(kid.id)}"`, selectedPastAgeKey());
+    }
   }
 
   function progressLevelButtons(kidId, techId, level) {
@@ -2708,10 +2853,11 @@ function sparringSection(plan) {
       .join("")}</div>`;
   }
 
-  function attendanceChips(attended, attrFor) {
+  function attendanceChips(attended, attrFor, ageKey) {
     if (!state.roster.length) return `<p>Add the roster, then mark who was here.</p>`;
     const on = new Set(attended || []);
-    return `<div class="chip-row">${P.sortByRank(state.roster)
+    const kids = P.sortByRank(state.roster).filter((kid) => on.has(kid.id) || P.kidFitsClass(kid.age, ageKey || ""));
+    return `<div class="chip-row">${kids
       .map((kid) => {
         const selected = on.has(kid.id) ? " on" : "";
         const attrs = attrFor(kid);
@@ -2733,7 +2879,7 @@ function sparringSection(plan) {
         return `<article class="past-log">
           <h3>${esc(entry.date)} · ${esc(pastAgeLabel(entry.ageGroup))}${entry.themeLabel ? ` · ${esc(entry.themeLabel)}` : ""}</h3>
           <p>${esc(count)}${names.length ? ` ${esc(names.join(", "))}` : ""}</p>
-          ${attendanceChips(entry.attended, (kid) => `data-class-kid="${esc(kid.id)}" data-class-id="${esc(entry.id)}"`)}
+          ${attendanceChips(entry.attended, (kid) => `data-class-kid="${esc(kid.id)}" data-class-id="${esc(entry.id)}"`, entry.ageGroup)}
           <div class="btn-row">
             <button class="primary" type="button" data-save-attend="${esc(entry.id)}">Save attendance</button>
             <button class="ghost" type="button" data-remove-class="${esc(entry.id)}">Remove class</button>
@@ -2773,7 +2919,7 @@ function sparringSection(plan) {
 
   async function savePastClass() {
     const date = $("pastDate") && $("pastDate").value;
-    const age = ($("pastAge") && $("pastAge").value) || state.ageGroup;
+    const age = $("pastAge") ? selectedPastAgeKey() : state.ageGroup;
     if (!date) {
       setFormNote("pastNote", "Add the date of the class.");
       return;
@@ -2861,12 +3007,16 @@ function sparringSection(plan) {
 
   function renderProgress() {
     const root = $("progressView");
-    const age = state.ageGroup;
+    const classKey = P.normalizeAgeKey(state.ageGroup);
+    const age = curriculumAge(classKey);
     const group = DATA.ageGroups[age];
+    const heading = P.isCombo(classKey) ? P.comboLabel(classKey) : group ? `${group.range} ${group.label}` : "";
     const coverage = themesForAge(age)
       .map((theme) => {
         const since = P.themeStaleness(theme.id, state.progress.classes, age);
-        const hits = state.progress.classes.filter((entry) => entry.taught && entry.ageGroup === age && entry.theme === theme.id);
+        const hits = state.progress.classes.filter(
+          (entry) => entry.taught && P.ageKeyIncludes(entry.ageGroup, age) && entry.theme === theme.id
+        );
         const taughtIds = new Set();
         hits.forEach((entry) => (entry.techniques || []).forEach((tech) => tech && taughtIds.add(tech.id)));
         const missing = pool("lesson", age)
@@ -2905,8 +3055,8 @@ function sparringSection(plan) {
         </article>`;
       })
       .join("");
-    const pastAge = state.ageGroup === "toddler" ? "toddler" : DATA.ageGroups[state.ageGroup] ? state.ageGroup : "mite";
-    const themes = themesForAge(pastAge);
+    const pastIds = classKey === "toddler" ? ["toddler"] : P.parseAgeKey(classKey);
+    const themes = themesForAge(age);
     const stripeSettings = isAdmin()
       ? `<div class="grid-2">
         <div class="field"><label for="stripeOwn">On their own before a stripe hint</label><input id="stripeOwn" type="number" min="1" max="40" value="${esc(state.progress.stripe.own)}" /></div>
@@ -2914,19 +3064,22 @@ function sparringSection(plan) {
       </div>`
       : `<p class="stripe-hint-readonly">Stripe hint: ${esc(state.progress.stripe.own)} techniques on their own + ${esc(state.progress.stripe.attend)} classes (set by admin)</p>`;
     root.innerHTML = `
-      <h2>Progress · ${esc(group ? `${group.range} ${group.label}` : "")}</h2>
+      <h2>Progress · ${esc(heading)}</h2>
       ${stripeSettings}
       <h3>Log a past class</h3>
       <div class="past-class">
         <div class="field"><label for="pastDate">Date</label><input id="pastDate" type="date" /></div>
-        <div class="field"><label for="pastAge">Class</label><select id="pastAge">${PAST_AGES.map(
-          ([id, label]) => `<option value="${esc(id)}"${id === pastAge ? " selected" : ""}>${esc(label)}</option>`
-        ).join("")}</select></div>
+        <div class="field"><span id="pastAgeLabel">Class</span><div class="age-checks" id="pastAge" role="group" aria-labelledby="pastAgeLabel">${PAST_AGES.map(
+          ([id, label]) =>
+            `<label class="check"><input type="checkbox" name="pastAge" value="${esc(id)}"${
+              pastIds.includes(id) ? " checked" : ""
+            } /> ${esc(label)}</label>`
+        ).join("")}</div></div>
         <div class="field"><label for="pastTheme">Theme</label><select id="pastTheme"><option value="">No theme</option>${themes
           .map((theme) => `<option value="${esc(theme.id)}">${esc(theme.label)}</option>`)
           .join("")}</select></div>
-        <div id="pastTechs">${pastTechMarkup(pastAge, "")}</div>
-        <div id="pastAttend">${attendanceChips([], (kid) => `data-past-kid="${esc(kid.id)}"`)}</div>
+        <div id="pastTechs">${pastTechMarkup(age, "")}</div>
+        <div id="pastAttend">${attendanceChips([], (kid) => `data-past-kid="${esc(kid.id)}"`, classKey)}</div>
         <div class="btn-row"><button class="primary" type="button" id="pastSaveBtn">Save past class</button></div>
         <p class="form-note" id="pastNote" role="alert"></p>
         <p class="hint">Saving the same date and class updates that class. Taught classes count toward the stripe hint.</p>
@@ -3035,7 +3188,7 @@ function sparringSection(plan) {
         .join("");
       body = `<article class="signin-sheet"><img class="sheet-logo" src="${esc(LOGO)}" alt="Grace Jiu-Jitsu" /><h2>Sign-in · ${esc(
         date || "class"
-      )}</h2><p>${esc(ageLabel(state.ageGroup))}. Check the box, or scan the code.</p>${rows}</article>`;
+      )}</h2><p>${esc(classLabel(state.ageGroup))}. Check the box, or scan the code.</p>${rows}</article>`;
     } else if (layout === "full") {
       body = kidsForCards()
         .map((kid) => `<article class="card-page">${cardInner(kid, 480)}</article>`)
@@ -3066,12 +3219,17 @@ function sparringSection(plan) {
     const known = [];
     const dup = [];
     const unknown = [];
-    if (!when) return { known, dup, unknown, date: "" };
-    const age = state.ageGroup;
+    const outside = [];
+    if (!when) return { known, dup, unknown, outside, date: "" };
+    const age = P.normalizeAgeKey(state.ageGroup);
     ids.forEach((id) => {
       const kid = state.roster.find((item) => item.id === id);
       if (!kid) {
         unknown.push(id);
+        return;
+      }
+      if (!P.kidFitsClass(kid.age, age)) {
+        outside.push(kid);
         return;
       }
       const entry = ensureClass(when, age);
@@ -3093,7 +3251,17 @@ function sparringSection(plan) {
         toast(err.message || "Could not check that student in.");
       }
     }
-    return { known, dup, unknown, date: when };
+    if ($("checkinStatus") && (known.length || dup.length || outside.length)) {
+      const parts = [];
+      if (known.length) {
+        parts.push(`${known.map((kid) => kid.name).join(", ")} ${known.length === 1 ? "is" : "are"} here.`);
+      }
+      if (dup.length) parts.push(`${dup.map((kid) => kid.name).join(", ")} already checked in.`);
+      if (outside.length) parts.push(outsideSentence(outside));
+      $("checkinStatus").textContent = parts.join(" ");
+      $("checkinStatus").className = known.length ? "checkin-status ok" : "checkin-status dup";
+    }
+    return { known, dup, unknown, outside, date: when };
   }
 
   function resolveScan(id) {
@@ -3303,17 +3471,28 @@ function sparringSection(plan) {
     }
   }
 
+  function outsideSentence(kids) {
+    if (!kids || !kids.length) return "";
+    const names = kids.map((kid) => kid.name).join(", ");
+    return `${names} ${kids.length === 1 ? "is" : "are"} not in this combo class.`;
+  }
+
   function showScanResult(result) {
     const el = $("checkinStatus");
     if (!el) return;
+    const leftOut = outsideSentence(result.outside);
     if (result.known.length) {
       const names = result.known.map((kid) => kid.name).join(", ");
       const extra = result.dup.length ? ` ${result.dup.map((kid) => kid.name).join(", ")} already checked in.` : "";
-      el.textContent = `${names} ${result.known.length === 1 ? "is" : "are"} here.${extra}`;
+      el.textContent = `${names} ${result.known.length === 1 ? "is" : "are"} here.${extra}${leftOut ? ` ${leftOut}` : ""}`;
       el.className = "checkin-status ok";
       beep(true);
     } else if (result.dup.length) {
-      el.textContent = `${result.dup.map((kid) => kid.name).join(", ")} already checked in.`;
+      el.textContent = `${result.dup.map((kid) => kid.name).join(", ")} already checked in.${leftOut ? ` ${leftOut}` : ""}`;
+      el.className = "checkin-status dup";
+      beep(false);
+    } else if (leftOut) {
+      el.textContent = leftOut;
       el.className = "checkin-status dup";
       beep(false);
     } else if (result.unknown.length) {
@@ -3330,14 +3509,20 @@ function sparringSection(plan) {
   function renderCheckinList() {
     const list = $("checkinList");
     if (!list) return;
+    const key = P.normalizeAgeKey(state.ageGroup);
+    const note = $("checkinClass");
+    if (note) {
+      note.textContent = P.isCombo(key) ? `${P.comboLabel(key)}. Check-in accepts kids from any of these groups.` : "";
+    }
     const date = $("checkinDate").value;
-    const entry = classFor(date, state.ageGroup);
+    const entry = classFor(date, key);
     const ids = new Set(entry ? entry.attended : []);
     if (!state.roster.length) {
       list.innerHTML = `<li>No students on the roster yet.</li>`;
       return;
     }
-    list.innerHTML = P.sortByRank(state.roster)
+    const kids = P.sortByRank(state.roster).filter((kid) => ids.has(kid.id) || P.kidFitsClass(kid.age, key));
+    list.innerHTML = kids
       .map((kid) => `<li class="${ids.has(kid.id) ? "here" : ""}">${esc(kid.name)} — ${ids.has(kid.id) ? "here" : "not yet"}</li>`)
       .join("");
   }
@@ -3521,6 +3706,7 @@ function sparringSection(plan) {
   }
 
   function bind() {
+    syncAgeButtons();
     bindResetPassword();
     document.querySelectorAll("[data-step]").forEach((btn) => {
       btn.addEventListener("click", () => {
@@ -3564,7 +3750,7 @@ function sparringSection(plan) {
     listen("ageGroup", "click", (event) => {
       const btn = event.target.closest("button[data-group]");
       if (!btn) return;
-      setAgeGroup(btn.dataset.group, true);
+      toggleAgeGroup(btn.dataset.group);
     });
 
     listen("instructorPick", "change", () => {
@@ -3959,17 +4145,12 @@ function sparringSection(plan) {
       if (event.target.closest("#saveClassBtn")) saveReviewedClass();
     });
     $("progressView").addEventListener("change", (event) => {
-      if (event.target.id === "pastAge") {
-        const age = event.target.value;
-        const themes = themesForAge(age);
-        $("pastTheme").innerHTML =
-          `<option value="">No theme</option>` +
-          themes.map((theme) => `<option value="${esc(theme.id)}">${esc(theme.label)}</option>`).join("");
-        $("pastTechs").innerHTML = pastTechMarkup(age, "");
+      if (event.target.name === "pastAge") {
+        refreshPastClassFields();
         return;
       }
       if (event.target.id === "pastTheme") {
-        $("pastTechs").innerHTML = pastTechMarkup($("pastAge").value, event.target.value);
+        $("pastTechs").innerHTML = pastTechMarkup(pastCurriculumAge(), event.target.value);
         return;
       }
       if (event.target.id !== "stripeOwn" && event.target.id !== "stripeAttend") return;

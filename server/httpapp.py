@@ -13,14 +13,15 @@ import bcrypt
 from server.db import (
     ADULT_BELTS,
     AGE_GROUP_AGES,
-    AGE_GROUPS,
     BELTS,
     LEVELS,
+    age_group_for_age,
     cleanup,
     connect,
     iso,
     migrate,
     new_id,
+    normalize_age_group,
     parse_iso,
     token_hash,
     utcnow,
@@ -250,7 +251,7 @@ class Api:
         date = clip(raw.get("date"), 10)
         if not re.match(r"^\d{4}-\d{2}-\d{2}$", date):
             raise ValueError("The class needs a date.")
-        age = raw.get("ageGroup") if raw.get("ageGroup") in AGE_GROUPS else "mite"
+        age = normalize_age_group(raw.get("ageGroup"))
         attended = []
         for sid in raw.get("attended") or []:
             clean = clean_id(sid)
@@ -430,6 +431,8 @@ class Api:
                 entry["taught"] = True
         elif current:
             entry["id"] = current["id"]
+        attended = self.keep_class_attendance(conn, entry["ageGroup"], attended)
+        entry["attended"] = attended
         payload = (
             entry["id"],
             entry["date"],
@@ -460,6 +463,20 @@ class Api:
             (entry["date"], entry["ageGroup"]),
         ).fetchone()
         return self.class_json(row)
+
+    def keep_class_attendance(self, conn, age_group, attended):
+        parts = [part for part in str(age_group or "").split("+") if part]
+        if len(parts) < 2:
+            return attended
+        allowed = set(parts)
+        kept = []
+        for sid in attended:
+            row = conn.execute("SELECT age FROM students WHERE id = ?", (sid,)).fetchone()
+            if row is not None and age_group_for_age(row["age"]) not in allowed:
+                continue
+            if sid not in kept:
+                kept.append(sid)
+        return kept
 
     def decode_image(self, data_url):
         text = str(data_url or "")

@@ -10,7 +10,7 @@ import urllib.request
 from http.server import ThreadingHTTPServer
 
 from server.httpapp import Api, config_from_env, hash_password
-from server.db import connect, iso, migrate, new_id, utcnow
+from server.db import age_group_for_age, connect, iso, migrate, new_id, normalize_age_group, utcnow
 
 PNG = (
     "data:image/png;base64,"
@@ -673,6 +673,173 @@ class ApiTest(unittest.TestCase):
         self.assertIn("'=1+1", teacher_roster.decode())
         status, _ = admin.call("DELETE", f"/api/students/{student['id']}")
         self.assertEqual(status, 200)
+
+    def test_combo_class_create_edit_list_attend_export(self):
+        self.assertEqual(normalize_age_group("peewee+mite"), "mite+peewee")
+        self.assertEqual(normalize_age_group("junior"), "junior")
+        self.assertEqual(age_group_for_age(5), "mite")
+        self.assertEqual(age_group_for_age(14), "teen")
+        admin = self.client()
+        status, _ = admin.login("dakota", "correct-horse")
+        self.assertEqual(status, 200)
+        created = []
+        class_id = ""
+        ada = ""
+        try:
+            kids = {}
+            for name, age, stripes in (
+                ("ComboAda", 5, 0),
+                ("ComboBea", 8, 1),
+                ("ComboCleo", 11, 1),
+                ("ComboDee", 14, 2),
+            ):
+                status, student = admin.call(
+                    "POST",
+                    "/api/students",
+                    {"name": name, "age": age, "belt": "white", "stripes": stripes},
+                )
+                self.assertEqual(status, 201, student)
+                created.append(student["id"])
+                kids[name] = student["id"]
+            ada = kids["ComboAda"]
+            status, saved = admin.call(
+                "POST",
+                "/api/attendance",
+                {
+                    "date": "2027-06-09",
+                    "ageGroup": "peewee+mite",
+                    "theme": "mount",
+                    "themeLabel": "Mount",
+                    "techniques": [
+                        {"id": "ls-mount-hold", "name": "Hold mount", "position": "Mount", "theme": "mount"}
+                    ],
+                    "game": "Mount switch",
+                    "attended": [kids["ComboAda"], kids["ComboBea"], kids["ComboCleo"], kids["ComboDee"]],
+                    "taught": True,
+                },
+            )
+            self.assertEqual(status, 200, saved)
+            self.assertEqual(saved["ageGroup"], "mite+peewee")
+            self.assertEqual(saved["taught"], True)
+            self.assertCountEqual(saved["attended"], [kids["ComboAda"], kids["ComboBea"]])
+            class_id = saved["id"]
+
+            status, edited = admin.call(
+                "PUT",
+                "/api/classes",
+                {
+                    "id": saved["id"],
+                    "date": "2027-06-09",
+                    "ageGroup": "mite+peewee",
+                    "theme": "mount",
+                    "themeLabel": "Mount combo",
+                    "techniques": saved["techniques"],
+                    "game": "Mount switch",
+                    "attended": [kids["ComboAda"], kids["ComboBea"]],
+                    "taught": True,
+                },
+            )
+            self.assertEqual(status, 200, edited)
+            self.assertEqual(edited["id"], saved["id"])
+            self.assertEqual(edited["themeLabel"], "Mount combo")
+            self.assertEqual(edited["ageGroup"], "mite+peewee")
+
+            status, boot = admin.call("GET", "/api/bootstrap")
+            self.assertEqual(status, 200)
+            listed = [row for row in boot["classes"] if row["date"] == "2027-06-09"]
+            self.assertEqual(len(listed), 1)
+            self.assertEqual(listed[0]["ageGroup"], "mite+peewee")
+            self.assertEqual(listed[0]["themeLabel"], "Mount combo")
+            self.assertCountEqual(listed[0]["attended"], [kids["ComboAda"], kids["ComboBea"]])
+
+            status, level = admin.call(
+                "PUT",
+                "/api/levels",
+                {"studentId": ada, "techId": "ls-mount-hold", "level": "introduced"},
+            )
+            self.assertEqual(status, 200, level)
+            status, boot = admin.call("GET", "/api/bootstrap")
+            self.assertEqual(boot["levels"][ada]["ls-mount-hold"], "introduced")
+            taught = [
+                row
+                for row in boot["classes"]
+                if row["date"] == "2027-06-09" and row["taught"] and ada in row["attended"]
+            ]
+            self.assertEqual(len(taught), 1)
+
+            status, sheet = admin.call("GET", "/api/export/attendance.csv", raw=True)
+            self.assertEqual(status, 200)
+            lines = [line for line in sheet.decode().splitlines() if line.startswith("2027-06-09,")]
+            self.assertGreaterEqual(len(lines), 2)
+            self.assertTrue(all(line.split(",")[1] == "mite+peewee" for line in lines))
+            joined = "\n".join(lines)
+            self.assertIn("ComboAda", joined)
+            self.assertIn("ComboBea", joined)
+            self.assertNotIn("ComboCleo", joined)
+            self.assertNotIn("ComboDee", joined)
+        finally:
+            if class_id:
+                admin.call("DELETE", f"/api/classes/{class_id}")
+            if ada:
+                admin.call("DELETE", "/api/levels", {"studentId": ada, "techId": "ls-mount-hold"})
+            for sid in created:
+                admin.call("DELETE", f"/api/students/{sid}")
+
+    def test_single_age_group_class_is_unchanged(self):
+        self.assertEqual(normalize_age_group("mite"), "mite")
+        self.assertEqual(normalize_age_group("toddler"), "toddler")
+        self.assertEqual(normalize_age_group(""), "mite")
+        admin = self.client()
+        status, _ = admin.login("dakota", "correct-horse")
+        self.assertEqual(status, 200)
+        created = []
+        class_id = ""
+        try:
+            kids = {}
+            for name, age in (("SoloMite", 5), ("SoloTeen", 14)):
+                status, student = admin.call(
+                    "POST",
+                    "/api/students",
+                    {"name": name, "age": age, "belt": "white", "stripes": 1},
+                )
+                self.assertEqual(status, 201, student)
+                created.append(student["id"])
+                kids[name] = student["id"]
+            status, saved = admin.call(
+                "POST",
+                "/api/attendance",
+                {
+                    "date": "2027-08-11",
+                    "ageGroup": "mite",
+                    "theme": "mount",
+                    "themeLabel": "Mount",
+                    "techniques": [],
+                    "game": "",
+                    "attended": [kids["SoloMite"], kids["SoloTeen"]],
+                    "taught": True,
+                },
+            )
+            self.assertEqual(status, 200, saved)
+            self.assertEqual(saved["ageGroup"], "mite")
+            self.assertCountEqual(saved["attended"], [kids["SoloMite"], kids["SoloTeen"]])
+            class_id = saved["id"]
+            status, boot = admin.call("GET", "/api/bootstrap")
+            listed = [row for row in boot["classes"] if row["date"] == "2027-08-11"]
+            self.assertEqual(len(listed), 1)
+            self.assertEqual(listed[0]["ageGroup"], "mite")
+            status, sheet = admin.call("GET", "/api/export/attendance.csv", raw=True)
+            lines = [line for line in sheet.decode().splitlines() if line.startswith("2027-08-11,")]
+            self.assertEqual(len(lines), 2)
+            self.assertTrue(all(line.split(",")[1] == "mite" for line in lines))
+            joined = "\n".join(lines)
+            self.assertIn("SoloMite", joined)
+            self.assertIn("SoloTeen", joined)
+            self.assertNotIn("+", ",".join(line.split(",")[1] for line in lines))
+        finally:
+            if class_id:
+                admin.call("DELETE", f"/api/classes/{class_id}")
+            for sid in created:
+                admin.call("DELETE", f"/api/students/{sid}")
 
 
 def _handler(api):

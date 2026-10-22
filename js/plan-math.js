@@ -7,6 +7,16 @@
   const FIRST_CLASS_ISO = "2026-10-27";
   const RATIO_LIMIT = 4;
   const AGE_IDS = ["mite", "peewee", "junior", "teen", "toddler"];
+  const GRACE_AGES = ["mite", "peewee", "junior", "teen"];
+  const AGE_RANGES = {
+    mite: "4–6",
+    peewee: "7–9",
+    junior: "10–12",
+    teen: "13–15",
+    toddler: "3–5",
+  };
+  const COMBO_SPARRING_SAFETY =
+    "Partner kids within their own age group and similar size. Never pair a 4–6 with a 10–15.";
   const CATEGORIES = ["warmup", "lesson", "game", "base"];
   const BELT_ORDER = [
     "white",
@@ -373,10 +383,104 @@
     };
   }
 
+  function parseAgeKey(value) {
+    const raw = String(value == null ? "" : value).trim().toLowerCase();
+    if (raw === "toddler") return ["toddler"];
+    const out = [];
+    raw.split("+").forEach((part) => {
+      const id = part.trim();
+      if (GRACE_AGES.includes(id) && !out.includes(id)) out.push(id);
+    });
+    out.sort((a, b) => GRACE_AGES.indexOf(a) - GRACE_AGES.indexOf(b));
+    return out;
+  }
+
+  function normalizeAgeKey(value) {
+    const raw = String(value == null ? "" : value).trim().toLowerCase();
+    if (raw === "toddler") return "toddler";
+    const ids = parseAgeKey(raw);
+    return ids.length ? ids.join("+") : "mite";
+  }
+
+  function ageKey(ids) {
+    return normalizeAgeKey(Array.isArray(ids) ? ids.join("+") : ids);
+  }
+
+  function isCombo(value) {
+    return parseAgeKey(value).length > 1;
+  }
+
+  function youngestAge(value) {
+    const ids = parseAgeKey(value);
+    return ids[0] || "mite";
+  }
+
+  function comboLabel(value) {
+    const ids = parseAgeKey(value);
+    if (ids.length < 2) return "";
+    return `Combo class: ${ids.map((id) => AGE_RANGES[id] || id).join(" + ")}`;
+  }
+
+  function ageKeyIncludes(entryAge, age) {
+    const entryKey = normalizeAgeKey(entryAge);
+    const want = String(age == null ? "" : age).trim().toLowerCase();
+    if (!want) return false;
+    if (entryKey === want) return true;
+    const entryParts = parseAgeKey(entryKey);
+    if (entryParts.includes(want)) return true;
+    const wantParts = parseAgeKey(want);
+    if (wantParts.length > 1) return entryParts.some((part) => wantParts.includes(part));
+    return false;
+  }
+
+  function kidGroupId(ageNumber) {
+    const n = Number(ageNumber);
+    if (n >= 4 && n <= 6) return "mite";
+    if (n >= 7 && n <= 9) return "peewee";
+    if (n >= 10 && n <= 12) return "junior";
+    if (n >= 13 && n <= 15) return "teen";
+    return "";
+  }
+
+  function kidFitsClass(ageNumber, value) {
+    if (!isCombo(value)) return true;
+    const group = kidGroupId(ageNumber);
+    return !!group && parseAgeKey(value).includes(group);
+  }
+
+  function olderVariationNote(youngest, groups, items) {
+    const young = GRACE_AGES.includes(youngest) ? youngest : youngestAge(youngest);
+    const ids = (Array.isArray(groups) ? groups : parseAgeKey(groups)).filter((id) => GRACE_AGES.includes(id));
+    const older = ids.filter((id) => id !== young);
+    if (!older.length) return "";
+    const list = Array.isArray(items) ? items : [];
+    const youngRange = AGE_RANGES[young] || young;
+    const bits = older.map((id) => {
+      const names = [];
+      list.forEach((item) => {
+        const ages = item && Array.isArray(item.ages) ? item.ages : [];
+        if (!ages.includes(id) || ages.includes(young)) return;
+        const name = String((item && (item.name || item.label)) || "").trim();
+        if (name && !names.includes(name) && names.length < 3) names.push(name);
+      });
+      const range = AGE_RANGES[id] || id;
+      if (names.length) return `${range}: ${names.join(", ")}`;
+      return `${range}: use the ${youngRange} version`;
+    });
+    return `Older kids: ${bits.join(". ")}.`;
+  }
+
   function kidCanSpar(kid, ageGroup, ratioOk) {
-    if (ageGroup === "mite" || ageGroup === "toddler") return false;
     if (!ratioOk) return false;
-    return clampInt(kid && kid.stripes, 0, 4, 0) >= 1;
+    const stripes = clampInt(kid && kid.stripes, 0, 4, 0);
+    if (isCombo(ageGroup)) {
+      if (stripes < 1) return false;
+      const group = kidGroupId(kid && kid.age);
+      if (!group || group === "mite") return false;
+      return parseAgeKey(ageGroup).includes(group);
+    }
+    if (ageGroup === "mite" || ageGroup === "toddler") return false;
+    return stripes >= 1;
   }
 
   function sanitizeIdList(list) {
@@ -479,7 +583,7 @@
 
   function themeStaleness(themeId, logs, ageGroup) {
     const relevant = (Array.isArray(logs) ? logs : []).filter(
-      (entry) => entry && entry.taught && entry.ageGroup === ageGroup
+      (entry) => entry && entry.taught && ageKeyIncludes(entry.ageGroup, ageGroup)
     );
     let last = -1;
     relevant.forEach((entry, index) => {
@@ -557,7 +661,7 @@ function sanitizeProgress(raw) {
     progress.classes.push({
       id,
       date: parseISODate(entry.date) ? entry.date : "",
-      ageGroup: AGE_IDS.includes(entry.ageGroup) ? entry.ageGroup : "mite",
+      ageGroup: normalizeAgeKey(entry.ageGroup),
       theme: sanitizeTheme(entry.theme),
       themeLabel: sanitizeText(entry.themeLabel, 48),
       techniques,
@@ -704,6 +808,18 @@ function sanitizeProgress(raw) {
     FIRST_CLASS_ISO,
     RATIO_LIMIT,
     AGE_IDS,
+    GRACE_AGES,
+    AGE_RANGES,
+    COMBO_SPARRING_SAFETY,
+    parseAgeKey,
+    normalizeAgeKey,
+    ageKey,
+    isCombo,
+    youngestAge,
+    comboLabel,
+    ageKeyIncludes,
+    kidFitsClass,
+    olderVariationNote,
     CATEGORIES,
     BELT_ORDER,
     BELT_LABELS,
