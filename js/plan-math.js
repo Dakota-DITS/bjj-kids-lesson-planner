@@ -835,6 +835,74 @@ function sanitizeProgress(raw) {
     return ids.concat(key);
   }
 
+  const REORDER_SECTIONS = ["warmup", "base", "lesson", "game", "sparring"];
+
+  function moveWithinList(ids, fromId, toId, placement) {
+    const list = (Array.isArray(ids) ? ids : []).map((id) => String(id));
+    const fromKey = String(fromId);
+    const toKey = String(toId);
+    const from = list.indexOf(fromKey);
+    const to = list.indexOf(toKey);
+    if (from < 0 || to < 0 || fromKey === toKey) return list;
+    const next = list.slice();
+    next.splice(from, 1);
+    let dest = next.indexOf(toKey);
+    if (dest < 0) return list;
+    if (placement === "after") dest += 1;
+    next.splice(dest, 0, fromKey);
+    return next;
+  }
+
+  function reorderSectionItems(section, items, fromId, toId, placement) {
+    const list = (Array.isArray(items) ? items : []).filter((item) => item && item.id != null);
+    if (!REORDER_SECTIONS.includes(section)) return list.slice();
+    const order = moveWithinList(
+      list.map((item) => item.id),
+      fromId,
+      toId,
+      placement
+    );
+    const byId = new Map(list.map((item) => [String(item.id), item]));
+    return order.map((id) => byId.get(id)).filter(Boolean);
+  }
+
+  function stampItemClocks(items, startSec, budgetSec, startMinutes) {
+    const list = (Array.isArray(items) ? items : []).filter((item) => item && typeof item === "object");
+    const times = allocateItemTimes(
+      list.map((item) => item.prefMinutes || item.catalogMinutes || 2),
+      budgetSec
+    );
+    let cursor = Math.max(0, Math.round(Number(startSec) || 0));
+    return list.map((item, index) => {
+      const duration = times[index] || 0;
+      const stamped = {
+        ...item,
+        start: cursor,
+        duration,
+        when: clockRange(startMinutes, cursor, duration),
+      };
+      cursor += duration;
+      return stamped;
+    });
+  }
+
+  function restampPlanSections(sections, startSec, startMinutes) {
+    let cursor = Math.max(0, Math.round(Number(startSec) || 0));
+    return (Array.isArray(sections) ? sections : []).map((section) => {
+      const duration = Math.max(0, Math.round(Number(section && section.duration) || 0));
+      const items = stampItemClocks(section && section.items, cursor, duration, startMinutes);
+      const block = {
+        id: section && section.id,
+        start: cursor,
+        duration,
+        when: clockRange(startMinutes, cursor, duration),
+        items,
+      };
+      cursor += duration;
+      return block;
+    });
+  }
+
   function takeSequence(items, count, offset) {
     const list = Array.isArray(items) ? items : [];
     const n = Math.max(0, Math.round(Number(count) || 0));
@@ -1016,6 +1084,11 @@ function sanitizeProgress(raw) {
     keepAgeOverrides,
     ageOverrideGroups,
     togglePlanIds,
+    moveWithinList,
+    reorderSectionItems,
+    stampItemClocks,
+    restampPlanSections,
+    REORDER_SECTIONS,
     takeSequence,
     CLASS_KEYS,
     qrChecksum,

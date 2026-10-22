@@ -654,23 +654,7 @@
   }
 
   function stampItems(items, start, budget, startMinutes) {
-    const list = (Array.isArray(items) ? items : []).filter((item) => item && typeof item === "object");
-    const times = P.allocateItemTimes(
-      list.map((item) => item.prefMinutes || item.catalogMinutes || 2),
-      budget
-    );
-    let cursor = start;
-    return list.map((item, index) => {
-      const duration = times[index] || 0;
-      const block = {
-        ...item,
-        start: cursor,
-        duration,
-        when: P.clockRange(startMinutes, cursor, duration),
-      };
-      cursor += duration;
-      return block;
-    });
+    return P.stampItemClocks(items, start, budget, startMinutes);
   }
 
   function gameMeta(games, mode) {
@@ -1362,16 +1346,70 @@ function bodyHtml(item) {
       const el = [...buttons].find((btn) => btn.dataset.planToggle === focus.section && btn.dataset.id === focus.id);
       if (el) el.focus();
     }
+    if (focus.kind === "reorder") {
+      const handles = document.querySelectorAll("#plan .reorder-handle");
+      const el = [...handles].find((btn) => btn.dataset.reorder === focus.section && btn.dataset.id === focus.id);
+      if (el) el.focus();
+    }
   }
 
-  function renderItem(item, section) {
+  function reorderTools(item, section, index, count) {
+    if (!item || item.id == null) return "";
+    if (!["warmup", "base", "lesson", "game"].includes(section)) return "";
+    if (!Number.isInteger(index) || !(count > 0)) return "";
+    const name = fill(item.name || "", item) || "item";
+    const upOff = index <= 0 ? " disabled" : "";
+    const downOff = index >= count - 1 ? " disabled" : "";
+    return `<div class="reorder-tools no-print">
+      <button type="button" class="reorder-handle" data-reorder="${esc(section)}" data-id="${esc(item.id)}" aria-label="Reorder ${esc(name)}" aria-keyshortcuts="ArrowUp ArrowDown"><span aria-hidden="true">≡</span></button>
+      <button type="button" class="reorder-step" data-move="up" data-reorder="${esc(section)}" data-id="${esc(item.id)}" aria-label="Move ${esc(name)} up"${upOff}>Move up</button>
+      <button type="button" class="reorder-step" data-move="down" data-reorder="${esc(section)}" data-id="${esc(item.id)}" aria-label="Move ${esc(name)} down"${downOff}>Move down</button>
+    </div>`;
+  }
+
+  function announceReorder(name, position, total) {
+    const el = $("reorderStatus");
+    if (!el) return;
+    el.textContent = "";
+    el.textContent = `${name} moved to position ${position} of ${total}`;
+  }
+
+  function applyReorder(section, fromId, toId, placement) {
+    if (!state.plan || !P.REORDER_SECTIONS.includes(section)) return;
+    const key = blockKey(section);
+    const current = state.plan[key] && state.plan[key].items;
+    if (!Array.isArray(current) || current.length < 2) return;
+    const next = P.reorderSectionItems(section, current, fromId, toId, placement);
+    const before = current.map((item) => String(item.id)).join("\n");
+    const after = next.map((item) => String(item.id)).join("\n");
+    if (before === after) return;
+    state.plan[key] = { ...state.plan[key], items: next };
+    const position = next.findIndex((item) => String(item.id) === String(fromId)) + 1;
+    const moved = next[position - 1];
+    const name = (moved && moved.name) || "Item";
+    state.planFocus = { kind: "reorder", section, id: String(fromId) };
+    retimePlan();
+    announceReorder(name, position, next.length);
+  }
+
+  function applyReorderStep(section, id, dir) {
+    const key = blockKey(section);
+    const items = (state.plan?.[key]?.items || []).filter((item) => item && item.id != null);
+    const index = items.findIndex((item) => String(item.id) === String(id));
+    const target = index + dir;
+    if (index < 0 || target < 0 || target >= items.length) return;
+    applyReorder(section, id, items[target].id, dir < 0 ? "before" : "after");
+  }
+
+  function renderItem(item, section, index, count) {
     if (!item || typeof item !== "object") return "";
     const picker = !!PICK[section] && section !== "sparring";
     const hidden = picker && planQuery(section).trim() && !P.matchesPlanQuery(item, planQuery(section));
     const name = fill(item.name || "", item);
     const equip = item.equipment ? `<p>Equipment: ${esc(fill(item.equipment, item))}</p>` : "";
     return `
-      <div class="item${hidden ? " is-search-hidden" : ""}">
+      <div class="item${hidden ? " is-search-hidden" : ""}" data-plan-section="${esc(section)}" data-id="${esc(item.id || "")}">
+        ${reorderTools(item, section, index, count)}
         <h3 class="item-title">
           <span class="when">${esc(item.when || "")}</span>
           <strong class="name-live">${esc(name)}</strong>
@@ -1633,7 +1671,7 @@ function sparringSection(plan) {
               } ${countMark(blockItems(plan.warmup).length)}</h2>
               <p class="callout">${esc(paceNote)}</p>
               ${searchField("warmup")}
-              ${blockItems(plan.warmup).map((item) => renderItem(item, "warmup")).join("")}
+              ${blockItems(plan.warmup).map((item, index, list) => renderItem(item, "warmup", index, list.length)).join("")}
               ${pickerEmpty("warmup")}
               <div class="item"><p>If they get wild:</p>${sayHtml(DATA.wildReset)}</div>
               ${pickerRest("warmup")}
@@ -1646,7 +1684,7 @@ function sparringSection(plan) {
           ? `<section class="block">
               <h2 class="block-title"><span class="when">${esc(plan.base.when)}</span> Base ${countMark(blockItems(plan.base).length)}</h2>
               ${searchField("base")}
-              ${blockItems(plan.base).map((item) => renderItem(item, "base")).join("")}
+              ${blockItems(plan.base).map((item, index, list) => renderItem(item, "base", index, list.length)).join("")}
               ${pickerEmpty("base")}
               ${pickerRest("base")}
             </section>`
@@ -1667,7 +1705,7 @@ function sparringSection(plan) {
               }
               ${comboNoteHtml(notes.lesson)}
               ${searchField("lesson")}
-              ${blockItems(plan.lesson).map((item) => renderItem(item, "lesson")).join("")}
+              ${blockItems(plan.lesson).map((item, index, list) => renderItem(item, "lesson", index, list.length)).join("")}
               ${pickerEmpty("lesson")}
               ${pickerRest("lesson")}
             </section>`
@@ -1685,7 +1723,7 @@ function sparringSection(plan) {
               ${plan.games.note ? `<p>${esc(plan.games.note)}</p>` : ""}
               ${comboNoteHtml(notes.game)}
               ${searchField("game")}
-              ${blockItems(plan.games).map((item) => renderItem(item, "game")).join("")}
+              ${blockItems(plan.games).map((item, index, list) => renderItem(item, "game", index, list.length)).join("")}
               ${pickerEmpty("game")}
               ${pickerRest("game")}
             </section>`
@@ -4298,7 +4336,151 @@ function sparringSection(plan) {
       state.planFocus = { kind: "search", section: input.dataset.planSearch, pos: input.selectionStart };
       renderPlan();
     });
+
+    const REORDER_SLOP = 8;
+    let reorderDrag = null;
+    let swallowPlanClick = false;
+
+    function clearReorderMarks() {
+      document.body.classList.remove("is-reordering");
+      document.querySelectorAll("#plan .item.is-dragging, #plan .item.drop-before, #plan .item.drop-after").forEach((el) => {
+        el.classList.remove("is-dragging", "drop-before", "drop-after");
+      });
+    }
+
+    function sectionItems(section) {
+      return [...document.querySelectorAll("#plan .item[data-plan-section]")].filter(
+        (item) => item.dataset.planSection === section && !item.classList.contains("is-search-hidden") && item.dataset.id
+      );
+    }
+
+    function markReorderDrop(clientY) {
+      document.querySelectorAll("#plan .item.drop-before, #plan .item.drop-after").forEach((el) => {
+        el.classList.remove("drop-before", "drop-after");
+      });
+      if (!reorderDrag) return;
+      const items = sectionItems(reorderDrag.section).filter((item) => item.dataset.id !== reorderDrag.id);
+      let choice = null;
+      items.forEach((item) => {
+        if (choice && choice.placement === "before") return;
+        const rect = item.getBoundingClientRect();
+        const mid = rect.top + rect.height / 2;
+        if (clientY < mid) choice = { id: item.dataset.id, placement: "before", el: item };
+        else choice = { id: item.dataset.id, placement: "after", el: item };
+      });
+      reorderDrag.targetId = choice ? choice.id : "";
+      reorderDrag.placement = choice ? choice.placement : "before";
+      if (choice) choice.el.classList.add(choice.placement === "before" ? "drop-before" : "drop-after");
+    }
+
+    function scrollReorderEdge() {
+      if (!reorderDrag || !reorderDrag.active) {
+        if (reorderDrag) reorderDrag.frame = 0;
+        return;
+      }
+      const edge = 72;
+      const y = reorderDrag.clientY;
+      let delta = 0;
+      if (y < edge) delta = -Math.max(6, Math.ceil((edge - y) / 3));
+      else if (y > window.innerHeight - edge) delta = Math.max(6, Math.ceil((y - (window.innerHeight - edge)) / 3));
+      if (delta && document.scrollingElement) {
+        document.scrollingElement.scrollTop += delta;
+        markReorderDrop(y);
+      }
+      reorderDrag.frame = requestAnimationFrame(scrollReorderEdge);
+    }
+
+    function stopReorderDrag() {
+      if (reorderDrag && reorderDrag.frame) cancelAnimationFrame(reorderDrag.frame);
+      reorderDrag = null;
+      clearReorderMarks();
+    }
+
+    $("plan").addEventListener("pointerdown", (event) => {
+      const handle = event.target.closest(".reorder-handle");
+      if (!handle || event.button > 0) return;
+      if (!P.REORDER_SECTIONS.includes(handle.dataset.reorder)) return;
+      handle.focus();
+      reorderDrag = {
+        pointerId: event.pointerId,
+        section: handle.dataset.reorder,
+        id: handle.dataset.id,
+        startX: event.clientX,
+        startY: event.clientY,
+        clientY: event.clientY,
+        active: false,
+        targetId: "",
+        placement: "before",
+        frame: 0,
+      };
+      try { handle.setPointerCapture(event.pointerId); } catch (err) { /* the pointer can end before capture */ }
+    });
+    $("plan").addEventListener("pointermove", (event) => {
+      if (!reorderDrag || event.pointerId !== reorderDrag.pointerId) return;
+      const dx = event.clientX - reorderDrag.startX;
+      const dy = event.clientY - reorderDrag.startY;
+      if (!reorderDrag.active) {
+        if (dx * dx + dy * dy < REORDER_SLOP * REORDER_SLOP) return;
+        reorderDrag.active = true;
+        swallowPlanClick = true;
+        document.body.classList.add("is-reordering");
+        const source = sectionItems(reorderDrag.section).find((item) => item.dataset.id === reorderDrag.id);
+        if (source) source.classList.add("is-dragging");
+        reorderDrag.frame = requestAnimationFrame(scrollReorderEdge);
+      }
+      event.preventDefault();
+      reorderDrag.clientY = event.clientY;
+      markReorderDrop(event.clientY);
+    }, { passive: false });
+    $("plan").addEventListener("pointerup", (event) => {
+      if (!reorderDrag || event.pointerId !== reorderDrag.pointerId) return;
+      if (reorderDrag.active) markReorderDrop(event.clientY);
+      const pending = reorderDrag.active
+        ? {
+            section: reorderDrag.section,
+            id: reorderDrag.id,
+            targetId: reorderDrag.targetId,
+            placement: reorderDrag.placement,
+          }
+        : null;
+      stopReorderDrag();
+      if (!pending || !pending.targetId) return;
+      applyReorder(pending.section, pending.id, pending.targetId, pending.placement);
+    });
+    $("plan").addEventListener("pointercancel", (event) => {
+      if (!reorderDrag || event.pointerId !== reorderDrag.pointerId) return;
+      stopReorderDrag();
+    });
+    $("plan").addEventListener("keydown", (event) => {
+      const handle = event.target.closest(".reorder-handle");
+      if (!handle) return;
+      if (event.key === "Escape" && reorderDrag) {
+        event.preventDefault();
+        stopReorderDrag();
+        return;
+      }
+      if (event.key !== "ArrowUp" && event.key !== "ArrowDown") return;
+      event.preventDefault();
+      applyReorderStep(handle.dataset.reorder, handle.dataset.id, event.key === "ArrowUp" ? -1 : 1);
+    });
+    document.addEventListener("keydown", (event) => {
+      if (!reorderDrag || event.key !== "Escape") return;
+      event.preventDefault();
+      stopReorderDrag();
+    });
+
     $("plan").addEventListener("click", (event) => {
+      if (swallowPlanClick) {
+        swallowPlanClick = false;
+        event.preventDefault();
+        return;
+      }
+      const step = event.target.closest("[data-move]");
+      if (step) {
+        if (step.disabled) return;
+        applyReorderStep(step.dataset.reorder, step.dataset.id, step.dataset.move === "up" ? -1 : 1);
+        return;
+      }
       const clear = event.target.closest("[data-plan-clear]");
       if (clear) {
         if (clear.disabled) return;
