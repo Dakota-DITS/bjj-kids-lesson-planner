@@ -1005,6 +1005,15 @@ function sanitizeProgress(raw) {
     return "";
   }
 
+  function displayStaffName(name, username) {
+    const stored = String(name == null ? "" : name).trim();
+    const login = String(username == null ? "" : username).trim();
+    const source = stored || login;
+    if (!source) return "";
+    if (stored && (!login || stored.toLowerCase() !== login.toLowerCase())) return stored;
+    return source.charAt(0).toLocaleUpperCase() + source.slice(1);
+  }
+
   function pacedReps(base, ageGroup) {
     const n = Math.max(1, Math.round(Number(base) || 1));
     if (ageGroup === "mite") return Math.max(1, Math.round(n * 0.5));
@@ -1036,6 +1045,7 @@ function sanitizeProgress(raw) {
     STANDARD_PLAY,
     BASE_ORDER,
     escapeHtml,
+    displayStaffName,
     cleanId,
     clampInt,
     clampNum,

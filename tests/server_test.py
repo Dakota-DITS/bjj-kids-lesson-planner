@@ -335,6 +335,48 @@ class ApiTest(unittest.TestCase):
         self.assertEqual(status, 200)
         self.assertTrue(any(person["login"] and person["name"] == "dakota" for person in boot["staff"]))
         self.assertTrue(any(person["login"] and person["userId"] == body["user"]["id"] for person in boot["staff"]))
+        dakota_staff = next(person for person in boot["staff"] if person["userId"] == body["user"]["id"])
+        self.assertEqual(dakota_staff["username"], "dakota")
+        self.assertEqual(dakota_staff["displayName"], "Dakota")
+        self.assertEqual(body["user"]["username"], "dakota")
+        self.assertEqual(body["user"]["displayName"], "Dakota")
+        alex_staff = next(person for person in boot["staff"] if person["username"] == "alex")
+        self.assertEqual(alex_staff["name"], "alex")
+        self.assertEqual(alex_staff["displayName"], "Alex")
+        status, users = admin.call("GET", "/api/users")
+        self.assertEqual(status, 200)
+        listed = next(user for user in users["users"] if user["id"] == body["user"]["id"])
+        self.assertEqual(listed["username"], "dakota")
+        self.assertEqual(listed["displayName"], "Dakota")
+        conn = self.api.db()
+        try:
+            stored = conn.execute("SELECT username FROM users WHERE id = ?", (body["user"]["id"],)).fetchone()
+            self.assertEqual(stored["username"], "dakota")
+        finally:
+            conn.close()
+        status, renamed = admin.call(
+            "PATCH",
+            f"/api/staff/{dakota_staff['id']}",
+            {"name": "Coach Dak", "belt": dakota_staff["belt"], "stripes": dakota_staff["stripes"]},
+        )
+        self.assertEqual(status, 200)
+        self.assertEqual(renamed["name"], "Coach Dak")
+        self.assertEqual(renamed["displayName"], "Coach Dak")
+        self.assertEqual(renamed["username"], "dakota")
+        status, restored_name = admin.call(
+            "PATCH",
+            f"/api/staff/{dakota_staff['id']}",
+            {"name": "dakota", "belt": dakota_staff["belt"], "stripes": dakota_staff["stripes"]},
+        )
+        self.assertEqual(status, 200)
+        self.assertEqual(restored_name["name"], "dakota")
+        self.assertEqual(restored_name["displayName"], "Dakota")
+        conn = self.api.db()
+        try:
+            stored = conn.execute("SELECT username FROM users WHERE id = ?", (body["user"]["id"],)).fetchone()
+            self.assertEqual(stored["username"], "dakota")
+        finally:
+            conn.close()
         sam = next((student for student in boot["students"] if student["name"] == "Sam"), None)
         created_student = ""
         if not sam:
@@ -351,6 +393,16 @@ class ApiTest(unittest.TestCase):
         self.assertEqual(status, 201)
         self.assertEqual(helper["login"], False)
         self.assertEqual(helper["belt"], "white")
+        self.assertEqual(helper["name"], "Quinn Helper")
+        self.assertEqual(helper["username"], "")
+        self.assertEqual(helper["displayName"], "Quinn Helper")
+        status, typed = admin.call("POST", "/api/staff", {"name": "sam", "belt": "white", "stripes": 0})
+        self.assertEqual(status, 201)
+        self.assertEqual(typed["name"], "sam")
+        self.assertEqual(typed["displayName"], "sam")
+        self.assertEqual(typed["username"], "")
+        status, removed_typed = admin.call("DELETE", f"/api/staff/{typed['id']}")
+        self.assertEqual(status, 200)
         status, patched = admin.call("PATCH", f"/api/staff/{helper['id']}", {"name": "Quinn Helper", "belt": "blue", "stripes": 0})
         self.assertEqual(status, 200)
         self.assertEqual(patched["belt"], "blue")
