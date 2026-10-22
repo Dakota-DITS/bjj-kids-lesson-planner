@@ -12,8 +12,8 @@
   <meta name="apple-mobile-web-app-title" content="Grace BJJ Staff" />
   <link rel="icon" href="/icons/staff-favicon-32.png" type="image/png" sizes="32x32" />
   <link rel="apple-touch-icon" href="/icons/staff-apple-touch-icon.png" sizes="180x180" />
-  <link rel="stylesheet" href="/css/styles.css?v=20261021-17" />
-  <script src="/pwa.js?v=20261021-17" defer></script>
+  <link rel="stylesheet" href="/css/styles.css?v=20261021-18" />
+  <script src="/pwa.js?v=20261021-18" defer></script>
 </head>
 <body>
   <p id="gate" class="gate">Checking the teacher login…</p>
@@ -205,6 +205,7 @@
         </div>
         <div class="btn-row">
           <button class="primary" id="generateBtn" type="button">Generate class</button>
+          <button class="ghost" id="savePlanBtn" type="button">Save plan</button>
         </div>
         <div class="btn-row" style="margin-top:8px">
           <button class="ghost" id="firstPlanBtn" type="button">Load first class plan</button>
@@ -212,6 +213,13 @@
           <button class="ghost" id="rerollLessonBtn" type="button">Shuffle technique</button>
           <button class="ghost" id="rerollGameBtn" type="button">Shuffle game</button>
         </div>
+        <h3>Saved plans</h3>
+        <p id="editingPlan" class="hint hidden"></p>
+        <div class="btn-row">
+          <button class="ghost hidden" id="newPlanBtn" type="button">Start a new plan</button>
+        </div>
+        <p class="hint">Saved for a class date and age group. Upcoming classes are listed first.</p>
+        <div id="savedPlans" class="saved-plans"></div>
       </section>
 
       <section class="panel">
@@ -250,7 +258,7 @@
 
       <section class="panel">
         <h2>Your library</h2>
-        <p class="hint">Plans and the library stay in this browser. Attendance stays on the server.</p>
+        <p class="hint">The library stays in this browser. Saved class plans and attendance stay on the server.</p>
         <div class="tabs" id="libTabs">
           <button type="button" data-cat="warmup" class="on">Warm-ups</button>
           <button type="button" data-cat="base">Base</button>
@@ -442,7 +450,7 @@
         </div>
         <div class="admin-only blank-tools">
           <h3>Blank cards</h3>
-          <p class="hint">Each card gets its own code when you print it. Write the name and class, then scan the card to add the student.</p>
+          <p class="hint">Each new print gets its own code. Reprint unused blank cards when you already have some. Write the name and class, then scan the card to add the student.</p>
           <div class="field">
             <label for="blankCount">How many</label>
             <input id="blankCount" type="number" inputmode="numeric" min="1" max="24" value="8" />
@@ -450,7 +458,9 @@
           <div class="btn-row">
             <button class="ghost" id="blankWalletBtn" type="button">Blank wallet cards</button>
             <button class="ghost" id="blankFullBtn" type="button">Blank full-page cards</button>
+            <button class="ghost" id="reprintBlankBtn" type="button">Reprint unused blank cards</button>
           </div>
+          <div id="blankReprint" class="hidden"></div>
         </div>
         <details class="admin-only" id="cardRecords">
           <summary>Card records</summary>
@@ -583,12 +593,12 @@
     </form>
   </dialog>
 
-  <script src="/vendor/qrcode-generator/qrcode.js?v=20261021-17"></script>
-  <script src="/vendor/jsQR/jsQR.js?v=20261021-17"></script>
-  <script src="/js/plan-math.js?v=20261021-17"></script>
-  <script src="/js/data.js?v=20261021-17"></script>
-  <script src="/js/curriculum.js?v=20261021-17"></script>
-  <script src="/js/api.js?v=20261021-17"></script>
-  <script src="/js/app.js?v=20261021-17"></script>
+  <script src="/vendor/qrcode-generator/qrcode.js?v=20261021-18"></script>
+  <script src="/vendor/jsQR/jsQR.js?v=20261021-18"></script>
+  <script src="/js/plan-math.js?v=20261021-18"></script>
+  <script src="/js/data.js?v=20261021-18"></script>
+  <script src="/js/curriculum.js?v=20261021-18"></script>
+  <script src="/js/api.js?v=20261021-18"></script>
+  <script src="/js/app.js?v=20261021-18"></script>
 </body>
 </html>
