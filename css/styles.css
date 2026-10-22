@@ -389,6 +389,20 @@ button.ghost, a.ghost {
   text-decoration: none;
 }
 
+button.sparring-toggle {
+  min-height: 44px;
+  margin: 8px 0;
+  background: #fff;
+  color: #111;
+  border: 2px solid #111;
+}
+
+.paper .sparring-reason {
+  color: #222;
+  font-size: 1rem;
+  margin: 0 0 8px;
+}
+
 button.danger {
   background: transparent;
   border-color: #7f1d1d;
