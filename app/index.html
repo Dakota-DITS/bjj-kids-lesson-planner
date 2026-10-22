@@ -12,8 +12,8 @@
   <meta name="apple-mobile-web-app-title" content="Grace BJJ Staff" />
   <link rel="icon" href="/icons/staff-favicon-32.png" type="image/png" sizes="32x32" />
   <link rel="apple-touch-icon" href="/icons/staff-apple-touch-icon.png" sizes="180x180" />
-  <link rel="stylesheet" href="/css/styles.css?v=20261021-9" />
-  <script src="/pwa.js?v=20261021-9" defer></script>
+  <link rel="stylesheet" href="/css/styles.css?v=20261021-10" />
+  <script src="/pwa.js?v=20261021-10" defer></script>
 </head>
 <body>
   <p id="gate" class="gate">Checking the teacher login…</p>
@@ -63,12 +63,13 @@
 
       <section class="panel">
         <h2>Age group</h2>
-        <div class="seg ages" id="ageGroup" role="group" aria-label="Age group">
-          <button type="button" data-group="mite" class="on">4–6<small>Mite</small></button>
-          <button type="button" data-group="peewee">7–9<small>Pee Wee</small></button>
-          <button type="button" data-group="junior">10–12<small>Junior</small></button>
-          <button type="button" data-group="teen">13–15<small>Teen</small></button>
+        <div class="seg ages" id="ageGroup" role="group" aria-label="Age group. Choose one, or more than one for a combo class.">
+          <button type="button" data-group="mite" class="on" aria-pressed="true">4–6<small>Mite</small></button>
+          <button type="button" data-group="peewee" aria-pressed="false">7–9<small>Pee Wee</small></button>
+          <button type="button" data-group="junior" aria-pressed="false">10–12<small>Junior</small></button>
+          <button type="button" data-group="teen" aria-pressed="false">13–15<small>Teen</small></button>
         </div>
+        <p class="hint">Tap one group, or more than one for a combo class.</p>
         <p class="hint" id="ageBlurb"></p>
       </section>
 
@@ -430,6 +431,7 @@
             <button class="ghost" id="claimCancel" type="button">Cancel</button>
           </div>
         </form>
+        <p id="checkinClass" class="hint"></p>
         <ul id="checkinList" class="checkin-list"></ul>
         <div class="btn-row">
           <button class="ghost" id="printFullBtn" type="button">Full-page cards</button>
@@ -579,12 +581,12 @@
     </form>
   </dialog>
 
-  <script src="/vendor/qrcode-generator/qrcode.js?v=20261021-9"></script>
-  <script src="/vendor/jsQR/jsQR.js?v=20261021-9"></script>
-  <script src="/js/plan-math.js?v=20261021-9"></script>
-  <script src="/js/data.js?v=20261021-9"></script>
-  <script src="/js/curriculum.js?v=20261021-9"></script>
-  <script src="/js/api.js?v=20261021-9"></script>
-  <script src="/js/app.js?v=20261021-9"></script>
+  <script src="/vendor/qrcode-generator/qrcode.js?v=20261021-10"></script>
+  <script src="/vendor/jsQR/jsQR.js?v=20261021-10"></script>
+  <script src="/js/plan-math.js?v=20261021-10"></script>
+  <script src="/js/data.js?v=20261021-10"></script>
+  <script src="/js/curriculum.js?v=20261021-10"></script>
+  <script src="/js/api.js?v=20261021-10"></script>
+  <script src="/js/app.js?v=20261021-10"></script>
 </body>
 </html>

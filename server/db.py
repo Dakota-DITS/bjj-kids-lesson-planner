@@ -23,6 +23,7 @@ BELTS = [
 ]
 LEVELS = ("introduced", "practicing", "help", "own")
 AGE_GROUPS = ("mite", "peewee", "junior", "teen", "toddler")
+GRACE_AGES = ("mite", "peewee", "junior", "teen")
 ADULT_BELTS = ("white", "blue", "purple", "brown", "black")
 # Representative age when a blank card is claimed with a class and no number.
 AGE_GROUP_AGES = {
@@ -32,6 +33,44 @@ AGE_GROUP_AGES = {
     "junior": 11,
     "teen": 14,
 }
+
+
+def normalize_age_group(value):
+    """Canonical class key stored in classes.age_group.
+
+    A single group stays mite, peewee, junior, teen, or toddler.
+    Two or more Grace groups become one combo key, youngest first,
+    joined with '+', for example mite+peewee. The column is already
+    TEXT, so existing rows load unchanged and no ALTER TABLE is required.
+    """
+    raw = str(value or "").strip().lower()
+    if raw == "toddler":
+        return "toddler"
+    parts = []
+    for piece in raw.split("+"):
+        piece = piece.strip()
+        if piece in GRACE_AGES and piece not in parts:
+            parts.append(piece)
+    if not parts:
+        return "mite"
+    parts.sort(key=GRACE_AGES.index)
+    return "+".join(parts)
+
+
+def age_group_for_age(age):
+    try:
+        number = int(age)
+    except (TypeError, ValueError):
+        return ""
+    if 4 <= number <= 6:
+        return "mite"
+    if 7 <= number <= 9:
+        return "peewee"
+    if 10 <= number <= 12:
+        return "junior"
+    if 13 <= number <= 15:
+        return "teen"
+    return ""
 
 
 def utcnow():

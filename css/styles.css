@@ -255,6 +255,21 @@ body {
   color: var(--ui-text);
 }
 
+.seg.ages button:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+  z-index: 1;
+}
+
+.combo-note {
+  margin: 8px 0 12px;
+  padding: 8px 12px;
+  border-left: 4px solid var(--accent);
+  background: #fff7ed;
+  color: #1c1917;
+  font-size: 0.95rem;
+}
+
 .hint.warn { color: #fecaca; }
 
 .roster-edit {
@@ -1108,6 +1123,12 @@ body:not(.role-admin) .admin-only { display: none !important; }
     break-before: auto;
     page-break-before: auto;
   }
+  body[data-print="lesson"] .combo-note {
+    display: block !important;
+    color: black;
+    background: white;
+    border-left-color: black;
+  }
   body[data-print="lesson"] .title { font-size: 22pt; }
   body[data-print="lesson"] .class-meta { font-size: 13pt; }
   body[data-print="lesson"] .block-title { font-size: 16pt; }
@@ -1532,6 +1553,7 @@ body.authed #mustChange { display: none !important; }
   .seg.ages button, .seg.views button, .stepper button, button, .btn {
     min-height: 44px;
   }
+  .age-checks label { min-height: 44px; }
   .field input, .field select, .field textarea, #checkinView input, #checkinView select, #accountPanel input, #accountPanel select, #progressView input, #progressView select, #progressView textarea, #rosterList select, #staffList select {
     font-size: 16px;
     min-height: 44px;

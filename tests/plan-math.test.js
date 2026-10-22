@@ -172,6 +172,10 @@ const logs = [
   { taught: true, ageGroup: "junior", theme: "mount" },
 ];
 assert.strictEqual(P.themeStaleness("mount", logs, "peewee"), 2);
+const withCombo = logs.concat([{ taught: true, ageGroup: "mite+peewee", theme: "back" }]);
+assert.strictEqual(P.themeStaleness("back", withCombo, "peewee"), 0);
+assert.strictEqual(P.themeStaleness("back", withCombo, "mite"), 0);
+assert.strictEqual(P.themeStaleness("back", withCombo, "junior"), Infinity);
 assert.strictEqual(P.themeReason("Mount", 2), "Mount: not taught in 2 classes");
 assert.strictEqual(P.themeReason("Back", Infinity), "Back: not taught yet");
 const chosen = P.chooseTheme(
@@ -231,5 +235,54 @@ assert.strictEqual(promo(15, "green-black", 4), null);
 assert.strictEqual(promo(12, "grey", 3), null);
 const seq = P.takeSequence([{ id: "a" }, { id: "b" }, { id: "c" }], 2, 1);
 assert.deepStrictEqual(seq.map((item) => item.id), ["b", "c"]);
+
+assert.strictEqual(P.normalizeAgeKey("peewee+mite"), "mite+peewee");
+assert.strictEqual(P.normalizeAgeKey("junior"), "junior");
+assert.strictEqual(P.normalizeAgeKey("toddler"), "toddler");
+assert.strictEqual(P.normalizeAgeKey("nope"), "mite");
+assert.strictEqual(P.normalizeAgeKey("mite+toddler"), "mite");
+assert.strictEqual(P.isCombo("mite+peewee"), true);
+assert.strictEqual(P.isCombo("teen"), false);
+assert.strictEqual(P.youngestAge("junior+teen"), "junior");
+assert.strictEqual(P.comboLabel("mite+peewee"), "Combo class: 4–6 + 7–9");
+assert.strictEqual(P.comboLabel("mite"), "");
+assert.strictEqual(P.ageKey(["teen", "mite"]), "mite+teen");
+assert.strictEqual(P.kidFitsClass(14, "mite"), true);
+assert.strictEqual(P.kidFitsClass(5, "mite+peewee"), true);
+assert.strictEqual(P.kidFitsClass(8, "peewee+mite"), true);
+assert.strictEqual(P.kidFitsClass(11, "mite+peewee"), false);
+assert.strictEqual(P.kidFitsClass(3, "mite+peewee"), false);
+assert.strictEqual(P.kidCanSpar({ stripes: 2, age: 5 }, "mite", true), false);
+assert.strictEqual(P.kidCanSpar({ stripes: 2, age: 8 }, "peewee", true), true);
+assert.strictEqual(P.kidCanSpar({ stripes: 0, age: 8 }, "peewee", true), false);
+assert.strictEqual(P.kidCanSpar({ stripes: 2, age: 8 }, "peewee", false), false);
+assert.strictEqual(P.kidCanSpar({ stripes: 2, age: 5 }, "junior", true), true);
+assert.strictEqual(P.kidCanSpar({ stripes: 2, age: 5 }, "mite+peewee", true), false);
+assert.strictEqual(P.kidCanSpar({ stripes: 1, age: 8 }, "mite+peewee", true), true);
+assert.strictEqual(P.kidCanSpar({ stripes: 2, age: 11 }, "mite+peewee", true), false);
+assert.strictEqual(P.kidCanSpar({ stripes: 0, age: 14 }, "junior+teen", true), false);
+assert.strictEqual(P.kidCanSpar({ stripes: 2, age: 14 }, "junior+teen", true), true);
+assert.ok(P.COMBO_SPARRING_SAFETY.includes("Never pair a 4–6 with a 10–15."));
+assert.strictEqual(
+  P.olderVariationNote("mite", ["mite", "peewee"], [
+    { name: "Hold mount", ages: ["mite", "peewee", "junior", "teen"] },
+    { name: "Americana from mount", ages: ["peewee", "junior", "teen"] },
+    { name: "Armbar from mount", ages: ["peewee", "junior", "teen"] },
+  ]),
+  "Older kids: 7–9: Americana from mount, Armbar from mount."
+);
+assert.strictEqual(
+  P.olderVariationNote("mite", ["mite", "junior"], [{ name: "Hold mount", ages: ["mite", "junior"] }]),
+  "Older kids: 10–12: use the 4–6 version."
+);
+assert.strictEqual(P.olderVariationNote("mite", ["mite"], [{ name: "Invented", ages: ["teen"] }]), "");
+const comboSaved = P.sanitizeProgress({
+  classes: [{ date: "2027-06-09", ageGroup: "peewee+mite", taught: true, attended: ["c-sam01"] }],
+});
+assert.strictEqual(comboSaved.classes[0].ageGroup, "mite+peewee");
+const singleSaved = P.sanitizeProgress({
+  classes: [{ date: "2027-08-11", ageGroup: "junior", taught: true, attended: ["c-sam01"] }],
+});
+assert.strictEqual(singleSaved.classes[0].ageGroup, "junior");
 
 console.log("plan-math tests passed");
