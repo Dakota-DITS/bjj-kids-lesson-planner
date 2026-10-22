@@ -115,6 +115,7 @@ h2 { margin: 0 0 8px; font-size: 1.7rem; }
 }
 #faq details p { margin: 0 0 12px; }
 .hint { color: #3f3a36; font-size: 1rem; }
+#visit a[href^="mailto:"] { overflow-wrap: anywhere; }
 
 .when-layout { display: grid; gap: 18px; min-width: 0; }
 .when-copy, .when-cal, .class-calendar { min-width: 0; max-width: 100%; }

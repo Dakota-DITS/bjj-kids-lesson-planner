@@ -17,7 +17,7 @@ The live site is served from the Debian host described in [DEPLOY.md](DEPLOY.md)
 
 The splash shows the Grace Jiu Jitsu logo, the values Competence, Connection, and Community, the class schedule, the next class date, the four age groups, and what to bring the first week. A large button goes to the coloring sheets. Teacher login is a small link.
 
-Location, phone, email, and a sign-up link are not on the page yet. Add them in the `PUBLIC_INFO` object in `index.html`. A value left as `""` stays hidden.
+The welcome page shows the church address and an email for questions. Phone and a sign-up link are not on the page yet. Add those in the `PUBLIC_INFO` object in `index.html`. A value left as `""` stays hidden.
 
 ## Coloring sheets
 
