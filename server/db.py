@@ -322,7 +322,12 @@ def connect(path):
     conn = sqlite3.connect(path, timeout=10)
     conn.row_factory = sqlite3.Row
     conn.execute("PRAGMA foreign_keys = ON")
-    conn.execute("PRAGMA journal_mode = WAL")
+    # Demo sets MEMORY so SQLite does not create a sibling -wal file next to
+    # the production data directory. Production leaves this unset and stays WAL.
+    journal = os.environ.get("BJJ_SQLITE_JOURNAL", "WAL").upper()
+    if journal not in ("WAL", "DELETE", "TRUNCATE", "MEMORY"):
+        journal = "WAL"
+    conn.execute("PRAGMA journal_mode = " + journal)
     return conn
 
 

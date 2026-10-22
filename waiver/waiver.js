@@ -191,7 +191,9 @@
   ]).then(([data, enrollment]) => {
     full = !!(enrollment && enrollment.full === true);
     waitlistOn = !!(enrollment && enrollment.waitlistEnabled === true);
-    setOpen(data && data.waiverSubmissionsEnabled === true);
+    const fileOn = !!(data && data.waiverSubmissionsEnabled === true);
+    const apiOn = !!(enrollment && enrollment.submissionsEnabled === true);
+    setOpen(fileOn || apiOn);
   });
 
   document.getElementById("printBtn").addEventListener("click", () => window.print());

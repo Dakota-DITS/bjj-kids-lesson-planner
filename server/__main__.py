@@ -54,6 +54,20 @@ def cmd_create_user(args):
     return 0
 
 
+def cmd_seed_demo(args):
+    from server.demoseed import DemoSeedError, seed_demo
+
+    password = os.environ.get("DEMO_STAFF_PASSWORD", "")
+    db_path = args.db or os.environ.get("BJJ_DB") or ""
+    try:
+        real = seed_demo(db_path, password, reset_password=args.reset_password)
+    except DemoSeedError as err:
+        print(str(err), file=sys.stderr)
+        return 1
+    print(f"Demo data is in {real}. Production data.db was not opened.")
+    return 0
+
+
 def cmd_serve(args):
     cfg = config_from_env()
     if args.db:
@@ -117,6 +131,15 @@ def main(argv=None):
     teacher.add_argument("--password")
     teacher.add_argument("--db")
     teacher.set_defaults(first=False, func=cmd_create_user)
+
+    demo = sub.add_parser("seed-demo", help="Fill a separate demo.db with fake example rows. Refuses data.db.")
+    demo.add_argument("--db", help="Demo SQLite file. Must be named demo.db. Defaults to $BJJ_DB.")
+    demo.add_argument(
+        "--reset-password",
+        action="store_true",
+        help="Update the demo and preview logins from DEMO_STAFF_PASSWORD.",
+    )
+    demo.set_defaults(func=cmd_seed_demo)
 
     serve = sub.add_parser("serve", help="Run the API.")
     serve.add_argument("--host", default=os.environ.get("BJJ_HOST", "127.0.0.1"))

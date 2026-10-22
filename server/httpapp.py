@@ -53,6 +53,13 @@ KIDS_FULL = (
 )
 
 
+def env_optional_bool(name):
+    raw = os.environ.get(name)
+    if raw is None or raw == "":
+        return None
+    return raw == "1"
+
+
 def config_from_env():
     data_dir = os.environ.get("BJJ_DATA_DIR", "/var/lib/bjj-planner")
     db_path = os.environ.get("BJJ_DB") or os.path.join(data_dir, "data.db")
@@ -63,6 +70,12 @@ def config_from_env():
         "secure": os.environ.get("BJJ_COOKIE_SECURE", "1") != "0",
         "trust_proxy": os.environ.get("BJJ_TRUST_PROXY", "0") == "1",
         "static_root": os.environ.get("BJJ_STATIC", ""),
+        "cookie_name": os.environ.get("BJJ_COOKIE_NAME", "bjj_session"),
+        "cookie_path": os.environ.get("BJJ_COOKIE_PATH", "/"),
+        # None means "read waiver-config.json". The demo unit sets these to 1.
+        # Production does not set them, so the committed file stays in charge.
+        "waiver_submissions_enabled": env_optional_bool("BJJ_WAIVER_SUBMISSIONS"),
+        "waitlist_enabled": env_optional_bool("BJJ_WAITLIST"),
     }
 
 
@@ -123,11 +136,24 @@ class Api:
             raise ValueError("The request was not a JSON object.")
         return data
 
+    def cookie_name(self):
+        name = str(self.cfg.get("cookie_name") or "bjj_session")
+        if not re.fullmatch(r"[A-Za-z0-9_]{1,64}", name):
+            return "bjj_session"
+        return name
+
+    def cookie_path(self):
+        path = str(self.cfg.get("cookie_path") or "/")
+        if not path.startswith("/") or path.startswith("//") or re.search(r"[\s;,]", path):
+            return "/"
+        return path
+
     def cookie_token(self, handler):
         header = handler.headers.get("Cookie", "")
+        want = self.cookie_name()
         for part in header.split(";"):
             name, _, value = part.strip().partition("=")
-            if name == "bjj_session" and value:
+            if name == want and value:
                 return value
         return ""
 
@@ -2462,7 +2488,13 @@ class Api:
             handler.wfile.write(raw)
 
     def cookie(self, token, max_age):
-        parts = [f"bjj_session={token}", "HttpOnly", "SameSite=Lax", "Path=/", f"Max-Age={max_age}"]
+        parts = [
+            f"{self.cookie_name()}={token}",
+            "HttpOnly",
+            "SameSite=Lax",
+            f"Path={self.cookie_path()}",
+            f"Max-Age={max_age}",
+        ]
         if self.cfg["secure"]:
             parts.append("Secure")
         return "; ".join(parts)

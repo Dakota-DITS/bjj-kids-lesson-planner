@@ -2,10 +2,23 @@
    links. Public files are network-first. Login-gated files are never stored:
    Cache Storage is shared by everyone who uses the phone, so a private or
    no-store response must not survive logout. /api/ is network-only. */
-const VERSION = "20261021-28";
+const VERSION = "20261022-29";
 
-const PUBLIC_CACHE = "grace-public-" + VERSION;
-const STAFF_CACHE = "grace-staff-" + VERSION;
+function workerBasePath() {
+  var path = "";
+  try {
+    path = new URL(self.location.href).pathname;
+  } catch (err) {
+    path = "";
+  }
+  var suffix = "/sw.js";
+  if (path.endsWith(suffix)) return path.slice(0, -suffix.length);
+  return "";
+}
+
+const workerBase = workerBasePath();
+const PUBLIC_CACHE = (workerBase ? "grace-demo-public-" : "grace-public-") + VERSION;
+const STAFF_CACHE = (workerBase ? "grace-demo-staff-" : "grace-staff-") + VERSION;
 
 const PUBLIC_ASSETS = [
   "/",
@@ -40,6 +53,7 @@ const PUBLIC_ASSETS = [
   "/calendar/class-days.js",
   "/manifest.webmanifest",
   "/pwa.js",
+  "/bjj-base.js",
   "/sw.js",
   "/favicon.ico",
   "/icons/favicon-32.png",
@@ -56,6 +70,7 @@ const STAFF_ASSETS = [
   "/app/offline.html",
   "/app/manifest.webmanifest",
   "/pwa.js",
+  "/bjj-base.js",
   "/sw.js",
   "/icons/staff-favicon-32.png",
   "/icons/staff-apple-touch-icon.png",
@@ -71,7 +86,25 @@ const STAFF_ASSETS = [
 const PUBLIC_APP = new Set(["/app/offline.html", "/app/manifest.webmanifest"]);
 
 function staffScope() {
-  return new URL(self.registration.scope).pathname.indexOf("/app") === 0;
+  var path = new URL(self.registration.scope).pathname;
+  if (path.endsWith("/")) path = path.slice(0, -1);
+  return path.endsWith("/app");
+}
+
+function absAsset(path) {
+  if (!workerBase) return path;
+  if (!path || path.charAt(0) !== "/") return path;
+  if (path === workerBase || path.indexOf(workerBase + "/") === 0) return path;
+  if (path === "/") return workerBase + "/";
+  return workerBase + path;
+}
+
+function rootOf(pathname) {
+  if (!workerBase) return pathname;
+  if (pathname === workerBase) return "/";
+  var prefix = workerBase + "/";
+  if (pathname.indexOf(prefix) === 0) return pathname.slice(workerBase.length) || "/";
+  return pathname;
 }
 
 function cacheName() {
@@ -83,7 +116,7 @@ function assetList() {
 }
 
 function offlinePath() {
-  return staffScope() ? "/app/offline.html" : "/offline.html";
+  return absAsset(staffScope() ? "/app/offline.html" : "/offline.html");
 }
 
 function isGated(pathname) {
@@ -102,17 +135,18 @@ function storeable(res, path) {
   } catch (err) {
     return false;
   }
-  if (pathname !== path || isGated(pathname)) return false;
+  if (pathname !== path || isGated(rootOf(pathname))) return false;
   const header = res.headers.get("Cache-Control") || "";
   if (/private|no-store/i.test(header)) return false;
   return true;
 }
 
 async function storeFresh(cache, path) {
+  const abs = absAsset(path);
   try {
-    const res = await fetch(path, { credentials: "same-origin", cache: "reload" });
-    if (!storeable(res, path)) return;
-    await cache.put(path, res);
+    const res = await fetch(abs, { credentials: "same-origin", cache: "reload" });
+    if (!storeable(res, abs)) return;
+    await cache.put(abs, res);
   } catch (err) {
     /* A missing public file must not block the install. */
   }
@@ -122,7 +156,7 @@ async function cachedOffline() {
   const names = staffScope() ? [STAFF_CACHE, PUBLIC_CACHE] : [PUBLIC_CACHE];
   for (const name of names) {
     const cache = await caches.open(name);
-    const hit = await cache.match(offlinePath()) || await cache.match("/offline.html");
+    const hit = await cache.match(offlinePath()) || await cache.match(absAsset("/offline.html"));
     if (hit) return hit;
   }
   return null;
@@ -160,8 +194,9 @@ async function networkFirst(request, path, allowed) {
 }
 
 async function dropStaffCaches() {
+  const prefix = workerBase ? "grace-demo-staff-" : "grace-staff-";
   const keys = await caches.keys();
-  await Promise.all(keys.filter((key) => key.startsWith("grace-staff-")).map((key) => caches.delete(key)));
+  await Promise.all(keys.filter((key) => key.startsWith(prefix)).map((key) => caches.delete(key)));
 }
 
 async function ensurePublicPrecache() {
@@ -175,7 +210,7 @@ async function ensurePublicPrecache() {
       /* skip a bad cache key */
     }
   });
-  const missing = assetList().filter((path) => !have.has(path));
+  const missing = assetList().filter((path) => !have.has(absAsset(path)));
   await Promise.all(missing.map((path) => storeFresh(cache, path)));
 }
 
@@ -190,9 +225,11 @@ self.addEventListener("install", (event) => {
 self.addEventListener("activate", (event) => {
   event.waitUntil((async () => {
     const keys = await caches.keys();
+    const staffPrefix = workerBase ? "grace-demo-staff-" : "grace-staff-";
+    const publicPrefix = workerBase ? "grace-demo-public-" : "grace-public-";
     await Promise.all(keys.filter((key) => {
-      if (key.startsWith("grace-staff-") && key !== STAFF_CACHE) return true;
-      if (key.startsWith("grace-public-") && key !== PUBLIC_CACHE) return true;
+      if (key.startsWith(staffPrefix) && key !== STAFF_CACHE) return true;
+      if (key.startsWith(publicPrefix) && key !== PUBLIC_CACHE) return true;
       return false;
     }).map((key) => caches.delete(key)));
     await self.clients.claim();
@@ -218,17 +255,22 @@ self.addEventListener("fetch", (event) => {
     return;
   }
   if (url.origin !== self.location.origin) return;
+  if (!workerBase && (url.pathname === "/demo" || url.pathname.startsWith("/demo/"))) return;
+  if (workerBase && url.pathname !== workerBase && !url.pathname.startsWith(workerBase + "/")) return;
+  const fullPath = url.pathname;
+  if (workerBase) url = { pathname: url.pathname.slice(workerBase.length) || "/", origin: url.origin };
   if (url.pathname.startsWith("/api/")) {
     event.respondWith(fetch(request));
     return;
   }
-  const path = url.pathname;
-  if (isGated(path)) {
+  const path = fullPath;
+  const rooted = rootOf(path);
+  if (isGated(rooted)) {
     event.respondWith(networkOnly(request));
     return;
   }
-  const allowed = new Set(assetList());
-  if (path.startsWith("/img/gi/")) allowed.add(path);
+  const allowed = new Set(assetList().map(absAsset));
+  if (path.startsWith("/img/gi/") || rooted.startsWith("/img/gi/")) allowed.add(path);
   if (request.mode !== "navigate" && !allowed.has(path)) return;
   event.respondWith(networkFirst(request, path, allowed));
 });

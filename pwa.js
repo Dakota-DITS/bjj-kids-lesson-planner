@@ -1,8 +1,16 @@
 (function () {
+  function pageBase() {
+    var fromWindow = typeof window.BJJ_BASE === "string" ? window.BJJ_BASE.replace(/\/$/, "") : "";
+    if (fromWindow) return fromWindow;
+    var path = location.pathname || "";
+    if (path === "/demo" || path.indexOf("/demo/") === 0) return "/demo";
+    return "";
+  }
+  var base = pageBase();
   if (!("serviceWorker" in navigator)) return;
 
-  var staff = location.pathname === "/app" || location.pathname.indexOf("/app/") === 0;
-  var scope = staff ? "/app/" : "/";
+  var staff = location.pathname === base + "/app" || location.pathname.indexOf(base + "/app/") === 0;
+  var scope = staff ? base + "/app/" : (base ? base + "/" : "/");
   var dismissKey = staff ? "bjj-install-dismiss-staff" : "bjj-install-dismiss-public";
   var refreshing = false;
   var hadController = !!navigator.serviceWorker.controller;
@@ -27,7 +35,9 @@
     var found = /\/pwa\.js\?v=([^&#]+)/.exec(scripts[i].getAttribute("src") || "");
     if (found) version = decodeURIComponent(found[1]);
   }
-  navigator.serviceWorker.register("/sw.js" + (version ? "?v=" + encodeURIComponent(version) : ""), { scope: scope, updateViaCache: "none" }).then(function (reg) {
+  var swPath = "/sw.js" + (version ? "?v=" + encodeURIComponent(version) : "");
+  if (base) swPath = base + swPath;
+  navigator.serviceWorker.register(swPath, { scope: scope, updateViaCache: "none" }).then(function (reg) {
     function precache() {
       var worker = reg.active || navigator.serviceWorker.controller;
       if (worker) worker.postMessage({ type: "precache" });

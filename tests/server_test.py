@@ -1981,6 +1981,128 @@ class ApiTest(unittest.TestCase):
             conn.close()
 
 
+class DemoIsolationTest(unittest.TestCase):
+    def test_demo_cookie_is_not_the_production_cookie(self):
+        obj = Api.__new__(Api)
+        obj.cfg = {"cookie_name": "bjj_demo_session", "cookie_path": "/demo", "secure": True}
+        baked = obj.cookie("token-value", 60)
+        self.assertIn("bjj_demo_session=token-value", baked)
+        self.assertIn("Path=/demo", baked)
+        self.assertNotIn("Path=/", baked.replace("Path=/demo", ""))
+        obj.cfg = {"cookie_name": "bad name", "cookie_path": "https://evil.example", "secure": False}
+        fallback = obj.cookie("token-value", 60)
+        self.assertTrue(fallback.startswith("bjj_session=token-value"))
+        self.assertIn("Path=/", fallback)
+
+    def test_demo_flags_come_from_env_not_the_committed_file(self):
+        saved = {
+            "BJJ_WAIVER_SUBMISSIONS": os.environ.get("BJJ_WAIVER_SUBMISSIONS"),
+            "BJJ_WAITLIST": os.environ.get("BJJ_WAITLIST"),
+        }
+        try:
+            os.environ["BJJ_WAIVER_SUBMISSIONS"] = "1"
+            os.environ["BJJ_WAITLIST"] = "1"
+            cfg = config_from_env()
+            self.assertTrue(cfg["waiver_submissions_enabled"])
+            self.assertTrue(cfg["waitlist_enabled"])
+            os.environ.pop("BJJ_WAIVER_SUBMISSIONS")
+            os.environ.pop("BJJ_WAITLIST")
+            cfg = config_from_env()
+            self.assertIsNone(cfg["waiver_submissions_enabled"])
+            self.assertIsNone(cfg["waitlist_enabled"])
+        finally:
+            for key, value in saved.items():
+                if value is None:
+                    os.environ.pop(key, None)
+                else:
+                    os.environ[key] = value
+        with open(os.path.join(os.path.dirname(__file__), "..", "waiver-config.json"), encoding="utf-8") as handle:
+            raw = json.load(handle)
+        self.assertFalse(raw["waiverSubmissionsEnabled"])
+        self.assertFalse(raw["waitlistEnabled"])
+
+    def test_demo_seed_is_fake_and_refuses_production(self):
+        from server.demoseed import DemoSeedError, seed_demo
+
+        with self.assertRaises(DemoSeedError):
+            seed_demo("/tmp/data.db", "demo-preview-pass")
+        with self.assertRaises(DemoSeedError):
+            seed_demo("/var/lib/bjj-planner/data.db", "demo-preview-pass")
+
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        path = os.path.join(tmp.name, "demo.db")
+        os.environ["BJJ_SQLITE_JOURNAL"] = "MEMORY"
+        try:
+            seed_demo(path, "demo-preview-pass")
+            seed_demo(path, "demo-preview-pass")
+        finally:
+            os.environ.pop("BJJ_SQLITE_JOURNAL", None)
+        conn = connect(path)
+        try:
+            names = [row["name"] for row in conn.execute("SELECT name FROM students ORDER BY name")]
+            self.assertEqual(len(names), 3)
+            self.assertTrue(all(name.startswith("EXAMPLE ") for name in names))
+            emails = [row["email"] for row in conn.execute("SELECT email FROM waivers")]
+            emails += [row["email"] for row in conn.execute("SELECT email FROM waitlist")]
+            self.assertTrue(emails)
+            self.assertTrue(all(email.endswith("@example.com") for email in emails))
+            users = {row["username"]: row["role"] for row in conn.execute("SELECT username, role FROM users")}
+            self.assertEqual(users, {"demo": "admin", "preview": "teacher"})
+            hashes = [row["password_hash"] for row in conn.execute("SELECT password_hash FROM users")]
+            self.assertTrue(all("demo-preview-pass" not in item for item in hashes))
+            marker = conn.execute("SELECT value FROM settings WHERE key = 'demo_seed'").fetchone()
+            self.assertEqual(marker["value"], "1")
+            self.assertEqual(conn.execute("SELECT COUNT(*) AS n FROM waitlist").fetchone()["n"], 3)
+        finally:
+            conn.close()
+
+    def test_publish_tree_prefixes_demo_and_leaves_source_closed(self):
+        import importlib.util
+
+        spec = importlib.util.spec_from_file_location(
+            "prefix_tree",
+            os.path.join(os.path.dirname(__file__), "..", "deploy", "demo", "prefix_tree.py"),
+        )
+        prefix_tree = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(prefix_tree)
+        root = os.path.join(os.path.dirname(__file__), "..")
+        with open(os.path.join(root, "waiver-config.json"), encoding="utf-8") as handle:
+            before = handle.read()
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        published = prefix_tree.publish(root, tmp.name, "/demo")
+
+        def slurp(path):
+            with open(path, encoding="utf-8") as handle:
+                return handle.read()
+
+        self.assertEqual(slurp(os.path.join(root, "waiver-config.json")), before)
+        flags = json.loads(slurp(os.path.join(published, "waiver-config.json")))
+        self.assertTrue(flags["waiverSubmissionsEnabled"])
+        self.assertTrue(flags["waitlistEnabled"])
+        home = slurp(os.path.join(published, "index.html"))
+        self.assertIn('name="bjj-base" content="/demo"', home)
+        self.assertIn('href="/demo/kids/"', home)
+        self.assertIn('location.replace("/demo/kids/#"', home)
+        self.assertIn('fetch("/adult-class.json"', home)
+        self.assertNotIn('href="/kids/"', home)
+        self.assertIn('content="https://bjj.bettrbook.com/demo/"', home)
+        kids = slurp(os.path.join(published, "kids", "index.html"))
+        self.assertIn('src="/demo/img/gi/', kids)
+        self.assertNotIn('src="/img/gi/', kids)
+        self.assertIn("/demo/img/gi/01-ibjjf-approved-600.jpg", kids)
+        manifest = json.loads(slurp(os.path.join(published, "manifest.webmanifest")))
+        self.assertEqual(manifest["start_url"], "/demo/")
+        self.assertEqual(manifest["scope"], "/demo/")
+        self.assertTrue(manifest["icons"][0]["src"].startswith("/demo/icons/"))
+        source_home = slurp(os.path.join(root, "index.html"))
+        self.assertIn('name="bjj-base" content=""', source_home)
+        self.assertIn('href="/kids/"', source_home)
+        with self.assertRaises(SystemExit):
+            prefix_tree.publish(root, "/srv/bjj-planner", "/demo")
+
+
 def _handler(api):
     from http.server import BaseHTTPRequestHandler
 

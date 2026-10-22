@@ -91,6 +91,10 @@ sudo cp -a /var/lib/bjj-planner/sheets /var/lib/bjj-planner/sheets-backup
 
 Copy those two artifacts off the box. Do not commit them. nginx denies `*.db` even if one is copied into the web root.
 
+## Demo preview
+
+A separate draft serves `https://bjj.bettrbook.com/demo/` from its own checkout, database, and API. Production stays on `/srv/bjj-planner` and `/var/lib/bjj-planner/data.db`. The install, nginx include, and rollback notes are in `deploy/demo/setup.sh`, `deploy/nginx-demo.conf`, and `deploy/demo/ROLLBACK.md`. Do not point the demo service at `data.db`.
+
 ## Local check
 
 ```bash
