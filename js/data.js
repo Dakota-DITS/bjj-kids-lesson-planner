@@ -95,13 +95,6 @@ window.BJJ_DATA = {
     "If one child needs a break, the assistant takes them. You keep the others moving.",
   ],
 
-  rulesNoRolling: [
-    "No live rolling.",
-    "No submissions.",
-    "No tap.",
-    "No waiting in line for turns during games.",
-  ],
-
   rulesSparring: [
     "Live rolling is only for kids with at least one stripe, and only when enough adults are supervising.",
     "Kids with no stripes do not spar.",
@@ -109,10 +102,9 @@ window.BJJ_DATA = {
   ],
 
   rules: [
-    "No live rolling.",
-    "No submissions.",
-    "No tap.",
-    "No waiting in line for turns during games.",
+    "Live rolling is only for kids with at least one stripe, and only when enough adults are supervising.",
+    "Kids with no stripes do not spar.",
+    "Teach them to tap, and don't wait for the tap.",
     "If one child needs a break, the assistant takes them. You keep the others moving.",
   ],
 

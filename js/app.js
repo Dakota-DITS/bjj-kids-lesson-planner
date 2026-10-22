@@ -47,6 +47,8 @@
     freeHelperNames: [],
     ratioSource: "roster",
     levelDrafts: {},
+    planQuery: { warmup: "", base: "", lesson: "", game: "", sparring: "" },
+    planFocus: null,
   };
 
   let cameraStream = null;
@@ -805,7 +807,6 @@ function assemble(content, settings) {
 function liveSparring(settings, mode) {
   if (mode !== "grace") return false;
   const key = settings.ageGroup;
-  if (!P.isCombo(key) && (key === "mite" || key === "toddler")) return false;
   const ratio = P.ratioStatus(settings.kidCount, settings.adultCount);
   if (!ratio.ok) return false;
   return state.roster.some((kid) => P.kidCanSpar(kid, key, true));
@@ -1025,6 +1026,31 @@ function buildPlan(opts = {}) {
     retimePlan();
   }
 
+  function setSectionItems(section, ids) {
+    if (!state.plan) return;
+    const key = blockKey(section);
+    const cat = key === "games" ? "game" : key;
+    const age = curriculumAge(state.plan.settings.ageGroup, state.plan.mode);
+    const current = cleanItems(state.plan[key]?.items);
+    const have = new Map(current.map((item) => [item.id, item]));
+    const next = [];
+    ids.forEach((id) => {
+      if (have.has(id)) {
+        next.push(have.get(id));
+        return;
+      }
+      const activity = findActivity(id);
+      if (!activity || activity.category !== cat) return;
+      if (state.disabled.includes(id) || !ageAllows(activity, age)) return;
+      next.push(withCurrentReps(activity, age));
+    });
+    if (next.length) state.plan[key] = { ...(state.plan[key] || {}), items: next };
+    else delete state.plan[key];
+    const inputId = section === "game" ? "gameCount" : section === "lesson" ? "lessonCount" : section === "warmup" ? "warmupCount" : "";
+    if (inputId && $(inputId)) $(inputId).value = String(next.length);
+    retimePlan();
+  }
+
   function sayHtml(value, extra) {
     return asList(value)
       .filter(Boolean)
@@ -1100,18 +1126,148 @@ function bodyHtml(item) {
   );
 }
 
+  const PICK = {
+    warmup: { cat: "warmup", search: "Search warmups", clear: "Clear warmup search" },
+    base: { cat: "base", search: "Search base movements", clear: "Clear base search" },
+    lesson: { cat: "lesson", search: "Search techniques", clear: "Clear technique search" },
+    game: { cat: "game", search: "Search games", clear: "Clear game search" },
+    sparring: { cat: "", search: "Search sparring", clear: "Clear sparring search" },
+  };
+
+  function planQuery(section) {
+    return state.planQuery[section] || "";
+  }
+
+  function countMark(n) {
+    const count = Math.max(0, Number(n) || 0);
+    return `<span class="in-plan-count no-print">${count} in plan</span>`;
+  }
+
+  function searchField(section) {
+    const meta = PICK[section];
+    const value = planQuery(section);
+    return `<div class="plan-search no-print">
+      <input id="planSearch-${esc(section)}" type="search" data-plan-search="${esc(section)}" aria-label="${esc(meta.search)}" placeholder="${esc(meta.search)}" value="${esc(value)}" />
+      <button type="button" class="plan-clear" data-plan-clear="${esc(section)}" aria-label="${esc(meta.clear)}"${value.trim() ? "" : " disabled"}>Clear</button>
+    </div>`;
+  }
+
+  function planToggleButton(section, id, name, inPlan) {
+    const verb = inPlan ? "Remove from plan" : "Add to plan";
+    return `<button type="button" class="plan-toggle no-print${inPlan ? " is-on" : ""}" data-plan-toggle="${esc(section)}" data-id="${esc(id)}" aria-pressed="${inPlan ? "true" : "false"}" aria-label="${esc(verb)}: ${esc(name || "item")}">${verb}</button>`;
+  }
+
+  function libraryFor(cat) {
+    const age = state.plan ? curriculumAge(state.plan.settings.ageGroup, state.plan.mode) : curriculumAge(state.ageGroup, state.preset);
+    const key = blockKey(cat);
+    const inIds = new Set((state.plan?.[key]?.items || []).map((item) => item && item.id).filter(Boolean));
+    return allActivities().filter((activity) => {
+      if (activity.category !== cat) return false;
+      if (inIds.has(activity.id)) return true;
+      return !state.disabled.includes(activity.id) && ageAllows(activity, age);
+    });
+  }
+
+  function blurbOf(activity) {
+    const raw = activity.how || (Array.isArray(activity.say) ? activity.say[0] : activity.say) || activity.extra || "";
+    return fill(String(raw).split("\n")[0], { ...activity, reps: repsOf(activity) });
+  }
+
+  function pickerRest(section) {
+    const cat = PICK[section].cat;
+    if (!cat) return "";
+    const key = blockKey(section);
+    const ids = (state.plan?.[key]?.items || []).map((item) => item && item.id).filter(Boolean);
+    const groups = P.planPickerGroups(libraryFor(cat), ids, planQuery(section));
+    const rows = groups.rest
+      .slice()
+      .sort((a, b) => String(a.name || "").localeCompare(String(b.name || ""), undefined, { sensitivity: "base" }))
+      .map((activity) => {
+        return `<article class="pick-row">
+          <div class="pick-copy">
+            <strong>${esc(activity.name || "")}</strong>
+            <p>${esc(blurbOf(activity))}</p>
+          </div>
+          ${planToggleButton(section, activity.id, activity.name, false)}
+        </article>`;
+      })
+      .join("");
+    return `<div class="plan-rest no-print">${rows}</div>`;
+  }
+
+  function pickerEmpty(section) {
+    const query = planQuery(section).trim();
+    if (!query) return "";
+    if (section === "sparring") {
+      const on = state.plan && state.plan.sparring;
+      const record = {
+        name: "Sparring",
+        how: DATA.sparring.how,
+        tags: DATA.sparring.points,
+      };
+      if (on && P.matchesPlanQuery(record, query)) return "";
+      return `<p class="pick-empty no-print">No matches</p>`;
+    }
+    const cat = PICK[section].cat;
+    const key = blockKey(section);
+    const items = (state.plan?.[key]?.items || []).filter((item) => item && typeof item === "object");
+    const shown = items.filter((item) => P.matchesPlanQuery(item, query)).length;
+    const ids = items.map((item) => item.id);
+    const groups = P.planPickerGroups(libraryFor(cat), ids, query);
+    if (shown + groups.rest.length > 0) return "";
+    return `<p class="pick-empty no-print">No matches</p>`;
+  }
+
+  function builderShell(section, title) {
+    if (section === "base" && state.plan && state.plan.mode !== "grace") return "";
+    const key = blockKey(section);
+    const n = (state.plan?.[key]?.items || []).length;
+    return `<section class="block plan-build no-print" data-build="${esc(section)}">
+      <h2 class="block-title">${esc(title)} ${countMark(n)}</h2>
+      ${searchField(section)}
+      ${pickerEmpty(section)}
+      ${pickerRest(section)}
+    </section>`;
+  }
+
+  function restorePlanFocus() {
+    const focus = state.planFocus;
+    state.planFocus = null;
+    if (!focus) return;
+    if (focus.kind === "search") {
+      const el = document.getElementById(`planSearch-${focus.section}`);
+      if (!el) return;
+      el.focus();
+      const pos = Number(focus.pos);
+      if (Number.isFinite(pos)) {
+        try { el.setSelectionRange(pos, pos); } catch (err) { /* search inputs can reject a range */ }
+      }
+      return;
+    }
+    if (focus.kind === "toggle") {
+      const buttons = document.querySelectorAll("#plan [data-plan-toggle]");
+      const el = [...buttons].find((btn) => btn.dataset.planToggle === focus.section && btn.dataset.id === focus.id);
+      if (el) el.focus();
+    }
+  }
+
   function renderItem(item, section) {
     if (!item || typeof item !== "object") return "";
+    const picker = !!PICK[section] && section !== "sparring";
+    const hidden = picker && planQuery(section).trim() && !P.matchesPlanQuery(item, planQuery(section));
+    const name = fill(item.name || "", item);
     const equip = item.equipment ? `<p>Equipment: ${esc(fill(item.equipment, item))}</p>` : "";
     return `
-      <div class="item">
+      <div class="item${hidden ? " is-search-hidden" : ""}">
         <h3 class="item-title">
           <span class="when">${esc(item.when || "")}</span>
-          <strong class="name-live">${esc(fill(item.name || "", item))}</strong>
+          <strong class="name-live">${esc(name)}</strong>
           <strong class="name-print">${esc(displayName(item))}</strong>
+          ${picker ? `<span class="in-plan-mark no-print">In plan</span>` : ""}
           ${repsCtrl(item, section)}
           ${shuffleBtn(section, item.id)}
         </h3>
+        ${picker ? planToggleButton(section, item.id, name, true) : ""}
         ${bodyHtml(item)}
         ${equip}
       </div>`;
@@ -1162,13 +1318,7 @@ function bodyHtml(item) {
   function rulesFor(plan) {
     if (plan.mode === "toddler") return DATA.rules.slice();
     const key = plan.settings.ageGroup;
-    const groups = P.parseAgeKey(key);
-    const includesMite = key === "mite" || groups.includes("mite");
-    const includesOlder = P.isCombo(key) ? groups.some((id) => id !== "mite") : key !== "mite";
-    const rules = [];
-    if (includesMite) rules.push(...DATA.rulesNoRolling);
-    rules.push(...DATA.rulesCommon);
-    if (includesOlder) rules.push(...DATA.rulesSparring);
+    const rules = DATA.rulesCommon.concat(DATA.rulesSparring);
     if (P.isCombo(key)) rules.push(P.COMBO_SPARRING_SAFETY);
     return rules;
   }
@@ -1201,20 +1351,24 @@ function sparringSection(plan) {
   if (!plan.sparring) return "";
   const ratio = P.ratioStatus(plan.settings.kidCount, plan.settings.adultCount);
   const roster = P.sortByRank(state.roster);
+  const wait = roster.length
+    ? "Live sparring waits for a kid with at least one stripe and enough adults."
+    : "Add the roster before anyone spars. An empty roster drills positions.";
   if (!plan.liveSparring) {
     const theme = plan.theme ? plan.theme.label : "the lesson";
+    const copy = {
+      name: "Positional drilling",
+      how: `No live sparring this class. Use this block to drill ${theme}. No submissions. Reset often and keep the same partners as the lesson. ${wait}`,
+    };
+    const hidden = planQuery("sparring").trim() && !P.matchesPlanQuery(copy, planQuery("sparring"));
     return `
       <section class="block">
-        <h2 class="block-title"><span class="when">${esc(plan.sparring.when)}</span> Positional drilling</h2>
-        <div class="item">
+        <h2 class="block-title"><span class="when">${esc(plan.sparring.when)}</span> Positional drilling ${countMark(1)}</h2>
+        ${searchField("sparring")}
+        ${hidden ? `<p class="pick-empty no-print">No matches</p>` : ""}
+        <div class="item${hidden ? " is-search-hidden" : ""}">
           <p>No live sparring this class. Use this block to drill ${esc(theme)}. No submissions. Reset often and keep the same partners as the lesson.</p>
-          <p>${esc(
-            plan.settings.ageGroup === "mite"
-              ? "Mighty Mites stay on position and movement."
-              : roster.length
-                ? "Live sparring waits for a kid with at least one stripe and enough adults."
-                : "Add the roster before anyone spars. An empty roster drills positions."
-          )}</p>
+          <p>${esc(wait)}</p>
         </div>
         ${comboNoteHtml(P.isCombo(plan.settings.ageGroup) ? P.COMBO_SPARRING_SAFETY : "")}
       </section>`;
@@ -1230,10 +1384,18 @@ function sparringSection(plan) {
       }</li>`;
     })
     .join("");
+  const liveCopy = {
+    name: "Sparring",
+    how: DATA.sparring.how,
+    tags: DATA.sparring.points.concat(roster.map((kid) => kid.name)),
+  };
+  const liveHidden = planQuery("sparring").trim() && !P.matchesPlanQuery(liveCopy, planQuery("sparring"));
   return `
     <section class="block">
-      <h2 class="block-title"><span class="when">${esc(plan.sparring.when)}</span> Sparring</h2>
-      <div class="item">
+      <h2 class="block-title"><span class="when">${esc(plan.sparring.when)}</span> Sparring ${countMark(1)}</h2>
+      ${searchField("sparring")}
+      ${liveHidden ? `<p class="pick-empty no-print">No matches</p>` : ""}
+      <div class="item${liveHidden ? " is-search-hidden" : ""}">
         <p>${esc(DATA.sparring.how)}</p>
         <ul>${points}</ul>
         <ul>${who}</ul>
@@ -1346,21 +1508,27 @@ function sparringSection(plan) {
           ? `<section class="block">
               <h2 class="block-title"><span class="when">${esc(plan.warmup.when)}</span> ${
                 plan.mode === "grace" ? "Fun warm-up" : "Warm-up"
-              }</h2>
+              } ${countMark(blockItems(plan.warmup).length)}</h2>
               <p class="callout">${esc(paceNote)}</p>
+              ${searchField("warmup")}
               ${blockItems(plan.warmup).map((item) => renderItem(item, "warmup")).join("")}
+              ${pickerEmpty("warmup")}
               <div class="item"><p>If they get wild:</p>${sayHtml(DATA.wildReset)}</div>
+              ${pickerRest("warmup")}
             </section>`
-          : ""
+          : builderShell("warmup", plan.mode === "grace" ? "Fun warm-up" : "Warm-up")
       }
       ${waterBlock(plan.water1, plan.mode)}
       ${
         plan.base
           ? `<section class="block">
-              <h2 class="block-title"><span class="when">${esc(plan.base.when)}</span> Base</h2>
+              <h2 class="block-title"><span class="when">${esc(plan.base.when)}</span> Base ${countMark(blockItems(plan.base).length)}</h2>
+              ${searchField("base")}
               ${blockItems(plan.base).map((item) => renderItem(item, "base")).join("")}
+              ${pickerEmpty("base")}
+              ${pickerRest("base")}
             </section>`
-          : ""
+          : builderShell("base", "Base")
       }
       ${
         plan.lesson
@@ -1369,16 +1537,19 @@ function sparringSection(plan) {
                 plan.mode === "grace"
                   ? `Technique${plan.theme ? ` — ${esc(plan.theme.label)}` : ""}`
                   : "Lesson"
-              }</h2>
+              } ${countMark(blockItems(plan.lesson).length)}</h2>
               ${
                 plan.mode === "grace" && plan.theme
                   ? `<p class="focus">${esc(plan.theme.reason)}. ${esc(group ? group.focus : "")}</p>`
                   : ""
               }
               ${comboNoteHtml(notes.lesson)}
+              ${searchField("lesson")}
               ${blockItems(plan.lesson).map((item) => renderItem(item, "lesson")).join("")}
+              ${pickerEmpty("lesson")}
+              ${pickerRest("lesson")}
             </section>`
-          : ""
+          : builderShell("lesson", plan.mode === "grace" ? "Technique" : "Lesson")
       }
       ${waterBlock(plan.water, plan.mode)}
       ${waterBlock(plan.water2, plan.mode)}
@@ -1388,12 +1559,15 @@ function sparringSection(plan) {
           ? `<section class="block">
               <h2 class="block-title"><span class="when">${esc(plan.games.when)}</span> ${esc(
                 plan.games.title || "Games"
-              )}</h2>
+              )} ${countMark(blockItems(plan.games).length)}</h2>
               ${plan.games.note ? `<p>${esc(plan.games.note)}</p>` : ""}
               ${comboNoteHtml(notes.game)}
+              ${searchField("game")}
               ${blockItems(plan.games).map((item) => renderItem(item, "game")).join("")}
+              ${pickerEmpty("game")}
+              ${pickerRest("game")}
             </section>`
-          : ""
+          : builderShell("game", "Play time")
       }
       ${
         plan.finish
@@ -1418,6 +1592,7 @@ function sparringSection(plan) {
         ${esc(s.ages)} · ${esc(span)} · ${esc(String(s.kidCount))} kids · ${esc(String(s.adultCount))} adults
       </div>`;
     if ($("themeReason")) $("themeReason").textContent = plan.theme ? plan.theme.reason : "";
+    restorePlanFocus();
   }
 
   function catLabel(cat) {
@@ -3994,7 +4169,33 @@ function sparringSection(plan) {
       updateMeta();
     });
 
+    $("plan").addEventListener("input", (event) => {
+      const input = event.target.closest("[data-plan-search]");
+      if (!input) return;
+      state.planQuery[input.dataset.planSearch] = input.value;
+      state.planFocus = { kind: "search", section: input.dataset.planSearch, pos: input.selectionStart };
+      renderPlan();
+    });
     $("plan").addEventListener("click", (event) => {
+      const clear = event.target.closest("[data-plan-clear]");
+      if (clear) {
+        if (clear.disabled) return;
+        const section = clear.dataset.planClear;
+        state.planQuery[section] = "";
+        state.planFocus = { kind: "search", section, pos: 0 };
+        renderPlan();
+        return;
+      }
+      const toggle = event.target.closest("[data-plan-toggle]");
+      if (toggle) {
+        const section = toggle.dataset.planToggle;
+        const id = toggle.dataset.id;
+        const key = blockKey(section);
+        const ids = (state.plan?.[key]?.items || []).map((item) => item.id);
+        state.planFocus = { kind: "toggle", section, id };
+        setSectionItems(section, P.togglePlanIds(ids, id));
+        return;
+      }
       const repsBtn = event.target.closest("[data-reps]");
       if (repsBtn) {
         bumpReps(repsBtn.dataset.id, Number(repsBtn.dataset.reps), repsBtn.dataset.section, true);
