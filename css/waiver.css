@@ -49,6 +49,10 @@ a:hover { text-decoration: none; }
   margin: 24px auto 48px;
 }
 .logo { width: min(280px, 70vw); display: block; }
+.top a + a { margin-left: 8px; }
+.agree { font-weight: 700; }
+h3 { font-size: 1.1rem; margin: 18px 0 6px; }
+code { font-size: 0.95em; }
 h1 { font-size: clamp(1.7rem, 4vw, 2.2rem); line-height: 1.15; margin: 16px 0 8px; }
 h2 { font-size: 1.3rem; margin: 28px 0 8px; }
 .lede { color: var(--muted); margin-top: 0; }
