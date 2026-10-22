@@ -486,6 +486,21 @@
     return activity.ages.includes(ageGroup);
   }
 
+  function lessonThemes(item) {
+    const ids = [];
+    if (!item || typeof item !== "object") return ids;
+    if (item.theme) ids.push(item.theme);
+    (Array.isArray(item.themes) ? item.themes : []).forEach((id) => {
+      if (id && !ids.includes(id)) ids.push(id);
+    });
+    return ids;
+  }
+
+  function lessonInTheme(item, themeId) {
+    if (!themeId) return true;
+    return lessonThemes(item).includes(themeId);
+  }
+
   function pool(category, ageGroup) {
     return allActivities().filter(
       (activity) =>
@@ -845,7 +860,7 @@ function liveSparring(settings, mode) {
 }
 
 function themesForAge(age) {
-  return (DATA.themes || []).filter((theme) => pool("lesson", age).some((item) => item.theme === theme.id));
+    return (DATA.themes || []).filter((theme) => pool("lesson", age).some((item) => lessonInTheme(item, theme.id)));
 }
 
 function fillThemeLock() {
@@ -878,7 +893,7 @@ function pickGraceLessons(age, count) {
   );
   if (!choice) return { items: [], theme: null };
   const themed = pool("lesson", age)
-    .filter((item) => item.theme === choice.id)
+    .filter((item) => lessonInTheme(item, choice.id))
     .sort((a, b) => (Number(a.order) || 50) - (Number(b.order) || 50) || a.name.localeCompare(b.name));
   const already = new Set();
   state.progress.classes.forEach((entry) => {
@@ -889,7 +904,7 @@ function pickGraceLessons(age, count) {
   const seq = P.takeSequence(themed, count, resume + state.themeOffset);
   const pinned = state.pinned
     .map((id) => pool("lesson", age).find((item) => item.id === id))
-    .filter((item) => item && (!item.theme || item.theme === choice.id));
+    .filter((item) => item && (!lessonThemes(item).length || lessonInTheme(item, choice.id)));
   const items = [];
   const used = new Set();
   pinned.forEach((item) => {
@@ -922,11 +937,30 @@ function themeGamePrefer(themeId, age) {
       catalogReps,
       reps,
       prefMinutes: P.prefMinutes(catalogMinutes, catalogReps, reps),
+      ageOverride: !!item.ageOverride,
     };
   }
 
   function cleanItems(items) {
     return (Array.isArray(items) ? items : []).map(cleanItem).filter(Boolean);
+  }
+
+  function overrideCarryCount(key) {
+    const previous = state.plan && state.plan[key] && state.plan[key].items;
+    return (Array.isArray(previous) ? previous : []).filter((item) => item && item.ageOverride && item.id != null).length;
+  }
+
+  function carryAgeOverrides(picked, key, age) {
+    const previous = state.plan && state.plan[key] && state.plan[key].items;
+    const expected = key === "games" ? "game" : key;
+    return P.keepAgeOverrides(picked, previous)
+      .filter((item) => item && !state.disabled.includes(item.id))
+      .map((item) => {
+        if (!item.ageOverride) return item;
+        const activity = findActivity(item.id);
+        if (!activity || activity.category !== expected) return { ...item, ageOverride: true };
+        return { ...withCurrentReps(activity, age), ageOverride: !ageAllows(activity, age) };
+      });
   }
 
 function buildPlan(opts = {}) {
@@ -942,19 +976,22 @@ function buildPlan(opts = {}) {
     prefer.warmup !== undefined ? prefer.warmup : mode === "grace" && !keep.warmup ? P.STANDARD_WARMUP : [];
   let lesson = [];
   let theme = null;
-  if (settings.lessonCount > 0) {
+  const lessonPick = Math.max(0, settings.lessonCount - overrideCarryCount("lesson"));
+  if (lessonPick > 0) {
     if (mode === "grace" && !keep.lesson) {
-      const picked = pickGraceLessons(age, settings.lessonCount);
+      const picked = pickGraceLessons(age, lessonPick);
       lesson = picked.items;
       theme = picked.theme;
     } else {
-      lesson = pick("lesson", settings.lessonCount, age, {
+      lesson = pick("lesson", lessonPick, age, {
         keep: keep.lesson,
         exclude: exclude.lesson,
         prefer: prefer.lesson || [],
       });
       theme = opts.keepSession ? state.plan?.theme || null : null;
     }
+  } else if (overrideCarryCount("lesson") > 0) {
+    theme = state.plan?.theme || null;
   }
   const gamePrefer =
     prefer.game !== undefined
@@ -962,27 +999,35 @@ function buildPlan(opts = {}) {
       : mode === "grace" && !keep.game
         ? themeGamePrefer(theme && theme.id, age)
         : [];
+  const warmupPick = Math.max(0, settings.warmupCount - overrideCarryCount("warmup"));
+  const gamePick = Math.max(0, settings.gameCount - overrideCarryCount("games"));
   const content = {
     mode,
     opening: openingItems(settings),
-    warmup:
-      settings.warmupCount > 0
-        ? pick("warmup", settings.warmupCount, age, {
+    warmup: carryAgeOverrides(
+      warmupPick > 0
+        ? pick("warmup", warmupPick, age, {
             keep: keep.warmup,
             exclude: exclude.warmup,
             prefer: warmupPrefer,
           })
         : [],
-    base: mode === "grace" ? baseItems(age, keep.base) : [],
-    lesson,
-    games:
-      settings.gameCount > 0
-        ? pick("game", settings.gameCount, age, {
+      "warmup",
+      age
+    ),
+    base: carryAgeOverrides(mode === "grace" ? baseItems(age, keep.base) : [], "base", age),
+    lesson: carryAgeOverrides(lesson, "lesson", age),
+    games: carryAgeOverrides(
+      gamePick > 0
+        ? pick("game", gamePick, age, {
             keep: keep.game,
             exclude: exclude.game,
             prefer: gamePrefer,
           })
         : [],
+      "games",
+      age
+    ),
     sparring: false,
     liveSparring: liveSparring(settings, mode),
     theme,
@@ -1036,7 +1081,7 @@ function buildPlan(opts = {}) {
     else if (count > current.length) {
       if (cat === "lesson" && state.plan.mode === "grace" && state.plan.theme) {
         const more = pool("lesson", age)
-          .filter((item) => item.theme === state.plan.theme.id && !current.some((have) => have.id === item.id))
+          .filter((item) => lessonInTheme(item, state.plan.theme.id) && !current.some((have) => have.id === item.id))
           .sort((a, b) => (Number(a.order) || 50) - (Number(b.order) || 50));
         next = current.concat(more.slice(0, count - current.length).map((item) => withCurrentReps(item, age)));
       } else {
@@ -1058,13 +1103,14 @@ function buildPlan(opts = {}) {
     retimePlan();
   }
 
-  function setSectionItems(section, ids) {
+  function setSectionItems(section, ids, opts = {}) {
     if (!state.plan) return;
     const key = blockKey(section);
     const cat = key === "games" ? "game" : key;
     const age = curriculumAge(state.plan.settings.ageGroup, state.plan.mode);
     const current = cleanItems(state.plan[key]?.items);
     const have = new Map(current.map((item) => [item.id, item]));
+    const overrideId = opts.overrideId != null ? String(opts.overrideId) : "";
     const next = [];
     ids.forEach((id) => {
       if (have.has(id)) {
@@ -1073,8 +1119,12 @@ function buildPlan(opts = {}) {
       }
       const activity = findActivity(id);
       if (!activity || activity.category !== cat) return;
-      if (state.disabled.includes(id) || !ageAllows(activity, age)) return;
-      next.push(withCurrentReps(activity, age));
+      if (state.disabled.includes(id)) return;
+      const allowed = ageAllows(activity, age);
+      if (!allowed && String(id) !== overrideId) return;
+      const item = withCurrentReps(activity, age);
+      if (!allowed) item.ageOverride = true;
+      next.push(item);
     });
     if (next.length) state.plan[key] = { ...(state.plan[key] || {}), items: next };
     else delete state.plan[key];
@@ -1200,6 +1250,28 @@ function bodyHtml(item) {
     });
   }
 
+  function libraryOutOfAge(cat) {
+    const age = state.plan ? curriculumAge(state.plan.settings.ageGroup, state.plan.mode) : curriculumAge(state.ageGroup, state.preset);
+    const key = blockKey(cat);
+    const inIds = new Set((state.plan?.[key]?.items || []).map((item) => item && item.id).filter(Boolean));
+    return allActivities().filter((activity) => {
+      if (activity.category !== cat) return false;
+      if (inIds.has(activity.id) || state.disabled.includes(activity.id)) return false;
+      return !ageAllows(activity, age);
+    });
+  }
+
+  function sectionGroups(section, query) {
+    const cat = PICK[section].cat;
+    const key = blockKey(section);
+    const ids = (state.plan?.[key]?.items || []).map((item) => item && item.id).filter(Boolean);
+    return P.ageOverrideGroups(libraryFor(cat), libraryOutOfAge(cat), ids, query);
+  }
+
+  function byPlanName(a, b) {
+    return String(a.name || "").localeCompare(String(b.name || ""), undefined, { sensitivity: "base" });
+  }
+
   function blurbOf(activity) {
     const raw = activity.how || (Array.isArray(activity.say) ? activity.say[0] : activity.say) || activity.extra || "";
     return fill(String(raw).split("\n")[0], { ...activity, reps: repsOf(activity) });
@@ -1208,12 +1280,10 @@ function bodyHtml(item) {
   function pickerRest(section) {
     const cat = PICK[section].cat;
     if (!cat) return "";
-    const key = blockKey(section);
-    const ids = (state.plan?.[key]?.items || []).map((item) => item && item.id).filter(Boolean);
-    const groups = P.planPickerGroups(libraryFor(cat), ids, planQuery(section));
-    const rows = groups.rest
+    const groups = sectionGroups(section, planQuery(section));
+    const inAge = groups.rest
       .slice()
-      .sort((a, b) => String(a.name || "").localeCompare(String(b.name || ""), undefined, { sensitivity: "base" }))
+      .sort(byPlanName)
       .map((activity) => {
         return `<article class="pick-row">
           <div class="pick-copy">
@@ -1222,9 +1292,22 @@ function bodyHtml(item) {
           </div>
           ${planToggleButton(section, activity.id, activity.name, false)}
         </article>`;
-      })
-      .join("");
-    return `<div class="plan-rest no-print">${rows}</div>`;
+      });
+    const outOfAge = groups.outOfAge
+      .slice()
+      .sort(byPlanName)
+      .map((activity) => {
+        const name = activity.name || "item";
+        return `<article class="pick-row is-out-of-age">
+          <div class="pick-copy">
+            <strong>${esc(activity.name || "")}</strong>
+            <p>${esc(blurbOf(activity))}</p>
+            <p class="age-limit">${esc(P.ageLimitLabel(activity.ages))}</p>
+          </div>
+          <button type="button" class="danger plan-override no-print" data-plan-override="${esc(section)}" data-id="${esc(activity.id)}" aria-label="Override age limit and add ${esc(name)} to plan">Override</button>
+        </article>`;
+      });
+    return `<div class="plan-rest no-print">${inAge.concat(outOfAge).join("")}</div>`;
   }
 
   function pickerEmpty(section) {
@@ -1240,13 +1323,11 @@ function bodyHtml(item) {
       if (on && P.matchesPlanQuery(record, query)) return "";
       return `<p class="pick-empty no-print">No matches</p>`;
     }
-    const cat = PICK[section].cat;
     const key = blockKey(section);
     const items = (state.plan?.[key]?.items || []).filter((item) => item && typeof item === "object");
     const shown = items.filter((item) => P.matchesPlanQuery(item, query)).length;
-    const ids = items.map((item) => item.id);
-    const groups = P.planPickerGroups(libraryFor(cat), ids, query);
-    if (shown + groups.rest.length > 0) return "";
+    const groups = sectionGroups(section, query);
+    if (shown + groups.rest.length + groups.outOfAge.length > 0) return "";
     return `<p class="pick-empty no-print">No matches</p>`;
   }
 
@@ -1295,6 +1376,7 @@ function bodyHtml(item) {
           <span class="when">${esc(item.when || "")}</span>
           <strong class="name-live">${esc(name)}</strong>
           <strong class="name-print">${esc(displayName(item))}</strong>
+          ${item.ageOverride ? `<span class="age-override">Age override</span>` : ""}
           ${picker ? `<span class="in-plan-mark no-print">In plan</span>` : ""}
           ${repsCtrl(item, section)}
           ${shuffleBtn(section, item.id)}
@@ -1366,7 +1448,7 @@ function bodyHtml(item) {
     const young = groups[0];
     const themeId = plan.theme && plan.theme.id;
     const lessons = allActivities().filter(
-      (item) => item.category === "lesson" && (!themeId || item.theme === themeId)
+      (item) => item.category === "lesson" && lessonInTheme(item, themeId)
     );
     const games = allActivities().filter((item) => {
       if (item.category !== "game") return false;
@@ -2402,7 +2484,7 @@ function sparringSection(plan) {
     let replacement = [];
     if (cat === "lesson" && state.plan.mode === "grace" && state.plan.theme) {
       const next = pool("lesson", age)
-        .filter((item) => item.theme === state.plan.theme.id && !block.items.some((have) => have.id === item.id))
+        .filter((item) => lessonInTheme(item, state.plan.theme.id) && !block.items.some((have) => have.id === item.id))
         .sort((a, b) => (Number(a.order) || 50) - (Number(b.order) || 50));
       if (next[0]) replacement = [withCurrentReps(next[0], age)];
     } else {
@@ -3061,7 +3143,7 @@ function sparringSection(plan) {
 
   function pastTechMarkup(age, themeId) {
     if (!themeId) return `<p class="hint">Choose a theme to list techniques, or save the date and who was here.</p>`;
-    const items = pool("lesson", age).filter((item) => item.theme === themeId);
+    const items = pool("lesson", age).filter((item) => lessonInTheme(item, themeId));
     if (!items.length) return `<p class="hint">No techniques for that theme in this class.</p>`;
     return `<div class="tech-checks">${items
       .map((item) => `<label class="check"><input type="checkbox" value="${esc(item.id)}" /> ${esc(item.name)}</label>`)
@@ -3235,7 +3317,7 @@ function sparringSection(plan) {
         const taughtIds = new Set();
         hits.forEach((entry) => (entry.techniques || []).forEach((tech) => tech && taughtIds.add(tech.id)));
         const missing = pool("lesson", age)
-          .filter((item) => item.theme === theme.id && !taughtIds.has(item.id))
+          .filter((item) => lessonInTheme(item, theme.id) && !taughtIds.has(item.id))
           .map((item) => item.name);
         const last = hits.length ? hits[hits.length - 1].date : "";
         return `<li><strong>${esc(P.themeReason(theme.label, since))}</strong>${last ? ` · last ${esc(last)}` : ""}${
@@ -4224,6 +4306,17 @@ function sparringSection(plan) {
         state.planQuery[section] = "";
         state.planFocus = { kind: "search", section, pos: 0 };
         renderPlan();
+        return;
+      }
+      const override = event.target.closest("[data-plan-override]");
+      if (override) {
+        const section = override.dataset.planOverride;
+        const id = override.dataset.id;
+        const key = blockKey(section);
+        const ids = (state.plan?.[key]?.items || []).map((item) => item.id);
+        if (!ids.includes(id)) ids.unshift(id);
+        state.planFocus = { kind: "toggle", section, id };
+        setSectionItems(section, ids, { overrideId: id });
         return;
       }
       const toggle = event.target.closest("[data-plan-toggle]");

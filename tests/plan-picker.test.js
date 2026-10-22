@@ -57,7 +57,7 @@ assert.ok(app.includes("Remove from plan"));
 assert.ok(app.includes('aria-pressed='));
 assert.ok(app.includes("In plan"));
 assert.ok(app.includes("No matches"));
-assert.ok(app.includes("planPickerGroups"));
+assert.ok(app.includes("ageOverrideGroups"));
 assert.ok(app.includes("togglePlanIds"));
 
 console.log("plan picker checks passed");
