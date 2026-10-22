@@ -1,0 +1,140 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Grace BJJ Kids enrollment</title>
+  <meta name="description" content="Parent enrollment and waiver for Grace BJJ Kids at Grace Baptist Church." />
+  <link rel="manifest" href="/manifest.webmanifest" />
+  <meta name="theme-color" content="#9b2a12" />
+  <link rel="icon" href="/icons/favicon-32.png" type="image/png" sizes="32x32" />
+  <link rel="stylesheet" href="/css/waiver.css?v=20261021-24" />
+  <script src="/pwa.js?v=20261021-24" defer></script>
+</head>
+<body data-kind="kids">
+  <a class="skip" href="#main">Skip to content</a>
+  <header class="top no-print"><a href="/kids/">Grace BJJ Kids</a></header>
+  <main class="sheet" id="main">
+    <img class="logo" src="/img/logo/grace-logo-mark-transparent.png" alt="Grace Jiu Jitsu" />
+    <h1>Grace BJJ Kids</h1>
+    <p class="lede">A parent or guardian completes and signs this enrollment and waiver for their child.</p>
+    <p class="closed no-print" id="closedNote">Do not submit yet. Enrollment is not open.</p>
+
+    <section>
+      <h2>Guidelines for kids</h2>
+      <ul class="rules">
+        <li>Shoes come off before you step on the mat.</li>
+        <li>Line up by rank, with your belt tied, and be ready on time.</li>
+        <li>Say hello to everyone on the mat. Kids call instructors “teacher.”</li>
+        <li>Keep nails trimmed, leave jewelry at home, and tie long hair back.</li>
+        <li>Wear a clean gi.</li>
+        <li>Sit and listen when the teacher shows a technique.</li>
+        <li>Use kind words only.</li>
+        <li>Keep your belt on. It shows the work you have done.</li>
+        <li>Tell a teacher if you are hurt or something does not feel right.</li>
+        <li>No sparring unless a teacher says it is okay and stays with you.</li>
+        <li>Tap early. When your partner taps, let go right away.</li>
+        <li>Be a good sport. No bragging when you submit someone, and no complaining when you get submitted. Thank your partner.</li>
+        <li>Ask a teacher before you leave the mat for the bathroom.</li>
+        <li>Parents, visitors, and observers do not coach from the side.</li>
+      </ul>
+      <p>Parents and visitors: keep cell phones and mobile devices put away during class, unless you are expecting an urgent phone call.</p>
+    </section>
+
+    <form id="waiverForm" novalidate>
+      <h2>Enrollment form</h2>
+      <p>Sign and return to the church office.</p>
+      <div class="field">
+        <label for="participantName">Child's name</label>
+        <input id="participantName" name="participantName" type="text" autocomplete="name" required maxlength="120" />
+      </div>
+      <div class="field">
+        <label for="dob">Child's DOB</label>
+        <input id="dob" name="dob" type="date" required />
+      </div>
+      <p class="potty" id="pottyNote" hidden>Kids ages 3–6 must be fully potty trained to join class.</p>
+      <div class="field">
+        <label for="parentName">Parent or guardian name</label>
+        <input id="parentName" name="parentName" type="text" autocomplete="name" required maxlength="120" />
+      </div>
+      <div class="field">
+        <label for="address">Address</label>
+        <input id="address" name="address" type="text" autocomplete="street-address" required maxlength="300" />
+      </div>
+      <div class="field">
+        <label for="email">Email</label>
+        <input id="email" name="email" type="email" autocomplete="email" required maxlength="160" />
+      </div>
+      <div class="field">
+        <label for="phone">Phone number</label>
+        <input id="phone" name="phone" type="tel" autocomplete="tel" required maxlength="40" />
+      </div>
+      <div class="field">
+        <label for="emergencyName">Emergency contact name</label>
+        <input id="emergencyName" name="emergencyName" type="text" required maxlength="120" />
+      </div>
+      <div class="field">
+        <label for="emergencyPhone">Emergency contact phone</label>
+        <input id="emergencyPhone" name="emergencyPhone" type="tel" required maxlength="40" />
+      </div>
+      <div class="field">
+        <label for="injuries">Injuries or medical notes <span class="hint">(if any)</span></label>
+        <textarea id="injuries" name="injuries" maxlength="2000"></textarea>
+      </div>
+
+      <fieldset>
+        <legend>Goals (check all that apply)</legend>
+        <label class="check"><input type="checkbox" name="goals" value="Health" /> Health</label>
+        <label class="check"><input type="checkbox" name="goals" value="Self-defense" /> Self-defense</label>
+        <label class="check"><input type="checkbox" name="goals" value="Bully-proofing" /> Bully-proofing</label>
+        <label class="check"><input type="checkbox" name="goals" value="Competition" /> Competition</label>
+        <label class="check"><input type="checkbox" name="goals" value="Meet new friends" /> Meet new friends</label>
+        <label class="check"><input type="checkbox" name="goals" value="Fun" /> Fun</label>
+      </fieldset>
+
+      <section class="legal" id="risks">
+        <h2>Acknowledgement of Risks, Injury &amp; Obligations</h2>
+        <p>I am the parent or guardian of the minor child named on this form. I acknowledge that the activity my child will be engaging in is a dangerous activity and that by participating my child is exposed to certain risks. I assume the risk and responsibility for any injury, death or property damage resulting from my child's participation. I acknowledge and understand that while my child is participating in this activity: My child may be injured physically. My child may cause injury to other people. I am responsible for my child's personal property. Other people participating in the activity may cause injury to my child or damage to my child's property. The conditions in which the activity is conducted may vary without warning. Grace Baptist Church of Salem, Oregon or any instructors teaching on behalf of Grace Baptist Church of Salem, Oregon are not responsible for damage or injury to personal property.</p>
+      </section>
+
+      <section class="legal" id="release">
+        <h2>Release and Indemnity</h2>
+        <p>My child participates in the above activity at my sole risk and responsibility. I indemnify and hold harmless Grace Baptist Church of Salem, Oregon or any instructors teaching on behalf of Grace Baptist Church of Salem, Oregon against any and all claims, damage, demands, rights of action, or causes of action, of any person or entity, that may arise from injuries or damages sustained by my child or by fellow students and instructors.</p>
+      </section>
+
+      <section class="legal" id="hygiene">
+        <h2>Guidelines to Follow</h2>
+        <p>Appropriate clothing, footwear, protection, and gear must be worn at all times. Each student/participant must follow the guidelines on pages 1 and 2. Hygiene is important. Communicable diseases spread easily in a training environment. Do yourself and others a service by not bringing unwanted germs into the gym. Come to class clean, shower, or clean off after work before stepping on the mats. Thank you for making the gym at Grace Baptist Church of Salem, Oregon a clean, safe, and enjoyable place to be. By signing this form, I acknowledge that I have read, understand, and agree to the above statements, and I consent on behalf of my minor child.</p>
+      </section>
+
+      <div class="sig-block">
+        <h2>Parent or guardian signature</h2>
+        <div class="field">
+          <label for="typedName">Signature</label>
+          <input id="typedName" name="typedName" type="text" autocomplete="name" required maxlength="120" />
+        </div>
+        <div class="field">
+          <label for="signaturePad">Draw your signature</label>
+          <canvas class="pad" id="signaturePad" width="600" height="160"></canvas>
+          <p class="row no-print"><button class="ghost" type="button" data-clear="signaturePad">Clear signature</button></p>
+        </div>
+        <div class="field">
+          <label for="signedOn">Date</label>
+          <input id="signedOn" name="signedOn" type="date" readonly />
+        </div>
+        <div class="field">
+          <label for="printName">Please print name</label>
+          <input id="printName" name="printName" type="text" autocomplete="name" required maxlength="120" />
+        </div>
+      </div>
+
+      <p class="error" id="formNote" role="alert"></p>
+      <p class="row no-print">
+        <button type="button" id="printBtn">Print / Save as PDF</button>
+        <button type="submit" id="submitBtn" disabled>Submit enrollment</button>
+      </p>
+    </form>
+  </main>
+  <script src="/waiver/waiver.js?v=20261021-24"></script>
+</body>
+</html>

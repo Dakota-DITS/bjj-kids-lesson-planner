@@ -1291,6 +1291,95 @@ class ApiTest(unittest.TestCase):
         self.assertEqual(status, 200, empty)
         self.assertEqual(empty["exceptions"], [])
 
+    def waiver_body(self, **overrides):
+        body = {
+            "kind": "adult",
+            "participantName": "Jordan Lee",
+            "address": "4197 State St, Salem",
+            "email": "jordan@example.com",
+            "phone": "503-555-0100",
+            "dob": "1990-04-02",
+            "parentName": "",
+            "goals": ["Health", "Fun"],
+            "emergencyName": "Sam Lee",
+            "emergencyPhone": "503-555-0199",
+            "injuries": "",
+            "typedName": "Jordan Lee",
+            "printName": "Jordan Lee",
+            "signature": PNG,
+            "parentTypedName": "",
+            "parentPrintName": "",
+            "parentSignature": "",
+        }
+        body.update(overrides)
+        return body
+
+    def test_waivers_stay_closed_and_admins_review_them(self):
+        guest = self.client()
+        status, denied = guest.call("POST", "/api/public/waivers", self.waiver_body())
+        self.assertEqual(status, 403, denied)
+        self.assertIn("not open", denied["error"])
+        teacher = self.client()
+        teacher.login("alex", "correct-horse")
+        status, hidden = teacher.call("GET", "/api/waivers")
+        self.assertEqual(status, 403, hidden)
+        status, csv_hidden = teacher.call("GET", "/api/waivers.csv", raw=True)
+        self.assertEqual(status, 403, csv_hidden)
+        admin = self.client()
+        admin.login("dakota", "correct-horse")
+        status, empty = admin.call("GET", "/api/waivers")
+        self.assertEqual(status, 200, empty)
+        self.assertEqual(empty["waivers"], [])
+
+        self.api.cfg["waiver_submissions_enabled"] = True
+        try:
+            from datetime import date
+
+            year = date.today().year
+            young = self.waiver_body(dob=f"{year - 6}-01-15")
+            status, too_young = guest.call("POST", "/api/public/waivers", young)
+            self.assertEqual(status, 400, too_young)
+            minor = self.waiver_body(dob=f"{year - 14}-01-15")
+            status, needs_parent = guest.call("POST", "/api/public/waivers", minor)
+            self.assertEqual(status, 400, needs_parent)
+            minor.update(
+                {
+                    "parentName": "Pat Parent",
+                    "parentTypedName": "Pat Parent",
+                    "parentPrintName": "Pat Parent",
+                    "parentSignature": PNG,
+                }
+            )
+            status, saved = guest.call("POST", "/api/public/waivers", minor)
+            self.assertEqual(status, 201, saved)
+            status, kids_saved = guest.call(
+                "POST",
+                "/api/public/waivers",
+                self.waiver_body(
+                    kind="kids",
+                    participantName="Casey Lee",
+                    dob=f"{year - 6}-02-02",
+                    parentName="Pat Parent",
+                    injuries="None",
+                ),
+            )
+            self.assertEqual(status, 201, kids_saved)
+            status, still_hidden = teacher.call("GET", "/api/waivers/" + saved["id"])
+            self.assertEqual(status, 403, still_hidden)
+            status, detail = admin.call("GET", "/api/waivers/" + saved["id"])
+            self.assertEqual(status, 200, detail)
+            self.assertTrue(detail["signature"].startswith("data:image/png"))
+            self.assertTrue(detail["parentSignature"].startswith("data:image/png"))
+            self.assertEqual(detail["payload"]["parentName"], "Pat Parent")
+            status, csv_body = admin.call("GET", "/api/waivers.csv", raw=True)
+            self.assertEqual(status, 200)
+            text = csv_body.decode()
+            self.assertIn("Casey Lee", text)
+            self.assertIn("Jordan Lee", text)
+            self.assertNotIn("data:image", text)
+        finally:
+            self.api.cfg["waiver_submissions_enabled"] = None
+
 
 def _handler(api):
     from http.server import BaseHTTPRequestHandler

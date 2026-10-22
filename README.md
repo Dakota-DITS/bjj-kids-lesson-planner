@@ -20,6 +20,10 @@ The live site is served from the Debian host described in [DEPLOY.md](DEPLOY.md)
 
 The kids page shows the church address and an email for questions. Phone and a sign-up link are not on the page yet. Add those in the `PUBLIC_INFO` object in `kids/index.html`. A value left as `""` stays hidden.
 
+## Enrollment and waiver
+
+`/waiver/` is the adult enrollment form (ages 11 and up). `/kids/waiver/` is the parent form for the kids class. Both can be printed. Saving a submission is off until `waiverSubmissionsEnabled` in `waiver-config.json` is `true`. Admins review saved forms at `/app/waivers/`. Teachers do not. Turning the flag on does not by itself publish a new legal clause; Pastor Pierre still needs to review the kids parent-consent wording before that flag changes.
+
 ## Coloring sheets
 
 Parents pick a built-in sheet, type a child's name, optionally pick a belt color to color in, and add a move of the week. Print or save a PDF from the browser. If a teacher sets “this week's sheet” in the staff app, the coloring page shows that caption. The public API returns only a sheet id and a caption, plus sheets an admin has published. It does not return student names, attendance, or notes.

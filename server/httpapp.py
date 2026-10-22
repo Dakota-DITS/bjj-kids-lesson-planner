@@ -1,5 +1,6 @@
 """JSON API for roster, attendance, and progress. No student data is written to the repo."""
 
+import base64
 import json
 import os
 import re
@@ -33,6 +34,15 @@ from server.db import (
 
 ID_RE = re.compile(r"^[A-Za-z0-9_-]{1,40}$")
 USER_RE = re.compile(r"^[A-Za-z0-9._-]{3,32}$")
+EMAIL_RE = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
+WAIVER_GOALS = (
+    "Health",
+    "Self-defense",
+    "Bully-proofing",
+    "Competition",
+    "Meet new friends",
+    "Fun",
+)
 MAX_BODY = 3_000_000
 LOGIN_LIMIT = 8
 LOGIN_WINDOW_MIN = 15
@@ -80,6 +90,7 @@ class Api:
         migrate(conn)
         cleanup(conn)
         conn.close()
+        self._waiver_posts = []
 
     def db(self):
         return connect(self.cfg["db_path"])
@@ -563,6 +574,8 @@ class Api:
                 return self.public_class_exceptions(handler)
             if method == "GET" and path == "/api/public/sheets":
                 return self.public_sheets(handler)
+            if method == "POST" and path == "/api/public/waivers":
+                return self.submit_waiver(handler)
             image = re.match(r"^/api/public/sheets/([A-Za-z0-9_-]{1,40})/image$", path)
             if method == "GET" and image:
                 return self.public_image(handler, image.group(1))
@@ -856,6 +869,19 @@ class Api:
             return self.send_csv(handler, "grace-roster.csv", self.roster_csv(conn))
         if path == "/api/export/attendance.csv" and method == "GET":
             return self.send_csv(handler, "grace-attendance.csv", self.attendance_csv(conn))
+        if path == "/api/waivers" and method == "GET":
+            if not admin:
+                return self.send(handler, 403, {"error": "An admin reviews enrollment forms."})
+            return self.list_waivers(handler, conn)
+        if path == "/api/waivers.csv" and method == "GET":
+            if not admin:
+                return self.send(handler, 403, {"error": "An admin reviews enrollment forms."})
+            return self.send_csv(handler, "grace-waivers.csv", self.waivers_csv(conn))
+        waiver_match = re.fullmatch(r"/api/waivers/([A-Za-z0-9_-]{1,40})", path)
+        if waiver_match and method == "GET":
+            if not admin:
+                return self.send(handler, 403, {"error": "An admin reviews enrollment forms."})
+            return self.waiver_detail(handler, conn, waiver_match.group(1))
         return self.send(handler, 404, {"error": "That address is not part of the API."})
 
     def get_csrf(self, handler):
@@ -1567,6 +1593,227 @@ class Api:
         if any(ch in text for ch in '",\n\r'):
             text = '"' + text.replace('"', '""') + '"'
         return text
+
+    def waiver_submissions_enabled(self):
+        forced = self.cfg.get("waiver_submissions_enabled", None)
+        if forced is not None:
+            return bool(forced)
+        paths = []
+        root = self.cfg.get("static_root") or ""
+        if root:
+            paths.append(os.path.join(root, "waiver-config.json"))
+        paths.append(os.path.join(os.getcwd(), "waiver-config.json"))
+        for path in paths:
+            try:
+                with open(path, encoding="utf-8") as handle:
+                    data = json.load(handle)
+            except (OSError, json.JSONDecodeError, TypeError):
+                continue
+            if isinstance(data, dict):
+                return data.get("waiverSubmissionsEnabled") is True
+        return False
+
+    def allow_waiver_post(self, ip):
+        now = utcnow().timestamp()
+        posts = [item for item in self._waiver_posts if now - item[0] < 3600]
+        count = sum(1 for item in posts if item[1] == ip)
+        if count >= 10:
+            self._waiver_posts = posts
+            return False
+        posts.append((now, ip))
+        self._waiver_posts = posts
+        return True
+
+    def waiver_age(self, dob):
+        text = clip(dob, 10)
+        try:
+            born = datetime.strptime(text, "%Y-%m-%d").date()
+        except ValueError as err:
+            raise ValueError("Enter a date of birth.") from err
+        if born.isoformat() != text or born.year < 1900:
+            raise ValueError("Enter a date of birth.")
+        today = datetime.strptime(today_pacific(), "%Y-%m-%d").date()
+        if born > today:
+            raise ValueError("Enter a date of birth.")
+        age = today.year - born.year - ((today.month, today.day) < (born.month, born.day))
+        return text, age
+
+    def waiver_png(self, data_url, required):
+        text = str(data_url or "")
+        if not text:
+            if required:
+                raise ValueError("Draw a signature.")
+            return ""
+        blob, ext = self.decode_image(text)
+        if ext != ".png" or not blob.startswith(b"\x89PNG"):
+            raise ValueError("Draw the signature in the box.")
+        return "data:image/png;base64," + base64.b64encode(blob).decode("ascii")
+
+    def waiver_phone(self, value, label):
+        text = clip(value, 40)
+        if sum(ch.isdigit() for ch in text) < 7:
+            raise ValueError("Enter a " + label + ".")
+        return text
+
+    def submit_waiver(self, handler):
+        if not self.waiver_submissions_enabled():
+            return self.send(handler, 403, {"error": "Do not submit yet. Enrollment is not open."})
+        if not self.allow_waiver_post(self.client_ip(handler)):
+            return self.send(handler, 429, {"error": "Too many enrollment tries. Wait and try again."})
+        body = self.read_json(handler)
+        kind = body.get("kind")
+        if kind not in ("adult", "kids"):
+            raise ValueError("Choose the adult or kids enrollment form.")
+        name = clip(body.get("participantName"), 120)
+        if len(name) < 2:
+            raise ValueError("Enter a name.")
+        address = clip(body.get("address"), 300)
+        if len(address) < 4:
+            raise ValueError("Enter an address.")
+        email = clip(body.get("email"), 160)
+        if not EMAIL_RE.match(email):
+            raise ValueError("Enter an email address.")
+        phone = self.waiver_phone(body.get("phone"), "phone number")
+        dob, age = self.waiver_age(body.get("dob"))
+        if kind == "adult" and age < 11:
+            raise ValueError("This enrollment is for ages 11 and up.")
+        goals = body.get("goals") or []
+        if not isinstance(goals, list) or any(goal not in WAIVER_GOALS for goal in goals):
+            raise ValueError("Choose goals from the list.")
+        emergency_name = clip(body.get("emergencyName"), 120)
+        if len(emergency_name) < 2:
+            raise ValueError("Enter an emergency contact name.")
+        emergency_phone = self.waiver_phone(body.get("emergencyPhone"), "emergency contact phone")
+        parent_name = clip(body.get("parentName"), 120)
+        typed = clip(body.get("typedName"), 120)
+        printed = clip(body.get("printName"), 120)
+        if len(typed) < 2 or len(printed) < 2:
+            raise ValueError("Sign and print your name.")
+        minor = kind == "adult" and age < 18
+        if kind == "kids" and len(parent_name) < 2:
+            raise ValueError("Enter the parent or guardian name.")
+        if minor and len(parent_name) < 2:
+            raise ValueError("Enter the parent or guardian name.")
+        parent_typed = clip(body.get("parentTypedName"), 120)
+        parent_printed = clip(body.get("parentPrintName"), 120)
+        if minor and (len(parent_typed) < 2 or len(parent_printed) < 2):
+            raise ValueError("A parent or guardian must sign and print their name.")
+        signature = self.waiver_png(body.get("signature"), True)
+        parent_signature = self.waiver_png(body.get("parentSignature"), minor)
+        injuries = clip(body.get("injuries"), 2000) if kind == "kids" else ""
+        payload = {
+            "address": address,
+            "parentName": parent_name,
+            "goals": goals,
+            "emergencyName": emergency_name,
+            "emergencyPhone": emergency_phone,
+            "injuries": injuries,
+            "typedName": typed,
+            "printName": printed,
+            "parentTypedName": parent_typed if minor else "",
+            "parentPrintName": parent_printed if minor else "",
+            "age": age,
+        }
+        wid = new_id("w-")
+        signed_on = today_pacific()
+        conn = self.db()
+        try:
+            conn.execute(
+                """
+                INSERT INTO waivers (
+                  id, kind, submitted_at, signed_on, participant_name, signer_name,
+                  dob, email, phone, payload_json, signature_png, parent_signature_png
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    wid,
+                    kind,
+                    iso(utcnow()),
+                    signed_on,
+                    name,
+                    printed,
+                    dob,
+                    email,
+                    phone,
+                    json.dumps(payload),
+                    signature,
+                    parent_signature,
+                ),
+            )
+            conn.commit()
+        finally:
+            conn.close()
+        return self.send(handler, 201, {"id": wid, "signedOn": signed_on})
+
+    def waiver_summary(self, row):
+        return {
+            "id": row["id"],
+            "kind": row["kind"],
+            "submittedAt": row["submitted_at"],
+            "signedOn": row["signed_on"],
+            "participantName": row["participant_name"],
+            "signerName": row["signer_name"],
+            "dob": row["dob"],
+            "email": row["email"],
+            "phone": row["phone"],
+        }
+
+    def list_waivers(self, handler, conn):
+        rows = conn.execute(
+            """
+            SELECT id, kind, submitted_at, signed_on, participant_name, signer_name, dob, email, phone
+            FROM waivers ORDER BY submitted_at DESC
+            """
+        ).fetchall()
+        return self.send(handler, 200, {"waivers": [self.waiver_summary(row) for row in rows]})
+
+    def waiver_detail(self, handler, conn, wid):
+        row = conn.execute("SELECT * FROM waivers WHERE id = ?", (wid,)).fetchone()
+        if not row:
+            return self.send(handler, 404, {"error": "That enrollment form is not on file."})
+        try:
+            payload = json.loads(row["payload_json"])
+        except json.JSONDecodeError:
+            payload = {}
+        body = self.waiver_summary(row)
+        body["payload"] = payload
+        body["signature"] = row["signature_png"]
+        body["parentSignature"] = row["parent_signature_png"]
+        return self.send(handler, 200, body)
+
+    def waivers_csv(self, conn):
+        rows = [[
+            "id", "kind", "submitted_at", "signed_on", "participant_name", "dob",
+            "email", "phone", "address", "parent_name", "emergency_name", "emergency_phone",
+            "goals", "injuries", "print_name", "parent_print_name", "signature", "parent_signature",
+        ]]
+        for row in conn.execute("SELECT * FROM waivers ORDER BY submitted_at"):
+            try:
+                payload = json.loads(row["payload_json"])
+            except json.JSONDecodeError:
+                payload = {}
+            goals = payload.get("goals") or []
+            rows.append([
+                row["id"],
+                row["kind"],
+                row["submitted_at"],
+                row["signed_on"],
+                row["participant_name"],
+                row["dob"],
+                row["email"],
+                row["phone"],
+                payload.get("address", ""),
+                payload.get("parentName", ""),
+                payload.get("emergencyName", ""),
+                payload.get("emergencyPhone", ""),
+                ", ".join(goals) if isinstance(goals, list) else "",
+                payload.get("injuries", ""),
+                payload.get("printName", ""),
+                payload.get("parentPrintName", ""),
+                "yes" if row["signature_png"] else "no",
+                "yes" if row["parent_signature_png"] else "no",
+            ])
+        return rows
 
     def roster_csv(self, conn):
         rows = [["name", "age", "belt", "stripes"]]

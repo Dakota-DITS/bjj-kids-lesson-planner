@@ -3,7 +3,7 @@ const assert = require("assert");
 const fs = require("fs");
 const path = require("path");
 
-const VERSION = "20261021-23";
+const VERSION = "20261021-24";
 const root = path.join(__dirname, "..");
 
 function read(rel) {
@@ -15,7 +15,7 @@ function linkedAssets(html) {
   return hrefs.filter((url) => /\.(?:js|css)(?:\?|$)/.test(url));
 }
 
-const pages = ["index.html", "kids/index.html", "login/index.html", "coloring/index.html", "app/index.html"];
+const pages = ["index.html", "kids/index.html", "login/index.html", "coloring/index.html", "app/index.html", "waiver/index.html", "kids/waiver/index.html", "app/waivers/index.html"];
 pages.forEach((rel) => {
   const html = read(rel);
   const assets = linkedAssets(html);

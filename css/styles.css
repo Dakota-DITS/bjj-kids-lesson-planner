@@ -1255,6 +1255,14 @@ body:not(.authed) .app { display: none; }
 }
 body.authed .gate { display: none; }
 body:not(.role-admin) .admin-only { display: none !important; }
+.waiver-link { margin: 8px 0 0; }
+.waiver-link a {
+  color: #ffd7cc;
+  font-weight: 700;
+  display: inline-flex;
+  align-items: center;
+  min-height: 44px;
+}
 #accountPanel summary {
   cursor: pointer;
   min-height: 44px;

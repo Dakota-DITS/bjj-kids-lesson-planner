@@ -431,6 +431,20 @@ def migrate(conn):
           created_by TEXT NOT NULL DEFAULT '',
           created_at TEXT NOT NULL
         );
+        CREATE TABLE IF NOT EXISTS waivers (
+          id TEXT PRIMARY KEY,
+          kind TEXT NOT NULL CHECK(kind IN ('adult', 'kids')),
+          submitted_at TEXT NOT NULL,
+          signed_on TEXT NOT NULL,
+          participant_name TEXT NOT NULL,
+          signer_name TEXT NOT NULL,
+          dob TEXT NOT NULL,
+          email TEXT NOT NULL,
+          phone TEXT NOT NULL,
+          payload_json TEXT NOT NULL,
+          signature_png TEXT NOT NULL,
+          parent_signature_png TEXT NOT NULL DEFAULT ''
+        );
         """
     )
     # Live databases created before this column keep their rows. DEFAULT 0

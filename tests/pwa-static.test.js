@@ -25,7 +25,7 @@ function pngInfo(rel) {
 }
 
 const sw = text("sw.js");
-assert.ok(sw.includes('const VERSION = "20261021-23"'));
+assert.ok(sw.includes('const VERSION = "20261021-24"'));
 assert.ok(sw.includes("skipWaiting"));
 assert.ok(sw.includes("clients.claim"));
 assert.ok(sw.includes("grace-public-"));
@@ -127,7 +127,7 @@ for (const rel of ["kids/index.html", "login/index.html", "coloring/index.html"]
   assert.ok(html.includes('name="mobile-web-app-capable" content="yes"'), rel);
   assert.ok(html.includes('name="apple-mobile-web-app-status-bar-style" content="default"'), rel);
   assert.ok(html.includes('href="/icons/apple-touch-icon.png"'), rel);
-  assert.ok(html.includes('src="/pwa.js?v=20261021-23"'), rel);
+  assert.ok(html.includes('src="/pwa.js?v=20261021-24"'), rel);
   assert.ok(html.includes('content="#9b2a12"'), rel);
 }
 
@@ -137,7 +137,7 @@ assert.ok(app.includes('content="Grace BJJ Staff"'));
 assert.ok(app.includes('name="apple-mobile-web-app-capable" content="yes"'));
 assert.ok(app.includes('name="apple-mobile-web-app-status-bar-style" content="black"'));
 assert.ok(app.includes('href="/icons/staff-apple-touch-icon.png"'));
-assert.ok(app.includes('src="/pwa.js?v=20261021-23"'));
+assert.ok(app.includes('src="/pwa.js?v=20261021-24"'));
 assert.ok(app.includes('content="#1c1917"'));
 
 assert.ok(text("index.html").includes('content="Grace BJJ"'));
