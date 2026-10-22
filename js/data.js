@@ -885,8 +885,8 @@ window.BJJ_DATA = {
       name: "Position king",
       duration: 4,
       ages: ["junior", "teen"],
-      how: "Winner stays. Start in a named position. First clean pass, sweep, or back take stays in. The other partner goes to the back of a short line. Two pairs at once if you have the adults. No submissions.",
-      say: "This position. Clean score and you stay. No submissions. Next pair, you're in.",
+      how: "Winner stays. Start in a named position. First clean pass, sweep, or back take stays in. The other partner goes to the back of a short line. Two pairs at once if you have the adults.",
+      say: "This position. Clean score and you stay. Next pair, you're in.",
     },
   ],
 

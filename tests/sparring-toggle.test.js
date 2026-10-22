@@ -88,7 +88,14 @@ assert.ok(app.includes("sparringEnabled"));
 assert.ok(app.includes('raw.sparringChoice === "manual"'));
 assert.ok(app.includes("resolveSparring"));
 assert.ok(!/key === "mite"/.test(app));
-assert.ok(app.includes("Live sparring waits for a kid with at least one stripe and enough adults."));
+assert.ok(app.includes("No one can spar yet. Only kids with at least one stripe spar, with enough adults."));
+assert.ok(app.includes("Use this block to drill ${theme} positions."));
+["js/app.js", "js/data.js", "js/curriculum.js", "js/plan-math.js", "index.html", "app/index.html", "README.md"].forEach((rel) => {
+  const text = fs.readFileSync(path.join(root, rel), "utf8");
+  [/no submissions/i, /no live rolling/i, /no tap\b/i].forEach((banned) => {
+    assert.equal(banned.test(text), false, `${rel} still shows ${banned}`);
+  });
+});
 assert.ok(css.includes("button.sparring-toggle"));
 assert.ok(css.slice(css.indexOf("button.sparring-toggle"), css.indexOf(".sparring-reason")).includes("min-height: 44px"));
 const printCss = css.slice(css.indexOf("@media print {"));

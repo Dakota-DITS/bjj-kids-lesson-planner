@@ -1633,15 +1633,10 @@ function sparringSection(plan) {
   }
   const ratio = P.ratioStatus(plan.settings.kidCount, plan.settings.adultCount);
   const roster = P.sortByRank(state.roster);
-  const wait = roster.length
-    ? "Live sparring waits for a kid with at least one stripe and enough adults."
-    : "Add the roster before anyone spars. An empty roster drills positions.";
   if (!plan.liveSparring) {
     const theme = plan.theme ? plan.theme.label : "the lesson";
-    const copy = {
-      name: "Positional drilling",
-      how: `No live sparring this class. Use this block to drill ${theme}. No submissions. Reset often and keep the same partners as the lesson. ${wait}`,
-    };
+    const line = `No one can spar yet. Only kids with at least one stripe spar, with enough adults. Use this block to drill ${theme} positions. Reset often and keep the same partners as the lesson.`;
+    const copy = { name: "Positional drilling", how: line };
     const hidden = planQuery("sparring").trim() && !P.matchesPlanQuery(copy, planQuery("sparring"));
     return `
       <section class="block">
@@ -1650,8 +1645,7 @@ function sparringSection(plan) {
         ${searchField("sparring")}
         ${hidden ? `<p class="pick-empty no-print">No matches</p>` : ""}
         <div class="item${hidden ? " is-search-hidden" : ""}">
-          <p>No live sparring this class. Use this block to drill ${esc(theme)}. No submissions. Reset often and keep the same partners as the lesson.</p>
-          <p>${esc(wait)}</p>
+          <p>${esc(line)}</p>
         </div>
         ${comboNoteHtml(P.isCombo(plan.settings.ageGroup) ? P.COMBO_SPARRING_SAFETY : "")}
       </section>`;
