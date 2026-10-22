@@ -221,7 +221,9 @@ body {
 }
 
 .seg.ages {
-  grid-template-columns: 1fr 1fr 1fr 1fr;
+  grid-template-columns: 1fr 1fr;
+  width: 100%;
+  border-color: #a8a29e;
 }
 
 .seg.ages button {
@@ -229,14 +231,29 @@ body {
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  height: 46px;
+  width: 100%;
+  height: auto;
+  min-height: 52px;
+  padding: 6px 8px;
   line-height: 1.15;
-  font-size: 0.78rem;
+  white-space: nowrap;
+}
+
+.seg.ages .age-range {
+  display: block;
+  font-size: 1rem;
+  font-weight: 700;
+  line-height: 1.1;
 }
 
 .seg.ages small {
+  display: block;
+  margin-top: 2px;
   font-size: 0.75rem;
   font-weight: 500;
+  line-height: 1.15;
+  letter-spacing: 0;
+  text-transform: none;
 }
 
 .age-checks {
@@ -1384,14 +1401,26 @@ body:not(.role-admin) .admin-only { display: none !important; }
 }
 
 .seg.views {
-  display: grid;
-  grid-template-columns: repeat(4, 1fr);
-  gap: 6px;
+  display: flex;
+  flex-wrap: nowrap;
+  gap: 4px;
+  width: 100%;
+  min-width: 0;
   margin: 12px 0 16px;
+  border-color: #a8a29e;
 }
 
 .seg.views button {
+  flex: 1 1 0;
+  min-width: 0;
+  width: auto;
+  height: auto;
   min-height: 44px;
+  padding: 4px 2px;
+  border: 1px solid #a8a29e;
+  font-size: 0.85rem;
+  line-height: 1.1;
+  white-space: nowrap;
 }
 
 .paper-wrap.hidden,
@@ -1659,6 +1688,58 @@ body:not(.role-admin) .admin-only { display: none !important; }
 .form-note.ok { color: #bbf7d0; }
 #userList p { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
 #userList button { min-height: 44px; }
+.potty-note {
+  margin: 10px 0 0;
+  padding: 10px 12px;
+  border-radius: 10px;
+  background: #292524;
+  border: 1px solid #a8a29e;
+  color: #fff7ed;
+  font-size: 0.95rem;
+  line-height: 1.4;
+}
+#checkinView .potty-note { margin: 0 0 10px; }
+.calendar-extra { margin: 8px 0 16px; }
+.calendar-extra h3 { margin: 0 0 8px; color: #1c1917; }
+.calendar-list { display: flex; flex-direction: column; gap: 8px; }
+#calendarView .field label { color: #3f3a36; }
+#calendarView .field input,
+#calendarView .field select,
+#calendarView .calendar-row input {
+  color: #1c1917;
+  background: #fff;
+  border: 1px solid #44403c;
+}
+#calendarView input::placeholder {
+  color: #595959;
+  opacity: 1;
+}
+#calendarView .field input:focus,
+#calendarView .field select:focus,
+#calendarView .calendar-row input:focus {
+  outline: 2px solid #9f1239;
+  border-color: #9f1239;
+}
+#calendarView button.primary { color: #fff7ed; }
+.calendar-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+  padding: 10px 12px;
+  border: 1px solid #44403c;
+  border-radius: 10px;
+  background: #fff;
+  color: #1c1917;
+}
+.calendar-row p { margin: 0; flex: 1 1 12rem; color: #1c1917; }
+.calendar-row .skip-reason { flex: 1 1 10rem; min-width: 0; }
+.calendar-row input[type="text"] { width: 100%; min-height: 44px; }
+.calendar-row button { min-height: 44px; }
+.calendar-row.is-skip {
+  background: #fff7ed;
+  border: 2px solid #c2410c;
+}
 .saved-plans { display: flex; flex-direction: column; gap: 8px; }
 .saved-plan {
   display: flex;
@@ -1780,10 +1861,12 @@ body.authed #mustChange { display: none !important; }
   .paper.sheet-page, .sheet-page { padding: 16px; }
   .paper > h1.title { font-size: 26px; letter-spacing: 0.04em; }
   .grid-2 { grid-template-columns: 1fr; }
-  .seg.ages, .seg.views { grid-template-columns: 1fr 1fr; }
+  .seg.ages { grid-template-columns: 1fr 1fr; }
+  .seg.views button { font-size: 0.7rem; padding: 4px 1px; }
   .seg.ages button, .seg.views button, .stepper button, button, .btn {
     min-height: 44px;
   }
+  .seg.ages button { min-height: 52px; height: auto; }
   .age-checks label { min-height: 44px; }
   .field input, .field select, .field textarea, #checkinView input, #checkinView select, #accountPanel input, #accountPanel select, #progressView input, #progressView select, #progressView textarea, #rosterList select, #staffList select {
     font-size: 16px;

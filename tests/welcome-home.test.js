@@ -24,7 +24,7 @@ assert.equal((html.match(/Every dollar goes toward mat care, equipment, and even
 assert.equal(html.includes("new mats and equipment"), false);
 assert.equal(html.includes("we suggest a $5 donation each class"), false);
 assert.equal((html.match(/a suggested minimum of \$5 each class/g) || []).length, 3);
-assert.ok(html.includes('name="description" content="Grace BJJ Kids meets on the 2nd and 4th Tuesday, 5:30–6:15 PM. Classes are free for ages 4–10. Give what you feel called to give, with a suggested minimum of $5 each class."'));
+assert.ok(html.includes('name="description" content="Grace BJJ Kids meets on the 2nd and 4th Tuesday, 5:30–6:15 PM. Classes are free for ages 3–10. Give what you feel called to give, with a suggested minimum of $5 each class."'));
 assert.ok(html.includes("If you can't give, that's completely fine. Your family is just as welcome here."));
 assert.ok(html.includes('href="https://onrealm.org/GBCSalem/-/form/give/BJJ" target="_blank" rel="noopener noreferrer"'));
 assert.ok(html.includes(">Give online</a>"));
@@ -59,7 +59,7 @@ assert.ok(html.includes('email: ""'));
   assert.equal(text.includes("mail.grokbot.com"), false, rel);
   assert.equal(text.includes("dits+bjj"), false, rel);
 });
-assert.ok(html.includes('src="/calendar/class-days.js?v=20261021-21"'));
+assert.ok(html.includes('src="/calendar/class-days.js?v=20261021-22"'));
 assert.ok(html.includes("GRACE_CLASS_DAYS"));
 assert.ok(html.includes('aria-live="polite"'));
 assert.ok(html.includes('aria-label="Previous month"'));
@@ -67,7 +67,12 @@ assert.ok(html.includes('aria-label="Next month"'));
 assert.ok(html.includes("Class: 5:30–6:15 PM at Grace Baptist Church"));
 assert.equal(html.includes("which === 2"), false);
 
-assert.ok(html.includes("Ages 4–10, in two groups: 4–7 Mighty Mites and 8–10."));
+assert.ok(html.includes("Ages 3–10, in two groups: 3–6 Mighty Mites and 7–10 Pee Wees."));
+assert.ok(html.includes("<b>3–6</b>"));
+assert.ok(html.includes("<b>7–10</b>"));
+assert.ok(html.includes("Pee Wees. Partner drills"));
+assert.ok(html.includes("Kids ages 3–6 must be fully potty trained to join class."));
+assert.ok(html.includes("/api/public/class-exceptions"));
 assert.ok(html.includes("4:1 kid-to-adult ratio"));
 assert.ok(html.includes("don't size up"));
 

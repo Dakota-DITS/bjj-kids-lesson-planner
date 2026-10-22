@@ -30,7 +30,7 @@ assert.ok(app.includes("No one can spar yet. Only kids with at least one stripe 
 assert.equal(/key === "mite"/.test(app), false);
 
 assert.equal(readme.includes("No submissions and no live sparring"), false);
-assert.ok(readme.includes("including 4–7"));
+assert.ok(readme.includes("including 3–6"));
 assert.ok(readme.includes("at least one stripe"));
 
 console.log("class rule checks passed");

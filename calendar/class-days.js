@@ -1,5 +1,6 @@
 /* Class days for the public welcome page. 2nd and 4th Tuesday, on or after
-   October 27, 2026, in America/Los_Angeles. No holiday skips. */
+   October 27, 2026, in America/Los_Angeles. Skips and make-up dates come
+   from class_exceptions and are applied on top of that schedule. */
 (function (root, factory) {
   const api = factory();
   if (typeof module !== "undefined" && module.exports) module.exports = api;
@@ -56,14 +57,105 @@
     return { year: Math.floor(index / 12), month: (index % 12) + 1 };
   }
 
-  function nextClass(from) {
+  function pad(n) {
+    return String(n).padStart(2, "0");
+  }
+
+  function toIso(year, month, day) {
+    return `${year}-${pad(month)}-${pad(day)}`;
+  }
+
+  function fromIso(iso) {
+    const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(String(iso || ""));
+    if (!match) return null;
+    const year = Number(match[1]);
+    const month = Number(match[2]);
+    const day = Number(match[3]);
+    if (!isRealDay(year, month, day)) return null;
+    return { year, month, day };
+  }
+
+  function cleanExceptions(list) {
+    const out = [];
+    (Array.isArray(list) ? list : []).forEach((item) => {
+      if (!item || (item.kind !== "skip" && item.kind !== "extra")) return;
+      const date = fromIso(item.date);
+      if (!date) return;
+      out.push({
+        date: toIso(date.year, date.month, date.day),
+        kind: item.kind,
+        reason: String(item.reason || "").slice(0, 160),
+        start: item.start || item.start_time || "17:30",
+        end: item.end || item.end_time || "18:15",
+      });
+    });
+    return out;
+  }
+
+  function exceptionOn(year, month, day, exceptions) {
+    const iso = toIso(year, month, day);
+    return cleanExceptions(exceptions).find((item) => item.date === iso) || null;
+  }
+
+  function meeting(year, month, day, exceptions) {
+    const hit = exceptionOn(year, month, day, exceptions);
+    const regular = isClassDay(year, month, day);
+    if (hit && hit.kind === "skip" && regular) {
+      return { meets: false, skipped: true, extra: false, reason: hit.reason, start: hit.start, end: hit.end };
+    }
+    if (hit && hit.kind === "extra" && !regular) {
+      return { meets: true, skipped: false, extra: true, reason: hit.reason, start: hit.start, end: hit.end };
+    }
+    if (regular) {
+      return { meets: true, skipped: false, extra: false, reason: "", start: "17:30", end: "18:15" };
+    }
+    return { meets: false, skipped: false, extra: false, reason: "", start: "", end: "" };
+  }
+
+  function nextClass(from, exceptions) {
     let cursor = laParts(from);
-    if (compare(cursor, FIRST) < 0) cursor = { year: FIRST.year, month: FIRST.month, day: FIRST.day };
+    const list = cleanExceptions(exceptions);
+    if (compare(cursor, FIRST) < 0) {
+      const early = list.find((item) => {
+        if (item.kind !== "extra") return false;
+        const date = fromIso(item.date);
+        return date && compare(date, cursor) >= 0 && compare(date, FIRST) < 0;
+      });
+      cursor = early ? fromIso(early.date) : { year: FIRST.year, month: FIRST.month, day: FIRST.day };
+    }
     for (let i = 0; i < 400; i += 1) {
-      if (isClassDay(cursor.year, cursor.month, cursor.day)) return cursor;
+      if (meeting(cursor.year, cursor.month, cursor.day, list).meets) {
+        return { year: cursor.year, month: cursor.month, day: cursor.day };
+      }
       cursor = addDays(cursor.year, cursor.month, cursor.day, 1);
     }
     return { year: FIRST.year, month: FIRST.month, day: FIRST.day };
+  }
+
+  function upcomingMeetings(from, horizonDays, exceptions) {
+    const start = laParts(from);
+    const days = Math.max(1, Math.min(400, Number(horizonDays) || 184));
+    const out = [];
+    let cursor = { year: start.year, month: start.month, day: start.day };
+    for (let i = 0; i < days; i += 1) {
+      const info = meeting(cursor.year, cursor.month, cursor.day, exceptions);
+      if (info.meets || info.skipped) {
+        out.push({
+          year: cursor.year,
+          month: cursor.month,
+          day: cursor.day,
+          iso: toIso(cursor.year, cursor.month, cursor.day),
+          meets: info.meets,
+          skipped: info.skipped,
+          extra: info.extra,
+          reason: info.reason,
+          start: info.start,
+          end: info.end,
+        });
+      }
+      cursor = addDays(cursor.year, cursor.month, cursor.day, 1);
+    }
+    return out;
   }
 
   function earliestMonth() {
@@ -141,6 +233,11 @@
     WEEKDAYS,
     laParts,
     isClassDay,
+    toIso,
+    fromIso,
+    cleanExceptions,
+    meeting,
+    upcomingMeetings,
     addDays,
     addMonths,
     nextClass,

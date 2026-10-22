@@ -9,8 +9,8 @@
   const AGE_IDS = ["mite", "upper", "toddler"];
   const GRACE_AGES = ["mite", "upper"];
   const AGE_RANGES = {
-    mite: "4–7",
-    upper: "8–10",
+    mite: "3–6",
+    upper: "7–10",
     toddler: "3–5",
   };
   // Old class keys still appear on saved plans and technique tags.
@@ -22,7 +22,7 @@
     teen: "upper",
   };
   const COMBO_SPARRING_SAFETY =
-    "Partner kids within their own age group and similar size. Never pair a 4–7 with an 8–10.";
+    "Partner kids within their own age group and similar size. Never pair a 3–6 with a 7–10.";
   const CATEGORIES = ["warmup", "lesson", "game", "base"];
   const BELT_ORDER = [
     "white",
@@ -402,8 +402,7 @@
   }
 
   /**
-   * A technique allowed for old 4–6 or 7–9 is allowed for 4–7.
-   * A technique allowed for old 7–9 or 10–12 is allowed for 8–10.
+   * Young-group tags stay on Mighty Mites. Older-group tags stay on Pee Wees.
    * A tag that was only 13–15 stays out of both groups.
    */
   function canonicalTechniqueAges(ages) {
@@ -457,8 +456,8 @@
 
   function kidGroupId(ageNumber) {
     const n = Number(ageNumber);
-    if (n >= 4 && n <= 7) return "mite";
-    if (n >= 8 && n <= 15) return "upper";
+    if (n >= 3 && n <= 6) return "mite";
+    if (n >= 7 && n <= 10) return "upper";
     return "";
   }
 
@@ -1031,7 +1030,7 @@ function sanitizeProgress(raw) {
   }
 
   /**
-   * Sparring starts off for a 4–7 class, when no kids are counted, or when
+   * Sparring starts off for a 3–6 class, when no kids are counted, or when
    * more than half of the counted kids have no stripes. Otherwise it starts on.
    * kids are {stripes} from check-in, or from the age-group roster.
    */
@@ -1039,7 +1038,7 @@ function sanitizeProgress(raw) {
     const key = normalizeAgeKey(ageGroup);
     const list = Array.isArray(kids) ? kids : [];
     if (key === "mite") {
-      return { enabled: false, reason: "Sparring off: 4–7 class" };
+      return { enabled: false, reason: "Sparring off: 3–6 class" };
     }
     if (!list.length) {
       return { enabled: false, reason: "Sparring off: no kids yet" };

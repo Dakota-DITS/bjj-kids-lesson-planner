@@ -309,24 +309,26 @@ assert.deepStrictEqual(P.canonicalTechniqueAges(["mite", "peewee"]), ["mite", "u
 assert.deepStrictEqual(P.canonicalTechniqueAges(["junior", "teen"]), ["upper"]);
 assert.deepStrictEqual(P.canonicalTechniqueAges(["teen"]), ["teen"]);
 assert.deepStrictEqual(P.canonicalTechniqueAges(["mite"]), ["mite"]);
-assert.strictEqual(P.kidGroupId(4), "mite");
-assert.strictEqual(P.kidGroupId(7), "mite");
-assert.strictEqual(P.kidGroupId(8), "upper");
-assert.strictEqual(P.kidGroupId(15), "upper");
-assert.strictEqual(P.kidGroupId(3), "");
+assert.strictEqual(P.kidGroupId(3), "mite");
+assert.strictEqual(P.kidGroupId(6), "mite");
+assert.strictEqual(P.kidGroupId(7), "upper");
+assert.strictEqual(P.kidGroupId(10), "upper");
+assert.strictEqual(P.kidGroupId(2), "");
+assert.strictEqual(P.kidGroupId(11), "");
 assert.strictEqual(P.isCombo("mite+peewee"), true);
 assert.strictEqual(P.isCombo("teen"), false);
 assert.strictEqual(P.isCombo("junior+teen"), false);
 assert.strictEqual(P.youngestAge("junior+teen"), "upper");
-assert.strictEqual(P.comboLabel("mite+peewee"), "Combo class: 4–7 + 8–10");
+assert.strictEqual(P.comboLabel("mite+peewee"), "Combo class: 3–6 + 7–10");
 assert.strictEqual(P.comboLabel("mite"), "");
 assert.strictEqual(P.ageKey(["teen", "mite"]), "mite+upper");
 assert.strictEqual(P.kidFitsClass(14, "mite"), true);
 assert.strictEqual(P.kidFitsClass(5, "mite+peewee"), true);
 assert.strictEqual(P.kidFitsClass(7, "mite+upper"), true);
 assert.strictEqual(P.kidFitsClass(8, "peewee+mite"), true);
-assert.strictEqual(P.kidFitsClass(11, "mite+peewee"), true);
-assert.strictEqual(P.kidFitsClass(3, "mite+peewee"), false);
+assert.strictEqual(P.kidFitsClass(10, "mite+peewee"), true);
+assert.strictEqual(P.kidFitsClass(3, "mite+peewee"), true);
+assert.strictEqual(P.kidFitsClass(11, "mite+peewee"), false);
 assert.strictEqual(P.kidFitsClass(16, "mite+upper"), false);
 assert.strictEqual(P.kidCanSpar({ stripes: 2, age: 5 }, "mite", true), true);
 assert.strictEqual(P.kidCanSpar({ stripes: 2, age: 8 }, "upper", true), true);
@@ -335,22 +337,23 @@ assert.strictEqual(P.kidCanSpar({ stripes: 2, age: 8 }, "upper", false), false);
 assert.strictEqual(P.kidCanSpar({ stripes: 2, age: 5 }, "junior", true), true);
 assert.strictEqual(P.kidCanSpar({ stripes: 2, age: 5 }, "mite+peewee", true), true);
 assert.strictEqual(P.kidCanSpar({ stripes: 1, age: 8 }, "mite+peewee", true), true);
-assert.strictEqual(P.kidCanSpar({ stripes: 2, age: 11 }, "mite+peewee", true), true);
+assert.strictEqual(P.kidCanSpar({ stripes: 2, age: 10 }, "mite+peewee", true), true);
+assert.strictEqual(P.kidCanSpar({ stripes: 2, age: 11 }, "mite+peewee", true), false);
 assert.strictEqual(P.kidCanSpar({ stripes: 2, age: 16 }, "mite+upper", true), false);
 assert.strictEqual(P.kidCanSpar({ stripes: 0, age: 14 }, "junior+teen", true), false);
 assert.strictEqual(P.kidCanSpar({ stripes: 2, age: 14 }, "junior+teen", true), true);
-assert.ok(P.COMBO_SPARRING_SAFETY.includes("Never pair a 4–7 with an 8–10."));
+assert.ok(P.COMBO_SPARRING_SAFETY.includes("Never pair a 3–6 with a 7–10."));
 assert.strictEqual(
   P.olderVariationNote("mite", ["mite", "peewee"], [
     { name: "Hold mount", ages: ["mite", "peewee", "junior", "teen"] },
     { name: "Americana from mount", ages: ["peewee", "junior", "teen"] },
     { name: "Knee cut", ages: ["junior", "teen"] },
   ]),
-  "Older kids: 8–10: Knee cut."
+  "Older kids: 7–10: Knee cut."
 );
 assert.strictEqual(
   P.olderVariationNote("mite", ["mite", "junior"], [{ name: "Hold mount", ages: ["mite", "junior"] }]),
-  "Older kids: 8–10: use the 4–7 version."
+  "Older kids: 7–10: use the 3–6 version."
 );
 assert.strictEqual(P.olderVariationNote("mite", ["mite"], [{ name: "Invented", ages: ["teen"] }]), "");
 const comboSaved = P.sanitizeProgress({

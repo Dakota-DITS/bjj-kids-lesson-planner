@@ -46,4 +46,29 @@ assert.deepStrictEqual(
   Array.from({ length: 31 }, (_, i) => i + 1)
 );
 
+assert.deepStrictEqual(
+  Days.nextClass(laEvening, [{ date: "2026-10-27", kind: "skip", reason: "Church event" }]),
+  { year: 2026, month: 11, day: 10 }
+);
+const skipped = Days.meeting(2026, 10, 27, [{ date: "2026-10-27", kind: "skip", reason: "Church event" }]);
+assert.strictEqual(skipped.meets, false);
+assert.strictEqual(skipped.skipped, true);
+assert.strictEqual(skipped.reason, "Church event");
+const makeup = Days.meeting(2026, 10, 28, [{ date: "2026-10-28", kind: "extra", reason: "Make-up", start: "17:30", end: "18:15" }]);
+assert.strictEqual(makeup.meets, true);
+assert.strictEqual(makeup.extra, true);
+assert.deepStrictEqual(
+  Days.nextClass(new Date("2026-10-22T18:00:00Z"), [{ date: "2026-10-23", kind: "extra", reason: "Make-up" }]),
+  { year: 2026, month: 10, day: 23 }
+);
+const windowed = Days.upcomingMeetings(laEvening, 40, [
+  { date: "2026-10-27", kind: "skip", reason: "Thanksgiving week" },
+  { date: "2026-10-30", kind: "extra", reason: "Make-up" },
+]);
+const flags = Object.fromEntries(windowed.map((row) => [row.iso, row.skipped ? "skip" : row.extra ? "extra" : "class"]));
+assert.strictEqual(flags["2026-10-27"], "skip");
+assert.strictEqual(flags["2026-10-30"], "extra");
+assert.strictEqual(flags["2026-11-10"], "class");
+assert.strictEqual(Days.meeting(2026, 11, 10, []).meets, true);
+
 console.log("class day checks passed");

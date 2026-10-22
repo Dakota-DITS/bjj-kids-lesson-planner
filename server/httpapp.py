@@ -5,7 +5,7 @@ import os
 import re
 import secrets
 import sqlite3
-from datetime import timedelta
+from datetime import datetime, timedelta
 from urllib.parse import unquote, urlparse
 
 import bcrypt
@@ -559,6 +559,8 @@ class Api:
                 return self.nginx_auth(handler)
             if method == "GET" and path == "/api/public/featured":
                 return self.public_featured(handler)
+            if method == "GET" and path == "/api/public/class-exceptions":
+                return self.public_class_exceptions(handler)
             if method == "GET" and path == "/api/public/sheets":
                 return self.public_sheets(handler)
             image = re.match(r"^/api/public/sheets/([A-Za-z0-9_-]{1,40})/image$", path)
@@ -676,6 +678,17 @@ class Api:
             if not admin:
                 return self.send(handler, 403, {"error": "An admin manages logins."})
             return self.delete_user(handler, conn, user, user_match.group(1))
+        if path == "/api/class-exceptions" and method == "GET":
+            return self.list_class_exceptions(handler, conn, public=False)
+        if path == "/api/class-exceptions" and method == "POST":
+            if not admin:
+                return self.send(handler, 403, {"error": "An admin edits the class calendar."})
+            return self.save_class_exception(handler, conn, user)
+        exception_date = re.fullmatch(r"/api/class-exceptions/(\d{4}-\d{2}-\d{2})", path)
+        if exception_date and method == "DELETE":
+            if not admin:
+                return self.send(handler, 403, {"error": "An admin edits the class calendar."})
+            return self.delete_class_exception(handler, conn, exception_date.group(1))
         if path == "/api/plans" and method == "GET":
             return self.list_plans(handler, conn)
         if path == "/api/plans" and method == "PUT":
@@ -915,6 +928,105 @@ class Api:
         handler.send_header("Cache-Control", "no-store")
         handler.end_headers()
 
+    def plan_date_allowed(self, conn, value):
+        if is_class_day(value):
+            return True
+        row = conn.execute(
+            "SELECT kind FROM class_exceptions WHERE date = ?",
+            (str(value or "").strip(),),
+        ).fetchone()
+        return bool(row and row["kind"] == "extra")
+
+    def exception_json(self, row, public):
+        body = {
+            "date": row["date"],
+            "kind": row["kind"],
+            "reason": row["reason"] or "",
+            "start": row["start_time"],
+            "end": row["end_time"],
+        }
+        if not public:
+            body["createdBy"] = row["created_by"] or ""
+            body["createdAt"] = row["created_at"]
+        return body
+
+    def list_exception_rows(self, conn):
+        return conn.execute("SELECT * FROM class_exceptions ORDER BY date").fetchall()
+
+    def public_class_exceptions(self, handler):
+        conn = self.db()
+        try:
+            rows = self.list_exception_rows(conn)
+        finally:
+            conn.close()
+        self.send(handler, 200, {"exceptions": [self.exception_json(row, True) for row in rows]})
+
+    def list_class_exceptions(self, handler, conn, public):
+        rows = self.list_exception_rows(conn)
+        return self.send(handler, 200, {"exceptions": [self.exception_json(row, public) for row in rows]})
+
+    def clean_clock(self, value, fallback):
+        text = fallback if value in (None, "") else str(value).strip()
+        match = re.fullmatch(r"(\d{1,2}):(\d{2})", text)
+        if not match:
+            raise ValueError("Use a time like 17:30.")
+        hour = int(match.group(1))
+        minute = int(match.group(2))
+        if hour > 23 or minute > 59:
+            raise ValueError("That time is not valid.")
+        return f"{hour:02d}:{minute:02d}"
+
+    def save_class_exception(self, handler, conn, user):
+        body = self.read_json(handler)
+        date = str(body.get("date") or "").strip()
+        try:
+            parsed = datetime.strptime(date, "%Y-%m-%d")
+        except ValueError:
+            raise ValueError("Choose a real date.")
+        if parsed.strftime("%Y-%m-%d") != date:
+            raise ValueError("Choose a real date.")
+        kind = str(body.get("kind") or "").strip()
+        if kind not in ("skip", "extra"):
+            raise ValueError("Choose skip or a make-up class.")
+        if kind == "skip" and not is_class_day(date):
+            raise ValueError("Only a regular class Tuesday can be skipped.")
+        if kind == "extra" and is_class_day(date):
+            raise ValueError("That Tuesday is already on the schedule. Skip it if class is cancelled.")
+        reason = str(body.get("reason") or "").replace("\u0000", "").strip()
+        if len(reason) > 120:
+            raise ValueError("Keep the reason to 120 characters.")
+        start = self.clean_clock(body.get("start") or body.get("startTime"), "17:30")
+        end = self.clean_clock(body.get("end") or body.get("endTime"), "18:15")
+        if end <= start:
+            raise ValueError("The end time needs to be after the start.")
+        now = iso(utcnow())
+        conn.execute(
+            """
+            INSERT INTO class_exceptions
+              (date, kind, reason, start_time, end_time, created_by, created_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?)
+            ON CONFLICT(date) DO UPDATE SET
+              kind = excluded.kind,
+              reason = excluded.reason,
+              start_time = excluded.start_time,
+              end_time = excluded.end_time,
+              created_by = excluded.created_by,
+              created_at = excluded.created_at
+            """,
+            (date, kind, reason, start, end, user.get("username") or "", now),
+        )
+        conn.commit()
+        row = conn.execute("SELECT * FROM class_exceptions WHERE date = ?", (date,)).fetchone()
+        return self.send(handler, 200, {"exception": self.exception_json(row, False)})
+
+    def delete_class_exception(self, handler, conn, date):
+        row = conn.execute("SELECT date FROM class_exceptions WHERE date = ?", (date,)).fetchone()
+        if not row:
+            return self.send(handler, 404, {"error": "That date is not changed."})
+        conn.execute("DELETE FROM class_exceptions WHERE date = ?", (date,))
+        conn.commit()
+        return self.send(handler, 200, {"ok": True, "date": date})
+
     def public_featured(self, handler):
         conn = self.db()
         try:
@@ -1151,8 +1263,8 @@ class Api:
     def save_plan(self, handler, conn, user):
         body = self.read_json(handler)
         date = str(body.get("date") or body.get("classDate") or "").strip()
-        if not is_class_day(date):
-            raise ValueError("Choose a class Tuesday. Classes are the 2nd and 4th Tuesday from October 27, 2026.")
+        if not self.plan_date_allowed(conn, date):
+            raise ValueError("Choose a class Tuesday, or a make-up date from the class calendar.")
         age = self.plan_age_group(body.get("ageGroup"))
         encoded = self.clean_plan_document(body.get("plan"))
         now = iso(utcnow())

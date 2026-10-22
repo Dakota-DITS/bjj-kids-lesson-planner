@@ -1,4 +1,4 @@
-/* Built-in pool. Grace BJJ Kids ages 4–10, plus the toddler intro preset. */
+/* Built-in pool. Grace BJJ Kids ages 3–10, plus the toddler intro preset. */
 
 window.BJJ_DATA = {
   logo: "/img/logo/grace-logo-mark-transparent.png",
@@ -7,14 +7,14 @@ window.BJJ_DATA = {
     mite: {
       id: "mite",
       label: "Mighty Mites",
-      range: "4–7",
+      range: "3–6",
       focus: "Motor skills, balance, listening, games, and basic body movement.",
       pace: "Volume is decreased. Switch as soon as they start wandering.",
     },
     upper: {
       id: "upper",
-      label: "",
-      range: "8–10",
+      label: "Pee Wees",
+      range: "7–10",
       focus: "Partner drills, positions, escapes, technique, and controlled sparring.",
       pace: "Warm-up counts stay as written.",
     },
@@ -40,8 +40,8 @@ window.BJJ_DATA = {
     "Praise by name. One short sentence at a time. Kids call you teacher. Switch as soon as they start wandering.",
 
   ageNotes: {
-    mite: "Warm-up note: Mighty Mites (4–7). Volume is decreased. Switch as soon as they start wandering. One short sentence at a time.",
-    upper: "Warm-up note: 8–10. Warm-up counts are as written. One short sentence at a time.",
+    mite: "Warm-up note: Mighty Mites (3–6). Volume is decreased. Switch as soon as they start wandering. One short sentence at a time.",
+    upper: "Warm-up note: Pee Wees (7–10). Warm-up counts are as written. One short sentence at a time.",
     toddler:
       "Warm-up note: Toddler intro (ages 3–5). The 3–4 year olds had a harder time keeping up, so cut the warm-up if most of the group is that young.",
   },

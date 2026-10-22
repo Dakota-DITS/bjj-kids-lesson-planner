@@ -12,7 +12,7 @@ const stripes = (n) => ({ stripes: n });
 
 const mite = P.sparringDefault("mite", [stripes(2), stripes(2), stripes(1)]);
 assert.strictEqual(mite.enabled, false);
-assert.strictEqual(mite.reason, "Sparring off: 4–7 class");
+assert.strictEqual(mite.reason, "Sparring off: 3–6 class");
 
 const mostlyNew = P.sparringDefault("upper", [stripes(0), stripes(0), stripes(1)]);
 assert.strictEqual(mostlyNew.enabled, false);
@@ -32,7 +32,7 @@ assert.strictEqual(empty.reason, "Sparring off: no kids yet");
 const oldMite = P.resolveSparring({ mode: "grace", settings: { ageGroup: "mite" } }, "mite", [stripes(3)]);
 assert.strictEqual(oldMite.enabled, false);
 assert.strictEqual(oldMite.choice, "default");
-assert.strictEqual(oldMite.reason, "Sparring off: 4–7 class");
+assert.strictEqual(oldMite.reason, "Sparring off: 3–6 class");
 
 const byHand = {
   sparringChoice: "manual",
