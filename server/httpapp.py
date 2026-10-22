@@ -18,11 +18,14 @@ from server.db import (
     age_group_for_age,
     cleanup,
     connect,
+    is_class_day,
     iso,
     migrate,
     new_id,
     normalize_age_group,
+    order_lesson_plans,
     parse_iso,
+    today_pacific,
     token_hash,
     utcnow,
 )
@@ -664,10 +667,25 @@ class Api:
                 return self.send(handler, 403, {"error": "Only an admin can reset a password."})
             return self.reset_password(handler, conn, user, reset_match.group(1))
         user_match = re.match(r"^/api/users/([A-Za-z0-9_-]{1,40})$", path)
+        if user_match and method == "PATCH":
+            if not admin:
+                return self.send(handler, 403, {"error": "An admin manages logins."})
+            return self.patch_user_role(handler, conn, user_match.group(1))
         if user_match and method == "DELETE":
             if not admin:
                 return self.send(handler, 403, {"error": "An admin manages logins."})
             return self.delete_user(handler, conn, user, user_match.group(1))
+        if path == "/api/plans" and method == "GET":
+            return self.list_plans(handler, conn)
+        if path == "/api/plans" and method == "PUT":
+            return self.save_plan(handler, conn, user)
+        plan_match = re.match(r"^/api/plans/([A-Za-z0-9_-]{1,40})$", path)
+        if plan_match and method == "GET":
+            return self.load_plan(handler, conn, plan_match.group(1))
+        if plan_match and method == "DELETE":
+            if not admin:
+                return self.send(handler, 403, {"error": "An admin removes saved plans."})
+            return self.delete_plan(handler, conn, plan_match.group(1))
         if path == "/api/students" and method == "POST":
             if not admin:
                 return self.send(handler, 403, {"error": "An admin adds students."})
@@ -1025,6 +1043,156 @@ class Api:
                 raise ValueError("Keep at least one admin.")
         conn.execute("UPDATE staff SET user_id = NULL WHERE user_id = ?", (uid,))
         conn.execute("DELETE FROM users WHERE id = ?", (uid,))
+        conn.commit()
+        return self.send(handler, 200, {"ok": True})
+
+    def user_public(self, conn, uid):
+        row = conn.execute(
+            """
+            SELECT users.id AS id, users.username AS username, users.role AS role,
+                   users.must_change_password AS must_change_password, staff.name AS staff_name
+            FROM users
+            LEFT JOIN staff ON staff.user_id = users.id
+            WHERE users.id = ?
+            """,
+            (uid,),
+        ).fetchone()
+        if not row:
+            return None
+        return {
+            "id": row["id"],
+            "username": row["username"],
+            "role": row["role"],
+            "mustChangePassword": bool(row["must_change_password"]),
+            "displayName": self.display_staff_name(row["staff_name"], row["username"]),
+        }
+
+    def patch_user_role(self, handler, conn, uid):
+        body = self.read_json(handler)
+        role = body.get("role")
+        if role not in ("admin", "teacher"):
+            raise ValueError("Role needs to be admin or teacher.")
+        target = conn.execute(
+            "SELECT id, role, must_change_password FROM users WHERE id = ?",
+            (uid,),
+        ).fetchone()
+        if not target:
+            return self.send(handler, 404, {"error": "That login is already gone."})
+        if target["role"] == "admin" and role != "admin":
+            others = conn.execute(
+                """
+                SELECT COUNT(*) AS n FROM users
+                WHERE role = 'admin' AND id != ? AND must_change_password = 0
+                """,
+                (uid,),
+            ).fetchone()["n"]
+            if others < 1:
+                raise ValueError("Keep at least one admin who can still sign in.")
+        conn.execute("UPDATE users SET role = ? WHERE id = ?", (role, uid))
+        conn.commit()
+        return self.send(handler, 200, self.user_public(conn, uid))
+
+    def plan_age_group(self, value):
+        raw = str(value or "").strip().lower()
+        if not raw:
+            raise ValueError("Choose an age group.")
+        canonical = normalize_age_group(raw)
+        if raw != canonical:
+            raise ValueError("Choose an age group.")
+        return canonical
+
+    def clean_plan_document(self, raw):
+        if not isinstance(raw, dict):
+            raise ValueError("That plan could not be saved.")
+        if raw.get("mode") not in ("grace", "toddler"):
+            raise ValueError("That plan could not be saved.")
+        if not isinstance(raw.get("settings"), dict):
+            raise ValueError("That plan could not be saved.")
+        encoded = json.dumps(raw, ensure_ascii=False, separators=(",", ":"))
+        if len(encoded) > 500_000:
+            raise ValueError("That plan is too large to save.")
+        return encoded
+
+    def plan_summary(self, conn, row):
+        user_id = row["updated_by"]
+        who = conn.execute(
+            """
+            SELECT users.username AS username, staff.name AS staff_name
+            FROM users
+            LEFT JOIN staff ON staff.user_id = users.id
+            WHERE users.id = ?
+            """,
+            (user_id,),
+        ).fetchone()
+        saved_by = "A teacher"
+        username = ""
+        if who:
+            username = who["username"] or ""
+            saved_by = self.display_staff_name(who["staff_name"], who["username"]) or "A teacher"
+        return {
+            "id": row["id"],
+            "classDate": row["class_date"],
+            "ageGroup": row["age_group"],
+            "updatedAt": row["updated_at"],
+            "savedBy": saved_by,
+            "savedByUsername": username,
+        }
+
+    def list_plans(self, handler, conn):
+        rows = conn.execute("SELECT * FROM lesson_plans").fetchall()
+        ordered = order_lesson_plans(rows, today_pacific())
+        return self.send(handler, 200, {"plans": [self.plan_summary(conn, row) for row in ordered]})
+
+    def save_plan(self, handler, conn, user):
+        body = self.read_json(handler)
+        date = str(body.get("date") or body.get("classDate") or "").strip()
+        if not is_class_day(date):
+            raise ValueError("Choose a class Tuesday. Classes are the 2nd and 4th Tuesday from October 27, 2026.")
+        age = self.plan_age_group(body.get("ageGroup"))
+        encoded = self.clean_plan_document(body.get("plan"))
+        now = iso(utcnow())
+        existing = conn.execute(
+            "SELECT id FROM lesson_plans WHERE class_date = ? AND age_group = ?",
+            (date, age),
+        ).fetchone()
+        if existing:
+            conn.execute(
+                "UPDATE lesson_plans SET plan_json = ?, updated_by = ?, updated_at = ? WHERE id = ?",
+                (encoded, user["id"], now, existing["id"]),
+            )
+            plan_id = existing["id"]
+            created = False
+        else:
+            plan_id = new_id("lp-")
+            conn.execute(
+                """
+                INSERT INTO lesson_plans
+                  (id, class_date, age_group, plan_json, created_by, updated_by, created_at, updated_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (plan_id, date, age, encoded, user["id"], user["id"], now, now),
+            )
+            created = True
+        conn.commit()
+        row = conn.execute("SELECT * FROM lesson_plans WHERE id = ?", (plan_id,)).fetchone()
+        payload = self.plan_summary(conn, row)
+        payload["plan"] = json.loads(row["plan_json"])
+        payload["created"] = created
+        return self.send(handler, 201 if created else 200, payload)
+
+    def load_plan(self, handler, conn, plan_id):
+        row = conn.execute("SELECT * FROM lesson_plans WHERE id = ?", (plan_id,)).fetchone()
+        if not row:
+            return self.send(handler, 404, {"error": "That saved plan is already gone."})
+        payload = self.plan_summary(conn, row)
+        payload["plan"] = json.loads(row["plan_json"])
+        return self.send(handler, 200, payload)
+
+    def delete_plan(self, handler, conn, plan_id):
+        row = conn.execute("SELECT id FROM lesson_plans WHERE id = ?", (plan_id,)).fetchone()
+        if not row:
+            return self.send(handler, 404, {"error": "That saved plan is already gone."})
+        conn.execute("DELETE FROM lesson_plans WHERE id = ?", (plan_id,))
         conn.commit()
         return self.send(handler, 200, {"ok": True})
 

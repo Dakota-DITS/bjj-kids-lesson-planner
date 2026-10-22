@@ -49,6 +49,8 @@
     levelDrafts: {},
     planQuery: { warmup: "", base: "", lesson: "", game: "", sparring: "" },
     planFocus: null,
+    editingPlanId: "",
+    savedPlans: [],
   };
 
   let cameraStream = null;
@@ -3863,6 +3865,196 @@ function sparringSection(plan) {
     root.innerHTML = `<div class="no-print"><h2>${title}</h2><p>Write the name and class on a card, then scan it to add the student.</p></div>${body}`;
   }
 
+  function shortCardCode(code) {
+    const text = String(code || "");
+    return text.length > 10 ? `${text.slice(0, 10)}…` : text;
+  }
+
+  async function showReprintBlanks() {
+    if (!isAdmin()) {
+      toast("An admin reprints blank cards.");
+      return;
+    }
+    const box = $("blankReprint");
+    if (!box) return;
+    try {
+      const body = await window.BJJ_API.send("GET", "/api/cards");
+      const cards = (body.cards || [])
+        .map(normalizeCard)
+        .filter((card) => card && card.status === "unclaimed");
+      box.classList.remove("hidden");
+      if (!cards.length) {
+        box.innerHTML = `<p class="hint">No unused blank cards to reprint.</p>`;
+        return;
+      }
+      box.innerHTML = `
+        <p class="hint">${cards.length} unused blank ${cards.length === 1 ? "card" : "cards"}. Claimed and retired cards stay off this list. Reprinting does not create new codes.</p>
+        ${cards
+          .map(
+            (card) =>
+              `<label class="check"><input type="checkbox" data-reprint="${esc(card.code)}" checked /> Short code ${esc(shortCardCode(card.code))}</label>`
+          )
+          .join("")}
+        <div class="btn-row">
+          <button type="button" class="ghost" data-reprint-layout="blank-wallet">Wallet layout</button>
+          <button type="button" class="ghost" data-reprint-layout="blank-full">Full-page layout</button>
+        </div>`;
+    } catch (err) {
+      toast(err.message || "Could not load blank cards.");
+    }
+  }
+
+  function reprintSelected(layout) {
+    const box = $("blankReprint");
+    if (!box) return;
+    const cards = [...box.querySelectorAll("input[data-reprint]:checked")].map((input) => ({
+      code: input.dataset.reprint,
+      status: "unclaimed",
+    }));
+    if (!cards.length) {
+      toast("Choose at least one unused card.");
+      return;
+    }
+    cards.forEach(rememberCard);
+    renderBlankCards(cards, layout);
+    setView("cards");
+    toast(cards.length === 1 ? "Unused card is ready to print." : `${cards.length} unused cards are ready to print.`);
+  }
+
+  function isSavableClassDate(iso) {
+    const date = P.parseISODate(iso);
+    if (!date || !P.isClassTuesday(date)) return false;
+    return String(iso) >= P.FIRST_CLASS_ISO;
+  }
+
+  function renderEditingNote() {
+    const note = $("editingPlan");
+    const button = $("newPlanBtn");
+    const current = (state.savedPlans || []).find((item) => item.id === state.editingPlanId);
+    if (!note) return;
+    if (!current) {
+      note.classList.add("hidden");
+      note.textContent = "";
+      if (button) button.classList.add("hidden");
+      return;
+    }
+    note.classList.remove("hidden");
+    note.textContent = `Editing the saved plan for ${prettyDate(current.classDate)} · ${classLabel(current.ageGroup)}.`;
+    if (button) button.classList.remove("hidden");
+  }
+
+  function renderSavedPlans() {
+    const root = $("savedPlans");
+    if (!root) return;
+    const plans = Array.isArray(state.savedPlans) ? state.savedPlans : [];
+    if (!plans.length) {
+      root.innerHTML = `<p class="hint">No saved plans yet.</p>`;
+      renderEditingNote();
+      return;
+    }
+    root.innerHTML = plans
+      .map((plan) => {
+        const editing = plan.id === state.editingPlanId;
+        const remove = isAdmin()
+          ? `<button class="danger" type="button" data-plan-delete="${esc(plan.id)}">Delete</button>`
+          : "";
+        return `<article class="saved-plan${editing ? " is-editing" : ""}">
+          <p>${esc(prettyDate(plan.classDate))} · ${esc(classLabel(plan.ageGroup))}${editing ? " · Editing" : ""}<br>${esc(plan.savedBy || "A teacher")} · ${esc(prettyStamp(plan.updatedAt))}</p>
+          <button class="ghost" type="button" data-plan-edit="${esc(plan.id)}">Edit</button>
+          <button class="ghost" type="button" data-plan-print="${esc(plan.id)}">Print</button>
+          ${remove}
+        </article>`;
+      })
+      .join("");
+    renderEditingNote();
+  }
+
+  function prettyStamp(iso) {
+    const date = new Date(iso);
+    if (Number.isNaN(date.getTime())) return String(iso || "");
+    return date.toLocaleString(undefined, { month: "short", day: "numeric", year: "numeric", hour: "numeric", minute: "2-digit" });
+  }
+
+  async function refreshSavedPlans() {
+    const body = await window.BJJ_API.send("GET", "/api/plans");
+    state.savedPlans = Array.isArray(body.plans) ? body.plans : [];
+    if (state.editingPlanId && !state.savedPlans.some((item) => item.id === state.editingPlanId)) {
+      state.editingPlanId = "";
+    }
+    renderSavedPlans();
+  }
+
+  async function saveCurrentPlan() {
+    if (!state.plan) {
+      toast("Generate a class before saving it.");
+      return;
+    }
+    const date = $("date") ? $("date").value : "";
+    if (!isSavableClassDate(date)) {
+      toast("Save a plan for a class Tuesday, the 2nd or 4th Tuesday from October 27, 2026.");
+      return;
+    }
+    const ageGroup = state.preset === "toddler" ? "toddler" : P.normalizeAgeKey(state.ageGroup);
+    try {
+      await refreshSavedPlans();
+    } catch (err) {
+      toast(err.message || "Could not check saved plans.");
+      return;
+    }
+    const existing = state.savedPlans.find((item) => item.classDate === date && item.ageGroup === ageGroup);
+    if (existing && !window.confirm(`Replace the saved plan for ${prettyDate(date)} · ${classLabel(ageGroup)}?`)) return;
+    try {
+      const settings = readSettings();
+      settings.ageGroup = ageGroup;
+      if (ageGroup === "toddler") settings.preset = "toddler";
+      const plan = exportedPlan();
+      plan.settings = { ...(plan.settings || {}), ...settings };
+      if (ageGroup === "toddler") plan.mode = "toddler";
+      const saved = await window.BJJ_API.send("PUT", "/api/plans", {
+        date,
+        ageGroup,
+        plan,
+      });
+      state.editingPlanId = saved.id || "";
+      await refreshSavedPlans();
+      toast(existing ? "Saved plan replaced." : "Plan saved.");
+    } catch (err) {
+      toast(err.message || "Could not save that plan.");
+    }
+  }
+
+  async function loadSavedPlan(id, opts = {}) {
+    const body = await window.BJJ_API.send("GET", `/api/plans/${id}`);
+    const plan = sanitizePlan(body.plan);
+    if (!plan) {
+      toast("That saved plan could not be opened.");
+      return false;
+    }
+    if (plan.settings) applySettings(plan.settings);
+    if (body.ageGroup === "toddler" || plan.mode === "toddler") {
+      state.preset = "toddler";
+      state.ageGroup = "toddler";
+    } else if (body.ageGroup) {
+      state.ageGroup = P.normalizeAgeKey(body.ageGroup);
+      syncAgeButtons();
+    }
+    if ($("date") && body.classDate) $("date").value = body.classDate;
+    state.plan = plan;
+    state.preset = plan.mode === "toddler" ? "toddler" : "grace";
+    state.editingPlanId = body.id || id;
+    retimePlan();
+    await refreshSavedPlans();
+    setView("plan");
+    if (!opts.quiet) toast(`Editing the plan for ${prettyDate(body.classDate)} · ${classLabel(body.ageGroup)}.`);
+    return true;
+  }
+
+  function startNewPlan() {
+    state.editingPlanId = "";
+    renderSavedPlans();
+    toast("This is a new plan. Save it when you want a copy for this date.");
+  }
+
   async function printBlankCards(layout) {
     if (!isAdmin()) {
       toast("An admin prints blank cards.");
@@ -4839,6 +5031,48 @@ function sparringSection(plan) {
     $("printSigninBtn").addEventListener("click", () => showCards("signin"));
     if ($("blankWalletBtn")) $("blankWalletBtn").addEventListener("click", () => printBlankCards("blank-wallet"));
     if ($("blankFullBtn")) $("blankFullBtn").addEventListener("click", () => printBlankCards("blank-full"));
+    if ($("reprintBlankBtn")) $("reprintBlankBtn").addEventListener("click", () => showReprintBlanks());
+    if ($("blankReprint")) {
+      $("blankReprint").addEventListener("click", (event) => {
+        const layoutBtn = event.target.closest("[data-reprint-layout]");
+        if (!layoutBtn) return;
+        reprintSelected(layoutBtn.dataset.reprintLayout);
+      });
+    }
+    if ($("savePlanBtn")) $("savePlanBtn").addEventListener("click", () => saveCurrentPlan());
+    if ($("newPlanBtn")) $("newPlanBtn").addEventListener("click", () => startNewPlan());
+    if ($("savedPlans")) {
+      $("savedPlans").addEventListener("click", async (event) => {
+        const edit = event.target.closest("[data-plan-edit]");
+        const print = event.target.closest("[data-plan-print]");
+        const remove = event.target.closest("[data-plan-delete]");
+        try {
+          if (edit) {
+            await loadSavedPlan(edit.dataset.planEdit);
+            return;
+          }
+          if (print) {
+            const opened = await loadSavedPlan(print.dataset.planPrint, { quiet: true });
+            if (!opened) return;
+            delete document.body.dataset.print;
+            setView("plan");
+            window.print();
+            return;
+          }
+          if (remove) {
+            const row = state.savedPlans.find((item) => item.id === remove.dataset.planDelete);
+            const label = row ? `${prettyDate(row.classDate)} · ${classLabel(row.ageGroup)}` : "this plan";
+            if (!window.confirm(`Remove the saved plan for ${label}?`)) return;
+            await window.BJJ_API.send("DELETE", `/api/plans/${remove.dataset.planDelete}`);
+            if (state.editingPlanId === remove.dataset.planDelete) state.editingPlanId = "";
+            await refreshSavedPlans();
+            toast("Saved plan removed.");
+          }
+        } catch (err) {
+          toast(err.message || "Could not update saved plans.");
+        }
+      });
+    }
     if ($("claimForm")) $("claimForm").addEventListener("submit", (event) => submitClaim(event));
     if ($("claimCancel")) $("claimCancel").addEventListener("click", () => {
       closeClaim();
@@ -5015,6 +5249,28 @@ function sparringSection(plan) {
         openResetPassword(reset.dataset.reset, reset.dataset.username || "");
         return;
       }
+      const roleBtn = event.target.closest("button[data-role-user]");
+      if (roleBtn && !roleBtn.disabled) {
+        try {
+          const saved = await window.BJJ_API.send("PATCH", `/api/users/${roleBtn.dataset.roleUser}`, {
+            role: roleBtn.dataset.role,
+          });
+          if (state.session && saved.id === state.session.id) {
+            state.session.role = saved.role;
+            document.body.classList.toggle("role-admin", isAdmin());
+            const who = $("whoami");
+            if (who) who.textContent = `${sessionDisplayName()} · ${state.session.role}`;
+            renderStaffAdmin();
+            renderSavedPlans();
+          }
+          const name = saved.displayName || saved.username;
+          toast(`${name} is ${saved.role === "admin" ? "an admin" : "a teacher"}.`);
+          await refreshUsers();
+        } catch (err) {
+          toast(err.message || "Could not change that role.");
+        }
+        return;
+      }
       const btn = event.target.closest("button[data-user]");
       if (!btn) return;
       try {
@@ -5128,7 +5384,9 @@ function sparringSection(plan) {
         const reset = user.id === mine
           ? ""
           : `<button class="ghost" type="button" data-reset="${esc(user.id)}" data-username="${esc(user.username)}">Reset password</button>`;
-        return `<p><span>${esc(shown)} · ${esc(user.role)}${pending} · login ${esc(user.username)}</span>${reset}<button class="ghost" type="button" data-user="${esc(user.id)}">Remove</button></p>`;
+        const makeAdmin = `<button class="ghost" type="button" data-role-user="${esc(user.id)}" data-role="admin"${user.role === "admin" ? " disabled" : ""}>Make admin</button>`;
+        const makeTeacher = `<button class="ghost" type="button" data-role-user="${esc(user.id)}" data-role="teacher"${user.role === "teacher" ? " disabled" : ""}>Make teacher</button>`;
+        return `<p><span>${esc(shown)} · ${esc(user.role)}${pending} · login ${esc(user.username)}</span>${makeAdmin}${makeTeacher}${reset}<button class="ghost" type="button" data-user="${esc(user.id)}">Remove</button></p>`;
       })
       .join("");
   }
@@ -5233,6 +5491,7 @@ function sparringSection(plan) {
     });
     runPanel("Schedule", updateScheduleHint);
     if (isAdmin()) refreshUsers().catch((err) => reportPanel("Logins", err));
+    refreshSavedPlans().catch((err) => reportPanel("Saved plans", err));
     document.body.classList.add("authed");
     const gate = $("gate");
     if (gate) gate.hidden = true;

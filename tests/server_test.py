@@ -10,7 +10,17 @@ import urllib.request
 from http.server import ThreadingHTTPServer
 
 from server.httpapp import Api, config_from_env, hash_password
-from server.db import age_group_for_age, connect, iso, migrate, new_id, normalize_age_group, utcnow
+from server.db import (
+    age_group_for_age,
+    connect,
+    is_class_day,
+    iso,
+    migrate,
+    new_id,
+    normalize_age_group,
+    today_pacific,
+    utcnow,
+)
 
 PNG = (
     "data:image/png;base64,"
@@ -541,6 +551,7 @@ class ApiTest(unittest.TestCase):
         self.assertEqual(row["name"], "Existing")
         tables = {item["name"] for item in conn.execute("SELECT name FROM sqlite_master WHERE type = 'table'")}
         self.assertIn("staff", tables)
+        self.assertIn("lesson_plans", tables)
         conn.execute(
             "INSERT INTO staff (id, name, belt, stripes, user_id, created_at) VALUES (?, ?, ?, ?, NULL, ?)",
             ("st-old", "Helper", "blue", 0, "2026-01-01T00:00:00Z"),
@@ -892,6 +903,197 @@ class ApiTest(unittest.TestCase):
                 admin.call("DELETE", f"/api/classes/{class_id}")
             for sid in created:
                 admin.call("DELETE", f"/api/students/{sid}")
+
+
+    def test_role_change_is_admin_only_and_keeps_last_admin(self):
+        def restore_roles():
+            conn = self.api.db()
+            conn.execute("UPDATE users SET role = 'admin' WHERE username = 'dakota'")
+            conn.execute("UPDATE users SET role = 'teacher' WHERE username = 'alex'")
+            conn.execute("DELETE FROM users WHERE username = 'roletemp'")
+            conn.execute("DELETE FROM staff WHERE name = 'roletemp'")
+            conn.commit()
+            conn.close()
+
+        self.addCleanup(restore_roles)
+        admin = self.client()
+        status, me = admin.login("dakota", "correct-horse")
+        self.assertEqual(status, 200)
+        teacher = self.client()
+        status, alex = teacher.login("alex", "correct-horse")
+        self.assertEqual(status, 200)
+        alex_id = alex["user"]["id"]
+        dakota_id = me["user"]["id"]
+        status, denied = teacher.call("PATCH", f"/api/users/{alex_id}", {"role": "admin"})
+        self.assertEqual(status, 403)
+        status, bad = admin.call("PATCH", f"/api/users/{alex_id}", {"role": "owner"})
+        self.assertEqual(status, 400)
+        status, missing = admin.call("PATCH", f"/api/users/{alex_id}", {})
+        self.assertEqual(status, 400)
+        status, blocked = admin.call("PATCH", f"/api/users/{dakota_id}", {"role": "teacher"})
+        self.assertEqual(status, 400)
+        self.assertEqual(blocked["error"], "Keep at least one admin who can still sign in.")
+        status, promoted = admin.call("PATCH", f"/api/users/{alex_id}", {"role": "admin"})
+        self.assertEqual(status, 200)
+        self.assertEqual(promoted["role"], "admin")
+        self.assertEqual(promoted["username"], "alex")
+        status, created = teacher.call(
+            "POST",
+            "/api/users",
+            {"username": "roletemp", "password": "long-enough-1", "role": "teacher"},
+        )
+        self.assertEqual(status, 201)
+        status, demoted_self = admin.call("PATCH", f"/api/users/{dakota_id}", {"role": "teacher"})
+        self.assertEqual(status, 200)
+        self.assertEqual(demoted_self["role"], "teacher")
+        status, still = teacher.call("PATCH", f"/api/users/{alex_id}", {"role": "teacher"})
+        self.assertEqual(status, 400)
+        self.assertEqual(still["error"], "Keep at least one admin who can still sign in.")
+        status, restored = teacher.call("PATCH", f"/api/users/{dakota_id}", {"role": "admin"})
+        self.assertEqual(status, 200)
+        status, back = admin.call("PATCH", f"/api/users/{alex_id}", {"role": "teacher"})
+        self.assertEqual(status, 200)
+        self.assertEqual(back["role"], "teacher")
+        status, removed = admin.call("DELETE", f"/api/users/{created['id']}")
+        self.assertEqual(status, 200)
+        conn = self.api.db()
+        try:
+            row = conn.execute("SELECT username, role FROM users WHERE id = ?", (dakota_id,)).fetchone()
+            self.assertEqual(row["username"], "dakota")
+            self.assertEqual(row["role"], "admin")
+            other = conn.execute("SELECT role FROM users WHERE id = ?", (alex_id,)).fetchone()
+            self.assertEqual(other["role"], "teacher")
+            conn.execute("DELETE FROM staff WHERE name = 'roletemp'")
+            conn.commit()
+        finally:
+            conn.execute("UPDATE users SET role = 'admin' WHERE id = ?", (dakota_id,))
+            conn.execute("UPDATE users SET role = 'teacher' WHERE id = ?", (alex_id,))
+            conn.execute("DELETE FROM users WHERE username = 'roletemp'")
+            conn.execute("DELETE FROM staff WHERE name = 'roletemp'")
+            conn.commit()
+            conn.close()
+
+    def test_saved_plans_round_trip_keeps_order_and_overrides(self):
+        def clear_plans():
+            conn = self.api.db()
+            conn.execute("DELETE FROM lesson_plans")
+            conn.commit()
+            conn.close()
+
+        self.addCleanup(clear_plans)
+        self.assertTrue(is_class_day("2026-10-27"))
+        self.assertTrue(is_class_day("2026-11-10"))
+        self.assertFalse(is_class_day("2026-10-13"))
+        self.assertFalse(is_class_day("2026-10-28"))
+        admin = self.client()
+        admin.login("dakota", "correct-horse")
+        teacher = self.client()
+        teacher.login("alex", "correct-horse")
+        stranger = self.client()
+        status, denied = stranger.call("GET", "/api/plans")
+        self.assertEqual(status, 401)
+        plan = {
+            "mode": "grace",
+            "settings": {"ageGroup": "mite", "date": "2026-10-27", "title": "GRACE BJJ KIDS"},
+            "lesson": {
+                "items": [
+                    {"id": "ls-second", "name": "Second", "ageOverride": True},
+                    {"id": "ls-first", "name": "First", "ageOverride": False},
+                ]
+            },
+        }
+        status, saved = teacher.call(
+            "PUT",
+            "/api/plans",
+            {"date": "2026-10-27", "ageGroup": "mite", "plan": plan},
+        )
+        self.assertEqual(status, 201)
+        self.assertTrue(saved["created"])
+        self.assertEqual(saved["classDate"], "2026-10-27")
+        self.assertEqual(saved["ageGroup"], "mite")
+        self.assertEqual(saved["savedByUsername"], "alex")
+        items = saved["plan"]["lesson"]["items"]
+        self.assertEqual([item["id"] for item in items], ["ls-second", "ls-first"])
+        self.assertTrue(items[0]["ageOverride"])
+        self.assertFalse(items[1]["ageOverride"])
+        plan["lesson"]["items"] = [
+            {"id": "ls-first", "name": "First", "ageOverride": False},
+            {"id": "ls-second", "name": "Second", "ageOverride": True},
+        ]
+        status, again = admin.call(
+            "PUT",
+            "/api/plans",
+            {"date": "2026-10-27", "ageGroup": "mite", "plan": plan},
+        )
+        self.assertEqual(status, 200)
+        self.assertFalse(again["created"])
+        self.assertEqual(again["id"], saved["id"])
+        self.assertEqual(again["savedByUsername"], "dakota")
+        loaded_items = again["plan"]["lesson"]["items"]
+        self.assertEqual([item["id"] for item in loaded_items], ["ls-first", "ls-second"])
+        self.assertFalse(loaded_items[0]["ageOverride"])
+        self.assertTrue(loaded_items[1]["ageOverride"])
+        status, other = teacher.call(
+            "PUT",
+            "/api/plans",
+            {
+                "date": "2026-11-24",
+                "ageGroup": "teen",
+                "plan": {"mode": "grace", "settings": {"ageGroup": "teen"}, "lesson": {"items": []}},
+            },
+        )
+        self.assertEqual(status, 201)
+        status, middle = teacher.call(
+            "PUT",
+            "/api/plans",
+            {
+                "date": "2026-11-10",
+                "ageGroup": "peewee",
+                "plan": {"mode": "grace", "settings": {"ageGroup": "peewee"}, "lesson": {"items": []}},
+            },
+        )
+        self.assertEqual(status, 201)
+        status, bad_day = teacher.call(
+            "PUT",
+            "/api/plans",
+            {"date": "2026-10-28", "ageGroup": "mite", "plan": plan},
+        )
+        self.assertEqual(status, 400)
+        status, early = teacher.call(
+            "PUT",
+            "/api/plans",
+            {"date": "2026-10-13", "ageGroup": "mite", "plan": plan},
+        )
+        self.assertEqual(status, 400)
+        status, bad_age = teacher.call(
+            "PUT",
+            "/api/plans",
+            {"date": "2026-10-27", "ageGroup": "nope", "plan": plan},
+        )
+        self.assertEqual(status, 400)
+        status, listing = teacher.call("GET", "/api/plans")
+        self.assertEqual(status, 200)
+        dates = [item["classDate"] for item in listing["plans"]]
+        today = today_pacific()
+        upcoming = sorted(date for date in dates if date >= today)
+        past = sorted((date for date in dates if date < today), reverse=True)
+        self.assertEqual(dates, upcoming + past)
+        self.assertIn("2026-10-27", dates)
+        self.assertIn("2026-11-10", dates)
+        self.assertIn("2026-11-24", dates)
+        status, loaded = teacher.call("GET", f"/api/plans/{saved['id']}")
+        self.assertEqual(status, 200)
+        round_trip = loaded["plan"]["lesson"]["items"]
+        self.assertEqual([item["id"] for item in round_trip], ["ls-first", "ls-second"])
+        self.assertTrue(round_trip[1]["ageOverride"])
+        status, blocked = teacher.call("DELETE", f"/api/plans/{other['id']}")
+        self.assertEqual(status, 403)
+        status, removed = admin.call("DELETE", f"/api/plans/{other['id']}")
+        self.assertEqual(status, 200)
+        status, gone = teacher.call("GET", f"/api/plans/{other['id']}")
+        self.assertEqual(status, 404)
+        admin.call("DELETE", f"/api/plans/{saved['id']}")
+        admin.call("DELETE", f"/api/plans/{middle['id']}")
 
 
 def _handler(api):

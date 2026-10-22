@@ -1642,6 +1642,20 @@ body:not(.role-admin) .admin-only { display: none !important; }
 .form-note.ok { color: #bbf7d0; }
 #userList p { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
 #userList button { min-height: 44px; }
+.saved-plans { display: flex; flex-direction: column; gap: 8px; }
+.saved-plan {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  padding-top: 8px;
+  border-top: 1px solid var(--ui-line);
+}
+.saved-plan p { margin: 0; flex: 1 1 12rem; }
+.saved-plan button { min-height: 44px; }
+.saved-plan.is-editing p { font-weight: 700; }
+#editingPlan { font-weight: 700; }
+#blankReprint { margin-top: 8px; }
 
 .must-change {
   box-sizing: border-box;

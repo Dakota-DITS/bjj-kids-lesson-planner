@@ -90,6 +90,41 @@ def parse_iso(value):
         return None
 
 
+def is_class_day(value):
+    """2nd or 4th Tuesday on or after October 27, 2026. Calendar date, no timezone shift."""
+    text = str(value or "").strip()
+    try:
+        when = datetime.strptime(text, "%Y-%m-%d")
+    except ValueError:
+        return False
+    if when.strftime("%Y-%m-%d") != text:
+        return False
+    if when.weekday() != 1:
+        return False
+    which = (when.day - 1) // 7 + 1
+    if which not in (2, 4):
+        return False
+    return text >= "2026-10-27"
+
+
+def today_pacific():
+    try:
+        from zoneinfo import ZoneInfo
+
+        return datetime.now(ZoneInfo("America/Los_Angeles")).date().isoformat()
+    except Exception:
+        return datetime.now(timezone.utc).date().isoformat()
+
+
+def order_lesson_plans(rows, today):
+    """Upcoming class dates first, then earlier class dates newest first."""
+    upcoming = [row for row in rows if row["class_date"] >= today]
+    past = [row for row in rows if row["class_date"] < today]
+    upcoming.sort(key=lambda row: (row["class_date"], row["age_group"]))
+    past.sort(key=lambda row: (row["class_date"], row["age_group"]), reverse=True)
+    return upcoming + past
+
+
 def new_id(prefix):
     return prefix + secrets.token_hex(4)
 
@@ -193,6 +228,17 @@ def migrate(conn):
           stripes INTEGER NOT NULL DEFAULT 0 CHECK(stripes >= 0 AND stripes <= 4),
           user_id TEXT UNIQUE,
           created_at TEXT NOT NULL
+        );
+        CREATE TABLE IF NOT EXISTS lesson_plans (
+          id TEXT PRIMARY KEY,
+          class_date TEXT NOT NULL,
+          age_group TEXT NOT NULL,
+          plan_json TEXT NOT NULL,
+          created_by TEXT NOT NULL,
+          updated_by TEXT NOT NULL,
+          created_at TEXT NOT NULL,
+          updated_at TEXT NOT NULL,
+          UNIQUE(class_date, age_group)
         );
         """
     )
