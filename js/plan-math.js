@@ -763,6 +763,53 @@ function sanitizeProgress(raw) {
     return activitySearchText(activity).includes(q);
   }
 
+  function ageLimitLabel(ages) {
+    const order = ["mite", "peewee", "junior", "teen", "toddler"];
+    const list = Array.isArray(ages) ? ages : [];
+    const have = order.filter((id) => list.includes(id));
+    if (!have.length) return "";
+    const start = order.indexOf(have[0]);
+    const throughTeen =
+      have[have.length - 1] === "teen" &&
+      have.length > 1 &&
+      have.every((id, index) => order[start + index] === id);
+    if (throughTeen) return `For ages ${AGE_RANGES[have[0]] || have[0]}+`;
+    if (have.length === 1) return `For ages ${AGE_RANGES[have[0]] || have[0]}`;
+    return `For ages ${have.map((id) => AGE_RANGES[id] || id).join(", ")}`;
+  }
+
+  function keepAgeOverrides(picked, previous) {
+    const chosen = (Array.isArray(picked) ? picked : []).filter((item) => item && item.id != null);
+    const seen = new Set(chosen.map((item) => String(item.id)));
+    const extras = [];
+    (Array.isArray(previous) ? previous : []).forEach((item) => {
+      if (!item || !item.ageOverride || item.id == null) return;
+      const id = String(item.id);
+      if (seen.has(id)) return;
+      seen.add(id);
+      extras.push({ ...item, ageOverride: true });
+    });
+    return extras.concat(chosen);
+  }
+
+  function ageOverrideGroups(inAgeLibrary, outOfAgeLibrary, inPlanIds, query) {
+    const grouped = planPickerGroups(inAgeLibrary, inPlanIds, query);
+    const q = String(query == null ? "" : query).trim();
+    if (!q) {
+      return { inPlan: grouped.inPlan, rest: grouped.rest, outOfAge: [], inPlanCount: grouped.inPlanCount };
+    }
+    const outside = planPickerGroups(outOfAgeLibrary, inPlanIds, query);
+    const shown = new Set(
+      grouped.rest.map((item) => String(item.id)).concat(grouped.inPlan.map((item) => String(item.id)))
+    );
+    return {
+      inPlan: grouped.inPlan,
+      rest: grouped.rest,
+      outOfAge: outside.rest.filter((item) => !shown.has(String(item.id))),
+      inPlanCount: grouped.inPlanCount,
+    };
+  }
+
   function planPickerGroups(library, inPlanIds, query) {
     const items = Array.isArray(library) ? library.filter((item) => item && item.id != null) : [];
     const ids = Array.isArray(inPlanIds) ? inPlanIds.map((id) => String(id)) : [];
@@ -965,6 +1012,9 @@ function sanitizeProgress(raw) {
     activitySearchText,
     matchesPlanQuery,
     planPickerGroups,
+    ageLimitLabel,
+    keepAgeOverrides,
+    ageOverrideGroups,
     togglePlanIds,
     takeSequence,
     CLASS_KEYS,
