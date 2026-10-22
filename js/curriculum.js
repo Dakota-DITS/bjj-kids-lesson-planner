@@ -1,9 +1,9 @@
 /* Grace BJJ Kids technique pool. Real positions, escapes, sweeps, passes, and defense. */
 (function () {
-  const ALL = ["mite", "peewee", "junior", "teen"];
-  const OLDER = ["peewee", "junior", "teen"];
-  const BIG = ["junior", "teen"];
-  const SMALL = ["mite", "peewee"];
+  const ALL = ["mite", "upper"];
+  const OLDER = ["mite", "upper"];
+  const BIG = ["upper"];
+  const SMALL = ["mite", "upper"];
   const DATA = window.BJJ_DATA;
 
   DATA.themes = [
@@ -381,7 +381,7 @@
       "The swing tips them over. Come up in mount.",
     ],
     "5 slow reps each side, then switch partners.",
-    "Pee Wees swing small. No kicking the head. Clear the mats beside you before you swing. Finish in mount.",
+    "Swing small. No kicking the head. Clear the mats beside you before you swing. Finish in mount.",
     { themes: ["sweeps"], tags: ["sweep"] }
   );
   tech(
@@ -397,7 +397,7 @@
       "Walk the grip toward their belt slowly until they tap.",
     ],
     "3 slow reps each side, then switch partners.",
-    "Slow. Let go the instant they tap. Do not rip the shoulder. Juniors and Teens only."
+    "Slow. Let go the instant they tap. Do not rip the shoulder. 8–10 only."
   );
 
   tech(
@@ -474,7 +474,7 @@
       "Pull them toward you and scythe that leg so they fall. Come up on top.",
     ],
     "3 slow reps each side, then switch partners.",
-    "Juniors and Teens. The hook takes the heel. Do not twist the knee. If the knee turns, let go. Finish on top.",
+    "8–10. The hook takes the heel. Do not twist the knee. If the knee turns, let go. Finish on top.",
     { themes: ["sweeps"], say: "Sickle the heel. Foot on the hip. Pull them down and come up on top.", tags: ["sweep"] }
   );
 
@@ -552,7 +552,7 @@
       "Squeeze slow, like a hug, and let go the instant they tap.",
     ],
     "3 slow reps each side, then switch partners.",
-    "Juniors and Teens only. Teach the tap first. No squeezing before the tap is practiced. Let go immediately. Stop the room if someone cranks."
+    "8–10 only. Teach the tap first. No squeezing before the tap is practiced. Let go immediately. Stop the room if someone cranks."
   );
 
   tech(
@@ -598,7 +598,7 @@
       "Hands post on the mat. Mighty Mites rest the knee on the belt, not the ribs.",
     ],
     "Hold for a slow count of 3, then switch.",
-    "Light knee. No bouncing. Take it off the moment they tap or say stop. Spot every Mighty Mite."
+    "Light knee. No bouncing. Take it off the moment they tap or say stop. Spot the Mighty Mites."
   );
   tech(
     "ls-kob-shrimp",
@@ -659,7 +659,7 @@
       "They do a side breakfall. You kneel into side control.",
     ],
     "5 slow reps each side, then switch partners.",
-    "Juniors and Teens only, and only after breakfalls. No reaping into the knee sideways. Let go if they don't fall clean. One pair at a time."
+    "8–10 only, and only after breakfalls. No reaping into the knee sideways. Let go if they don't fall clean. One pair at a time."
   );
 
   tech(
@@ -721,7 +721,7 @@
       "Hold the shape. Do not squeeze until the teacher says a one-second finish, then let go on the tap.",
     ],
     "3 slow reps each side, then switch partners.",
-    "Juniors and Teens only. One-second finish, then release. No cranking the neck. Teach the tap before the first rep."
+    "8–10 only. One-second finish, then release. No cranking the neck. Teach the tap before the first rep."
   );
   tech(
     "ls-pass-mount-back",
@@ -791,4 +791,21 @@
 
   const tug = DATA.activities.find((activity) => activity.id === "gm-tug-of-war");
   if (tug) tug.themes = ["takedowns"];
+
+  function canonicalTechniqueAges(ages) {
+    const list = Array.isArray(ages) ? ages : [];
+    if (!list.length) return [];
+    const has = (id) => list.includes(id);
+    const out = [];
+    if (has("mite") || has("peewee")) out.push("mite");
+    if (has("peewee") || has("junior") || has("upper")) out.push("upper");
+    if (has("toddler")) out.push("toddler");
+    if (has("teen") && !out.length) out.push("teen");
+    return out;
+  }
+  DATA.activities.forEach((activity) => {
+    if (Array.isArray(activity.ages) && activity.ages.length) {
+      activity.ages = canonicalTechniqueAges(activity.ages);
+    }
+  });
 })();

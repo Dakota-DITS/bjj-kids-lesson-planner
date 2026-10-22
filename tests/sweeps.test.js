@@ -45,14 +45,14 @@ const byId = Object.fromEntries(sweeps.map((item) => [item.id, item]));
 assert.ok(!sweeps.some((item) => item.id === "ls-kimura"), "kimura is not a sweep");
 
 const ages = {
-  "ls-scissor-prep": ["mite", "peewee", "junior", "teen"],
-  "ls-scissor": ["mite", "peewee", "junior", "teen"],
-  "ls-seated-bump": ["mite", "peewee", "junior", "teen"],
-  "ls-hip-bump": ["peewee", "junior", "teen"],
-  "ls-flower": ["peewee", "junior", "teen"],
-  "ls-butterfly": ["peewee", "junior", "teen"],
-  "ls-tripod": ["peewee", "junior", "teen"],
-  "ls-sickle": ["junior", "teen"],
+  "ls-scissor-prep": ["mite", "upper"],
+  "ls-scissor": ["mite", "upper"],
+  "ls-seated-bump": ["mite", "upper"],
+  "ls-hip-bump": ["mite", "upper"],
+  "ls-flower": ["mite", "upper"],
+  "ls-butterfly": ["mite", "upper"],
+  "ls-tripod": ["mite", "upper"],
+  "ls-sickle": ["upper"],
 };
 Object.entries(ages).forEach(([id, expect]) => {
   assert.deepStrictEqual(Array.from(byId[id].ages), expect, id);
@@ -77,20 +77,19 @@ const game = DATA.activities.find((item) => item.id === "gm-sweep-stand");
 assert.ok(game);
 assert.strictEqual(game.category, "game");
 assert.ok(game.themes.includes("sweeps"));
-assert.deepStrictEqual(Array.from(game.ages), ["mite", "peewee", "junior", "teen"]);
+assert.deepStrictEqual(Array.from(game.ages), ["mite", "upper"]);
 assert.ok(P.matchesPlanQuery(game, "sweep"));
 assert.ok(game.how.includes("reset right away"));
 assert.ok(!/no submissions/i.test(game.how));
 
-["mite", "peewee", "junior", "teen"].forEach((age) => {
+["mite", "upper"].forEach((age) => {
   assert.ok(scissor.ages.includes(age), age);
   const forAge = sweeps.filter((item) => item.ages.includes(age)).map((item) => item.id);
   assert.ok(forAge.includes("ls-scissor"), age);
   assert.ok(forAge.includes("ls-scissor-prep"), age);
 });
 assert.ok(!byId["ls-sickle"].ages.includes("mite"));
-assert.ok(!byId["ls-sickle"].ages.includes("peewee"));
-assert.ok(!byId["ls-tripod"].ages.includes("mite"));
+assert.ok(byId["ls-tripod"].ages.includes("mite"));
 
 assert.ok(app.includes("function lessonInTheme"));
 assert.ok(app.includes("lessonInTheme(item, choice.id)"));

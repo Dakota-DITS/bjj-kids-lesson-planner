@@ -1,6 +1,7 @@
 """SQLite storage. The database file is never served by nginx."""
 
 import hashlib
+import json
 import os
 import secrets
 import sqlite3
@@ -22,55 +23,232 @@ BELTS = [
     "green-black",
 ]
 LEVELS = ("introduced", "practicing", "help", "own")
-AGE_GROUPS = ("mite", "peewee", "junior", "teen", "toddler")
-GRACE_AGES = ("mite", "peewee", "junior", "teen")
+AGE_GROUPS = ("mite", "upper", "toddler")
+GRACE_AGES = ("mite", "upper")
+LEGACY_CLASS_PARTS = ("peewee", "junior", "teen")
+CLASS_AGE_MAP = {
+    "mite": "mite",
+    "upper": "upper",
+    "peewee": "upper",
+    "junior": "upper",
+    "teen": "upper",
+}
 ADULT_BELTS = ("white", "blue", "purple", "brown", "black")
 # Representative age when a blank card is claimed with a class and no number.
 AGE_GROUP_AGES = {
     "toddler": 4,
     "mite": 5,
+    "upper": 9,
+    # Claim aliases from the old four groups. 8, 11, and 14 all sit in 8–10.
     "peewee": 8,
     "junior": 11,
     "teen": 14,
 }
+_PLAN_AGE_LABELS = {
+    "4–6 Mighty Mite": "4–7 Mighty Mites",
+    "4–6 Mighty Mites": "4–7 Mighty Mites",
+    "Mighty Mite 4–6": "Mighty Mites 4–7",
+    "7–9 Pee Wee": "8–10",
+    "Pee Wee 7–9": "8–10",
+    "10–12 Junior": "8–10",
+    "Junior 10–12": "8–10",
+    "13–15 Teen": "8–10",
+    "Teen 13–15": "8–10",
+    "Combo class: 4–6 + 7–9": "Combo class: 4–7 + 8–10",
+    "Combo class: 4–6 + 10–12": "Combo class: 4–7 + 8–10",
+    "Combo class: 4–6 + 13–15": "Combo class: 4–7 + 8–10",
+    "Combo class: 7–9 + 10–12": "8–10",
+    "Combo class: 7–9 + 13–15": "8–10",
+    "Combo class: 10–12 + 13–15": "8–10",
+}
 
 
-def normalize_age_group(value):
-    """Canonical class key stored in classes.age_group.
+def canonical_class_key(value):
+    """Map a stored class key onto mite, upper, or a combo of those.
 
-    A single group stays mite, peewee, junior, teen, or toddler.
-    Two or more Grace groups become one combo key, youngest first,
-    joined with '+', for example mite+peewee. The column is already
-    TEXT, so existing rows load unchanged and no ALTER TABLE is required.
+    Empty when the value is not a known class key. mite stays mite.
+    peewee, junior, and teen fold into upper. A combo that mixes mite
+    with any older group becomes mite+upper.
     """
     raw = str(value or "").strip().lower()
     if raw == "toddler":
         return "toddler"
     parts = []
     for piece in raw.split("+"):
-        piece = piece.strip()
-        if piece in GRACE_AGES and piece not in parts:
-            parts.append(piece)
+        mapped = CLASS_AGE_MAP.get(piece.strip())
+        if mapped and mapped not in parts:
+            parts.append(mapped)
     if not parts:
-        return "mite"
+        return ""
     parts.sort(key=GRACE_AGES.index)
     return "+".join(parts)
 
 
+def is_legacy_storage_key(value):
+    """True for a pre-change key that migration could not merge."""
+    raw = str(value or "").strip().lower()
+    if raw in LEGACY_CLASS_PARTS:
+        return True
+    parts = [piece.strip() for piece in raw.split("+") if piece.strip()]
+    if len(parts) < 2:
+        return False
+    known = set(LEGACY_CLASS_PARTS) | set(GRACE_AGES)
+    return any(piece in LEGACY_CLASS_PARTS for piece in parts) and all(piece in known for piece in parts)
+
+
+def normalize_age_group(value):
+    """Canonical class key stored in classes.age_group.
+
+    mite is 4–7 Mighty Mites. upper is 8–10. toddler stays the intro preset.
+    Old peewee, junior, and teen keys fold into upper. Two groups become
+    mite+upper, youngest first. Unknown text still becomes mite.
+    """
+    raw = str(value or "").strip().lower()
+    if raw == "toddler":
+        return "toddler"
+    mapped = canonical_class_key(raw)
+    return mapped or "mite"
+
+
 def age_group_for_age(age):
+    """Map a stored integer age. Birthdates are not stored.
+
+    4–7 is mite. 8–15 is upper so kids who were 10–15 are not left out.
+    Age 3 and younger stay outside these two class groups.
+    """
     try:
         number = int(age)
     except (TypeError, ValueError):
         return ""
-    if 4 <= number <= 6:
+    if 4 <= number <= 7:
         return "mite"
-    if 7 <= number <= 9:
-        return "peewee"
-    if 10 <= number <= 12:
-        return "junior"
-    if 13 <= number <= 15:
-        return "teen"
+    if 8 <= number <= 15:
+        return "upper"
     return ""
+
+
+def _map_technique_ages(ages):
+    if not isinstance(ages, list):
+        return ages
+    has = set(ages)
+    out = []
+    if "mite" in has or "peewee" in has:
+        out.append("mite")
+    if "peewee" in has or "junior" in has or "upper" in has:
+        out.append("upper")
+    if "toddler" in has:
+        out.append("toddler")
+    if "teen" in has and not out:
+        out.append("teen")
+    return out
+
+
+def _rewrite_plan_node(node):
+    if isinstance(node, dict):
+        if isinstance(node.get("ages"), list):
+            node["ages"] = _map_technique_ages(node["ages"])
+        if isinstance(node.get("ages"), str):
+            node["ages"] = _PLAN_AGE_LABELS.get(node["ages"], node["ages"])
+        if isinstance(node.get("ageGroup"), str):
+            mapped = canonical_class_key(node["ageGroup"])
+            if mapped:
+                node["ageGroup"] = mapped
+        for value in node.values():
+            _rewrite_plan_node(value)
+    elif isinstance(node, list):
+        for item in node:
+            _rewrite_plan_node(item)
+
+
+def rewrite_plan_json(text, target_key):
+    try:
+        data = json.loads(text)
+    except (TypeError, ValueError):
+        return text
+    if not isinstance(data, dict):
+        return text
+    _rewrite_plan_node(data)
+    settings = data.get("settings")
+    if isinstance(settings, dict) and target_key:
+        settings["ageGroup"] = target_key
+    return json.dumps(data, ensure_ascii=False, separators=(",", ":"))
+
+
+def migrate_age_groups(conn):
+    """Fold old class keys into mite and upper. Never deletes a row.
+
+    When two rows on the same date would share the new key, both stay
+    and the one that could not move is recorded in age_group_flags.
+    Safe to run more than once.
+    """
+    conn.execute(
+        """
+        CREATE TABLE IF NOT EXISTS age_group_flags (
+          source TEXT NOT NULL,
+          row_id TEXT NOT NULL,
+          class_date TEXT NOT NULL,
+          age_group TEXT NOT NULL,
+          wanted TEXT NOT NULL,
+          note TEXT NOT NULL,
+          UNIQUE(source, row_id)
+        )
+        """
+    )
+    _migrate_age_rows(conn, "classes", "date", "id", None)
+    _migrate_age_rows(conn, "lesson_plans", "class_date", "id", "plan_json")
+
+
+def _migrate_age_rows(conn, table, date_col, id_col, json_column):
+    extra = f", {json_column}" if json_column else ""
+    rows = conn.execute(f"SELECT {id_col} AS row_id, {date_col} AS class_date, age_group{extra} FROM {table}").fetchall()
+    occupied = {}
+    planned = []
+    for row in rows:
+        target = canonical_class_key(row["age_group"])
+        if not target or target == row["age_group"]:
+            occupied[(row["class_date"], row["age_group"])] = row["row_id"]
+            if json_column and target:
+                rewritten = rewrite_plan_json(row[json_column], target)
+                if rewritten != row[json_column]:
+                    conn.execute(
+                        f"UPDATE {table} SET {json_column} = ? WHERE {id_col} = ?",
+                        (rewritten, row["row_id"]),
+                    )
+            continue
+        planned.append(row)
+    planned.sort(key=lambda row: (row["class_date"], row["row_id"]))
+    for row in planned:
+        target = canonical_class_key(row["age_group"])
+        owner = occupied.get((row["class_date"], target))
+        if owner and owner != row["row_id"]:
+            conn.execute(
+                """
+                INSERT OR IGNORE INTO age_group_flags
+                  (source, row_id, class_date, age_group, wanted, note)
+                VALUES (?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    table,
+                    row["row_id"],
+                    row["class_date"],
+                    row["age_group"],
+                    target,
+                    "Left this row unchanged because another row already uses the new age group for this date.",
+                ),
+            )
+            continue
+        occupied[(row["class_date"], target)] = row["row_id"]
+        if json_column:
+            rewritten = rewrite_plan_json(row[json_column], target)
+            conn.execute(
+                f"UPDATE {table} SET age_group = ?, {json_column} = ? WHERE {id_col} = ?",
+                (target, rewritten, row["row_id"]),
+            )
+        else:
+            conn.execute(
+                f"UPDATE {table} SET age_group = ? WHERE {id_col} = ?",
+                (target, row["row_id"]),
+            )
 
 
 def utcnow():
@@ -249,6 +427,7 @@ def migrate(conn):
     if "must_change_password" not in columns:
         conn.execute("ALTER TABLE users ADD COLUMN must_change_password INTEGER NOT NULL DEFAULT 0")
     conn.execute("UPDATE users SET must_change_password = 0 WHERE must_change_password IS NULL")
+    migrate_age_groups(conn)
     conn.commit()
 
 

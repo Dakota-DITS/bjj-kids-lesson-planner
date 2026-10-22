@@ -1189,6 +1189,9 @@ button.plan-override.danger {
   padding: 10px 16px;
   border-radius: 999px;
   font-size: 0.9rem;
+  line-height: 1.35;
+  text-align: center;
+  max-width: min(36rem, calc(100vw - 28px));
   opacity: 0;
   pointer-events: none;
   transition: opacity 0.2s;

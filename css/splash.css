@@ -81,6 +81,10 @@ h1 { font-size: clamp(2.2rem, 8vw, 3.4rem); margin: 18px 0 8px; color: var(--red
   box-shadow: 0 8px 24px rgba(20, 17, 15, 0.05);
 }
 h2 { margin: 0 0 8px; font-size: 1.7rem; }
+.donate-ask {
+  color: var(--red-dark);
+  font-weight: 700;
+}
 .next {
   display: inline-block;
   max-width: 100%;
@@ -400,14 +404,35 @@ h2 { margin: 0 0 8px; font-size: 1.7rem; }
   left: 50%;
   top: 50%;
   transform: translate(-50%, -50%);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  box-sizing: border-box;
+  width: max-content;
   min-width: 76px;
+  height: 44px;
   min-height: 44px;
-  padding: 8px 16px;
+  margin: 0;
+  padding: 0 16px;
+  border: 0;
   border-radius: 999px;
   background: var(--red);
   color: #fff;
   font-family: "Luckiest Guy", "Arial Black", sans-serif;
+  font-size: 1rem;
+  font-weight: 400;
+  font-style: normal;
+  line-height: 1;
   letter-spacing: 0.03em;
+  text-align: center;
+}
+/* Luckiest Guy's letters sit above the em-box center. The shift is a fraction of the font size so it stays centered in Chrome and iOS Safari. */
+.video-play-label {
+  display: block;
+  padding: 0;
+  margin: 0;
+  line-height: 1;
+  transform: translate(0.08em, 0.17em);
 }
 .video-fallback { margin-bottom: 0; }
 .visually-hidden {

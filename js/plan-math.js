@@ -6,17 +6,23 @@
 })(typeof globalThis !== "undefined" ? globalThis : this, function () {
   const FIRST_CLASS_ISO = "2026-10-27";
   const RATIO_LIMIT = 4;
-  const AGE_IDS = ["mite", "peewee", "junior", "teen", "toddler"];
-  const GRACE_AGES = ["mite", "peewee", "junior", "teen"];
+  const AGE_IDS = ["mite", "upper", "toddler"];
+  const GRACE_AGES = ["mite", "upper"];
   const AGE_RANGES = {
-    mite: "4–6",
-    peewee: "7–9",
-    junior: "10–12",
-    teen: "13–15",
+    mite: "4–7",
+    upper: "8–10",
     toddler: "3–5",
   };
+  // Old class keys still appear on saved plans and technique tags.
+  const CLASS_AGE_MAP = {
+    mite: "mite",
+    upper: "upper",
+    peewee: "upper",
+    junior: "upper",
+    teen: "upper",
+  };
   const COMBO_SPARRING_SAFETY =
-    "Partner kids within their own age group and similar size. Never pair a 4–6 with a 10–15.";
+    "Partner kids within their own age group and similar size. Never pair a 4–7 with an 8–10.";
   const CATEGORIES = ["warmup", "lesson", "game", "base"];
   const BELT_ORDER = [
     "white",
@@ -388,10 +394,27 @@
     if (raw === "toddler") return ["toddler"];
     const out = [];
     raw.split("+").forEach((part) => {
-      const id = part.trim();
-      if (GRACE_AGES.includes(id) && !out.includes(id)) out.push(id);
+      const mapped = CLASS_AGE_MAP[part.trim()];
+      if (mapped && !out.includes(mapped)) out.push(mapped);
     });
     out.sort((a, b) => GRACE_AGES.indexOf(a) - GRACE_AGES.indexOf(b));
+    return out;
+  }
+
+  /**
+   * A technique allowed for old 4–6 or 7–9 is allowed for 4–7.
+   * A technique allowed for old 7–9 or 10–12 is allowed for 8–10.
+   * A tag that was only 13–15 stays out of both groups.
+   */
+  function canonicalTechniqueAges(ages) {
+    const list = Array.isArray(ages) ? ages : [];
+    if (!list.length) return [];
+    const has = (id) => list.includes(id);
+    const out = [];
+    if (has("mite") || has("peewee")) out.push("mite");
+    if (has("peewee") || has("junior") || has("upper")) out.push("upper");
+    if (has("toddler")) out.push("toddler");
+    if (has("teen") && !out.length) out.push("teen");
     return out;
   }
 
@@ -422,23 +445,20 @@
   }
 
   function ageKeyIncludes(entryAge, age) {
-    const entryKey = normalizeAgeKey(entryAge);
-    const want = String(age == null ? "" : age).trim().toLowerCase();
-    if (!want) return false;
-    if (entryKey === want) return true;
-    const entryParts = parseAgeKey(entryKey);
-    if (entryParts.includes(want)) return true;
-    const wantParts = parseAgeKey(want);
-    if (wantParts.length > 1) return entryParts.some((part) => wantParts.includes(part));
-    return false;
+    const wantRaw = String(age == null ? "" : age).trim().toLowerCase();
+    if (!wantRaw) return false;
+    const entryParts = parseAgeKey(entryAge);
+    const wantParts = parseAgeKey(wantRaw);
+    if (!entryParts.length || !wantParts.length) return false;
+    if (entryParts.join("+") === wantParts.join("+")) return true;
+    if (wantParts.length === 1) return entryParts.includes(wantParts[0]);
+    return entryParts.some((part) => wantParts.includes(part));
   }
 
   function kidGroupId(ageNumber) {
     const n = Number(ageNumber);
-    if (n >= 4 && n <= 6) return "mite";
-    if (n >= 7 && n <= 9) return "peewee";
-    if (n >= 10 && n <= 12) return "junior";
-    if (n >= 13 && n <= 15) return "teen";
+    if (n >= 4 && n <= 7) return "mite";
+    if (n >= 8 && n <= 15) return "upper";
     return "";
   }
 
@@ -450,7 +470,7 @@
 
   function olderVariationNote(youngest, groups, items) {
     const young = GRACE_AGES.includes(youngest) ? youngest : youngestAge(youngest);
-    const ids = (Array.isArray(groups) ? groups : parseAgeKey(groups)).filter((id) => GRACE_AGES.includes(id));
+    const ids = Array.isArray(groups) ? parseAgeKey(groups.join("+")) : parseAgeKey(groups);
     const older = ids.filter((id) => id !== young);
     if (!older.length) return "";
     const list = Array.isArray(items) ? items : [];
@@ -458,7 +478,7 @@
     const bits = older.map((id) => {
       const names = [];
       list.forEach((item) => {
-        const ages = item && Array.isArray(item.ages) ? item.ages : [];
+        const ages = canonicalTechniqueAges(item && item.ages);
         if (!ages.includes(id) || ages.includes(young)) return;
         const name = String((item && (item.name || item.label)) || "").trim();
         if (name && !names.includes(name) && names.length < 3) names.push(name);
@@ -505,11 +525,12 @@
 
   function sanitizeAges(value) {
     if (!Array.isArray(value)) return [];
+    const known = ["mite", "upper", "peewee", "junior", "teen", "toddler"];
     const out = [];
     value.forEach((age) => {
-      if (AGE_IDS.includes(age) && !out.includes(age)) out.push(age);
+      if (known.includes(age) && !out.includes(age)) out.push(age);
     });
-    return out;
+    return canonicalTechniqueAges(out);
   }
 
   function newId() {
@@ -764,18 +785,13 @@ function sanitizeProgress(raw) {
   }
 
   function ageLimitLabel(ages) {
-    const order = ["mite", "peewee", "junior", "teen", "toddler"];
-    const list = Array.isArray(ages) ? ages : [];
-    const have = order.filter((id) => list.includes(id));
+    const list = canonicalTechniqueAges(ages);
+    if (list.length === 1 && list[0] === "teen") return "For ages 13–15";
+    if (list.length === 1 && list[0] === "toddler") return "For ages 3–5";
+    const have = ["mite", "upper"].filter((id) => list.includes(id));
     if (!have.length) return "";
-    const start = order.indexOf(have[0]);
-    const throughTeen =
-      have[have.length - 1] === "teen" &&
-      have.length > 1 &&
-      have.every((id, index) => order[start + index] === id);
-    if (throughTeen) return `For ages ${AGE_RANGES[have[0]] || have[0]}+`;
-    if (have.length === 1) return `For ages ${AGE_RANGES[have[0]] || have[0]}`;
-    return `For ages ${have.map((id) => AGE_RANGES[id] || id).join(", ")}`;
+    if (have.length === 1) return `For ages ${AGE_RANGES[have[0]]}`;
+    return `For ages ${AGE_RANGES.mite} and ${AGE_RANGES.upper}`;
   }
 
   function keepAgeOverrides(picked, previous) {
@@ -1015,7 +1031,7 @@ function sanitizeProgress(raw) {
   }
 
   /**
-   * Sparring starts off for a 4–6 class, when no kids are counted, or when
+   * Sparring starts off for a 4–7 class, when no kids are counted, or when
    * more than half of the counted kids have no stripes. Otherwise it starts on.
    * kids are {stripes} from check-in, or from the age-group roster.
    */
@@ -1023,7 +1039,7 @@ function sanitizeProgress(raw) {
     const key = normalizeAgeKey(ageGroup);
     const list = Array.isArray(kids) ? kids : [];
     if (key === "mite") {
-      return { enabled: false, reason: "Sparring off: 4–6 class" };
+      return { enabled: false, reason: "Sparring off: 4–7 class" };
     }
     if (!list.length) {
       return { enabled: false, reason: "Sparring off: no kids yet" };
@@ -1066,10 +1082,271 @@ function sanitizeProgress(raw) {
 
   function pacedReps(base, ageGroup) {
     const n = Math.max(1, Math.round(Number(base) || 1));
-    if (ageGroup === "mite") return Math.max(1, Math.round(n * 0.5));
-    if (ageGroup === "junior") return Math.min(20, Math.max(1, Math.round(n * 1.5)));
-    if (ageGroup === "teen") return Math.min(20, n * 2);
+    const key = normalizeAgeKey(ageGroup);
+    if (key === "mite") return Math.max(1, Math.round(n * 0.5));
     return Math.min(20, n);
+  }
+
+  const SHARE_FALLBACK_NOTE =
+    "Your browser can't share files directly. The PDF was downloaded so you can attach it to a text or email.";
+
+  function planPdfFilename(date, ageGroup) {
+    const raw = String(date || "");
+    const iso = /^\d{4}-\d{2}-\d{2}$/.test(raw) ? raw : "undated";
+    const slug = String(ageGroup || "")
+      .toLowerCase()
+      .replace(/[^a-z0-9+_−–-]/g, "");
+    return `grace-bjj-plan-${iso}-${slug || "class"}.pdf`;
+  }
+
+  /**
+   * Share a plan PDF when the browser can share files. Otherwise download it.
+   * AbortError is the share sheet being dismissed.
+   */
+  function deliverPlanPdf(file, env) {
+    const options = env || {};
+    const payload = {
+      files: [file],
+      title: options.title || "Grace BJJ Kids plan",
+      text: options.text || "Grace BJJ Kids lesson plan",
+    };
+    let allowed = false;
+    try {
+      allowed = typeof options.canShare === "function" && !!options.canShare({ files: payload.files });
+    } catch (err) {
+      allowed = false;
+    }
+    if (!allowed) {
+      if (typeof options.download === "function") options.download(file);
+      return Promise.resolve({ downloaded: true, note: SHARE_FALLBACK_NOTE });
+    }
+    return Promise.resolve()
+      .then(() => options.share(payload))
+      .then(() => ({ shared: true }))
+      .catch((err) => {
+        if (err && err.name === "AbortError") return { cancelled: true };
+        throw err;
+      });
+  }
+
+  const PDF_HELV = {
+    " ": 278, "!": 278, '"': 355, "#": 556, $: 556, "%": 889, "&": 667, "'": 191,
+    "(": 333, ")": 333, "*": 389, "+": 584, ",": 278, "-": 333, ".": 278, "/": 278,
+    0: 556, 1: 556, 2: 556, 3: 556, 4: 556, 5: 556, 6: 556, 7: 556, 8: 556, 9: 556,
+    ":": 278, ";": 278, "<": 584, "=": 584, ">": 584, "?": 556, "@": 1015,
+    A: 667, B: 667, C: 722, D: 722, E: 667, F: 611, G: 778, H: 722, I: 278, J: 500,
+    K: 667, L: 556, M: 833, N: 722, O: 778, P: 667, Q: 778, R: 722, S: 667, T: 611,
+    U: 722, V: 667, W: 944, X: 667, Y: 667, Z: 611,
+    a: 556, b: 556, c: 500, d: 556, e: 556, f: 278, g: 556, h: 556, i: 222, j: 222,
+    k: 500, l: 222, m: 833, n: 556, o: 556, p: 556, q: 556, r: 333, s: 500, t: 278,
+    u: 556, v: 556, w: 722, x: 500, y: 500, z: 500,
+  };
+
+  function pdfCharUnits(ch) {
+    return PDF_HELV[ch] || 556;
+  }
+
+  function pdfTextWidth(text, size, bold) {
+    let units = 0;
+    for (const ch of String(text)) units += pdfCharUnits(ch);
+    return (units / 1000) * size * (bold ? 1.08 : 1);
+  }
+
+  function pdfWrap(text, size, bold, maxWidth) {
+    const words = String(text).split(/\s+/).filter(Boolean);
+    const tokens = [];
+    for (let i = 0; i < words.length; i += 1) {
+      if (words[i] === "Age" && words[i + 1] === "override") {
+        tokens.push("Age override");
+        i += 1;
+      } else tokens.push(words[i]);
+    }
+    const lines = [];
+    let current = "";
+    const pushHard = (word) => {
+      let chunk = "";
+      for (const ch of word) {
+        const next = chunk + ch;
+        if (pdfTextWidth(next, size, bold) <= maxWidth) chunk = next;
+        else {
+          if (chunk) lines.push(chunk);
+          chunk = ch;
+        }
+      }
+      current = chunk;
+    };
+    tokens.forEach((word) => {
+      const trial = current ? `${current} ${word}` : word;
+      if (pdfTextWidth(trial, size, bold) <= maxWidth) current = trial;
+      else {
+        if (current) lines.push(current);
+        if (pdfTextWidth(word, size, bold) > maxWidth) pushHard(word);
+        else current = word;
+      }
+    });
+    if (current) lines.push(current);
+    return lines.length ? lines : [""];
+  }
+
+  const PDF_WIN = {
+    "\u2013": 0x96,
+    "\u2014": 0x97,
+    "\u2018": 0x91,
+    "\u2019": 0x92,
+    "\u201c": 0x93,
+    "\u201d": 0x94,
+    "\u2022": 0x95,
+    "\u2026": 0x85,
+    "\u00a0": 0x20,
+    "\u2212": 0x2d,
+  };
+
+  function pdfEscape(text) {
+    let out = "";
+    for (const ch of String(text)) {
+      let byte = ch.codePointAt(0);
+      if (PDF_WIN[ch] != null) byte = PDF_WIN[ch];
+      else if (byte > 255) byte = 0x3f;
+      if (byte === 0x28 || byte === 0x29 || byte === 0x5c) out += `\\${String.fromCharCode(byte)}`;
+      else if (byte < 0x20 || byte > 0x7e) out += `\\${byte.toString(8).padStart(3, "0")}`;
+      else out += String.fromCharCode(byte);
+    }
+    return out;
+  }
+
+  function pdfNum(n) {
+    return String(Math.round(Number(n) * 100) / 100);
+  }
+
+  function pdfText(font, size, x, y, text) {
+    return `BT /${font} ${pdfNum(size)} Tf 1 0 0 1 ${pdfNum(x)} ${pdfNum(y)} Tm (${pdfEscape(text)}) Tj ET`;
+  }
+
+  const PDF_STYLES = {
+    title: { font: "F2", size: 18, leading: 22, before: 0, after: 8, bold: true },
+    section: { font: "F2", size: 13, leading: 16, before: 12, after: 4, bold: true, rule: true },
+    item: { font: "F2", size: 11, leading: 14, before: 8, after: 2, bold: true },
+    body: { font: "F1", size: 10, leading: 13, before: 1, after: 1, bold: false, indent: 8 },
+  };
+
+  function layoutPlanPages(lines) {
+    const pageW = 612;
+    const pageH = 792;
+    const margin = 54;
+    const width = pageW - margin * 2;
+    const source = Array.isArray(lines) ? lines : [];
+    const items = [];
+    source.forEach((line) => {
+      if (!line || typeof line !== "object") return;
+      if (line.kind === "break") {
+        items.push({ kind: "break", text: "" });
+        return;
+      }
+      const text = String(line.text || "").replace(/\s+/g, " ").trim();
+      if (!text) return;
+      items.push({ kind: PDF_STYLES[line.kind] ? line.kind : "body", text });
+    });
+    if (!items.length) items.push({ kind: "body", text: "Grace BJJ Kids lesson plan" });
+
+    const pages = [];
+    let ops = [];
+    let y = pageH - margin;
+
+    function finish(index) {
+      const foot = [
+        "0 0 0 rg",
+        pdfText("F1", 9, margin, 36, "Grace BJJ Kids"),
+        pdfText("F1", 9, pageW - margin - 42, 36, `Page ${index + 1}`),
+      ];
+      return foot.concat(ops).join("\n");
+    }
+
+    function nextPage(continued) {
+      if (ops.length) pages.push(finish(pages.length));
+      ops = ["0 0 0 rg"];
+      y = pageH - margin;
+      if (continued) {
+        ops.push(pdfText("F1", 9, margin, y - 9, "Grace BJJ Kids"));
+        y -= 24;
+      }
+    }
+
+    function ensure(need) {
+      if (y - need >= margin) return;
+      nextPage(true);
+    }
+
+    nextPage(false);
+    items.forEach((item) => {
+      if (item.kind === "break") {
+        if (ops.length > 1) nextPage(false);
+        return;
+      }
+      const style = PDF_STYLES[item.kind];
+      const indent = style.indent || 0;
+      const wrapped = pdfWrap(item.text, style.size, style.bold, width - indent);
+      ensure(style.before + style.leading + (style.rule ? 6 : 0));
+      y -= style.before;
+      if (style.rule) {
+        ops.push(`0.62 0.09 0.16 RG ${pdfNum(margin)} ${pdfNum(y)} m ${pdfNum(pageW - margin)} ${pdfNum(y)} l S 0 0 0 RG`);
+        y -= 6;
+      }
+      wrapped.forEach((text) => {
+        ensure(style.leading);
+        ops.push(pdfText(style.font, style.size, margin + indent, y - style.size, text));
+        y -= style.leading;
+      });
+      y -= style.after;
+    });
+    if (ops.length) pages.push(finish(pages.length));
+    return pages.length ? pages : [finish(0)];
+  }
+
+  function buildPlanPdf(lines) {
+    const streams = layoutPlanPages(lines);
+    const n = streams.length;
+    let next = 5;
+    const kids = [];
+    const pageObjs = [];
+    for (let i = 0; i < n; i += 1) {
+      const pageId = next;
+      next += 1;
+      const contentId = next;
+      next += 1;
+      kids.push(pageId);
+      pageObjs.push({ pageId, contentId, stream: streams[i] });
+    }
+    const objs = new Array(next);
+    objs[1] = "<< /Type /Catalog /Pages 2 0 R >>";
+    objs[2] = `<< /Type /Pages /Kids [${kids.map((id) => `${id} 0 R`).join(" ")}] /Count ${n} >>`;
+    objs[3] = "<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica /Encoding /WinAnsiEncoding >>";
+    objs[4] = "<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica-Bold /Encoding /WinAnsiEncoding >>";
+    pageObjs.forEach(({ pageId, contentId, stream }) => {
+      objs[pageId] =
+        `<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Contents ${contentId} 0 R /Resources << /Font << /F1 3 0 R /F2 4 0 R >> >> >>`;
+      objs[contentId] = { stream };
+    });
+    let out = "%PDF-1.4\n";
+    const offsets = [0];
+    for (let i = 1; i < objs.length; i += 1) {
+      offsets[i] = out.length;
+      const obj = objs[i];
+      if (obj && obj.stream != null) {
+        out += `${i} 0 obj\n<< /Length ${obj.stream.length} >>\nstream\n${obj.stream}\nendstream\nendobj\n`;
+      } else {
+        out += `${i} 0 obj\n${obj}\nendobj\n`;
+      }
+    }
+    const startxref = out.length;
+    out += `xref\n0 ${objs.length}\n`;
+    out += "0000000000 65535 f \n";
+    for (let i = 1; i < objs.length; i += 1) {
+      out += `${String(offsets[i]).padStart(10, "0")} 00000 n \n`;
+    }
+    out += `trailer\n<< /Size ${objs.length} /Root 1 0 R >>\nstartxref\n${startxref}\n%%EOF\n`;
+    const bytes = new Uint8Array(out.length);
+    for (let i = 0; i < out.length; i += 1) bytes[i] = out.charCodeAt(i);
+    return bytes;
   }
 
   return {
@@ -1080,12 +1357,14 @@ function sanitizeProgress(raw) {
     AGE_RANGES,
     COMBO_SPARRING_SAFETY,
     parseAgeKey,
+    canonicalTechniqueAges,
     normalizeAgeKey,
     ageKey,
     isCombo,
     youngestAge,
     comboLabel,
     ageKeyIncludes,
+    kidGroupId,
     kidFitsClass,
     olderVariationNote,
     CATEGORIES,
@@ -1159,5 +1438,9 @@ function sanitizeProgress(raw) {
     parseQr,
     LEVELS,
     sanitizeProgress,
+    SHARE_FALLBACK_NOTE,
+    planPdfFilename,
+    deliverPlanPdf,
+    buildPlanPdf,
   };
 });

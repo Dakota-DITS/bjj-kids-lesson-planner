@@ -12,8 +12,8 @@
   <meta name="apple-mobile-web-app-title" content="Grace BJJ Staff" />
   <link rel="icon" href="/icons/staff-favicon-32.png" type="image/png" sizes="32x32" />
   <link rel="apple-touch-icon" href="/icons/staff-apple-touch-icon.png" sizes="180x180" />
-  <link rel="stylesheet" href="/css/styles.css?v=20261021-19" />
-  <script src="/pwa.js?v=20261021-19" defer></script>
+  <link rel="stylesheet" href="/css/styles.css?v=20261021-20" />
+  <script src="/pwa.js?v=20261021-20" defer></script>
 </head>
 <body>
   <p id="gate" class="gate">Checking the teacher login…</p>
@@ -64,10 +64,8 @@
       <section class="panel">
         <h2>Age group</h2>
         <div class="seg ages" id="ageGroup" role="group" aria-label="Age group. Choose one, or more than one for a combo class.">
-          <button type="button" data-group="mite" class="on" aria-pressed="true">4–6<small>Mite</small></button>
-          <button type="button" data-group="peewee" aria-pressed="false">7–9<small>Pee Wee</small></button>
-          <button type="button" data-group="junior" aria-pressed="false">10–12<small>Junior</small></button>
-          <button type="button" data-group="teen" aria-pressed="false">13–15<small>Teen</small></button>
+          <button type="button" data-group="mite" class="on" aria-pressed="true">4–7<small>Mighty Mites</small></button>
+          <button type="button" data-group="upper" aria-pressed="false">8–10</button>
         </div>
         <p class="hint">Tap one group, or more than one for a combo class.</p>
         <p class="hint" id="ageBlurb"></p>
@@ -95,7 +93,7 @@
           <p class="hint" id="staffBeltNote"></p>
           <div class="field">
             <label for="ages">Ages on the plan</label>
-            <input id="ages" value="4–6 Mighty Mite" />
+            <input id="ages" value="4–7 Mighty Mites" />
           </div>
           <div class="field">
             <label for="date">Date</label>
@@ -372,6 +370,7 @@
           <button class="ghost" id="editToggle" type="button">Show shuffle on items</button>
           <button class="ghost" id="printLessonBtn" type="button">Print this class</button>
           <button class="primary" id="printBtn" type="button">Print / save PDF</button>
+          <button class="ghost" id="sharePlanBtn" type="button">Share</button>
         </div>
       </div>
       <div class="paper-wrap" id="planWrap">
@@ -414,10 +413,8 @@
               <select id="claimGroup">
                 <option value="">Choose a class</option>
                 <option value="toddler">Toddler 3–5</option>
-                <option value="mite">Mighty Mite 4–6</option>
-                <option value="peewee">Pee Wee 7–9</option>
-                <option value="junior">Junior 10–12</option>
-                <option value="teen">Teen 13–15</option>
+                <option value="mite">Mighty Mites 4–7</option>
+                <option value="upper">8–10</option>
               </select>
             </div>
             <div class="field">
@@ -537,10 +534,8 @@
       <div class="field">
         <span>Ages</span>
         <div class="age-checks" id="actAges">
-          <label><input type="checkbox" value="mite" /> 4–6</label>
-          <label><input type="checkbox" value="peewee" /> 7–9</label>
-          <label><input type="checkbox" value="junior" /> 10–12</label>
-          <label><input type="checkbox" value="teen" /> 13–15</label>
+          <label><input type="checkbox" value="mite" /> 4–7</label>
+          <label><input type="checkbox" value="upper" /> 8–10</label>
           <label><input type="checkbox" value="toddler" /> Toddler preset</label>
         </div>
       </div>
@@ -593,12 +588,12 @@
     </form>
   </dialog>
 
-  <script src="/vendor/qrcode-generator/qrcode.js?v=20261021-19"></script>
-  <script src="/vendor/jsQR/jsQR.js?v=20261021-19"></script>
-  <script src="/js/plan-math.js?v=20261021-19"></script>
-  <script src="/js/data.js?v=20261021-19"></script>
-  <script src="/js/curriculum.js?v=20261021-19"></script>
-  <script src="/js/api.js?v=20261021-19"></script>
-  <script src="/js/app.js?v=20261021-19"></script>
+  <script src="/vendor/qrcode-generator/qrcode.js?v=20261021-20"></script>
+  <script src="/vendor/jsQR/jsQR.js?v=20261021-20"></script>
+  <script src="/js/plan-math.js?v=20261021-20"></script>
+  <script src="/js/data.js?v=20261021-20"></script>
+  <script src="/js/curriculum.js?v=20261021-20"></script>
+  <script src="/js/api.js?v=20261021-20"></script>
+  <script src="/js/app.js?v=20261021-20"></script>
 </body>
 </html>

@@ -726,7 +726,7 @@ class ApiTest(unittest.TestCase):
         self.assertEqual(status, 200)
         attendance = sheet.decode()
         self.assertIn("date,age_group,theme,taught,student", attendance)
-        self.assertIn("2027-01-12,teen,Mount,yes,'=1+1", attendance)
+        self.assertIn("2027-01-12,upper,Mount,yes,'=1+1", attendance)
 
         teacher = self.client()
         status, _ = teacher.login("alex", "correct-horse")
@@ -738,10 +738,15 @@ class ApiTest(unittest.TestCase):
         self.assertEqual(status, 200)
 
     def test_combo_class_create_edit_list_attend_export(self):
-        self.assertEqual(normalize_age_group("peewee+mite"), "mite+peewee")
-        self.assertEqual(normalize_age_group("junior"), "junior")
+        self.assertEqual(normalize_age_group("peewee+mite"), "mite+upper")
+        self.assertEqual(normalize_age_group("junior"), "upper")
+        self.assertEqual(normalize_age_group("teen"), "upper")
         self.assertEqual(age_group_for_age(5), "mite")
-        self.assertEqual(age_group_for_age(14), "teen")
+        self.assertEqual(age_group_for_age(7), "mite")
+        self.assertEqual(age_group_for_age(8), "upper")
+        self.assertEqual(age_group_for_age(14), "upper")
+        self.assertEqual(age_group_for_age(3), "")
+        self.assertEqual(age_group_for_age(16), "")
         admin = self.client()
         status, _ = admin.login("dakota", "correct-horse")
         self.assertEqual(status, 200)
@@ -782,9 +787,12 @@ class ApiTest(unittest.TestCase):
                 },
             )
             self.assertEqual(status, 200, saved)
-            self.assertEqual(saved["ageGroup"], "mite+peewee")
+            self.assertEqual(saved["ageGroup"], "mite+upper")
             self.assertEqual(saved["taught"], True)
-            self.assertCountEqual(saved["attended"], [kids["ComboAda"], kids["ComboBea"]])
+            self.assertCountEqual(
+                saved["attended"],
+                [kids["ComboAda"], kids["ComboBea"], kids["ComboCleo"], kids["ComboDee"]],
+            )
             class_id = saved["id"]
 
             status, edited = admin.call(
@@ -793,7 +801,7 @@ class ApiTest(unittest.TestCase):
                 {
                     "id": saved["id"],
                     "date": "2027-06-09",
-                    "ageGroup": "mite+peewee",
+                    "ageGroup": "mite+upper",
                     "theme": "mount",
                     "themeLabel": "Mount combo",
                     "techniques": saved["techniques"],
@@ -805,15 +813,18 @@ class ApiTest(unittest.TestCase):
             self.assertEqual(status, 200, edited)
             self.assertEqual(edited["id"], saved["id"])
             self.assertEqual(edited["themeLabel"], "Mount combo")
-            self.assertEqual(edited["ageGroup"], "mite+peewee")
+            self.assertEqual(edited["ageGroup"], "mite+upper")
 
             status, boot = admin.call("GET", "/api/bootstrap")
             self.assertEqual(status, 200)
             listed = [row for row in boot["classes"] if row["date"] == "2027-06-09"]
             self.assertEqual(len(listed), 1)
-            self.assertEqual(listed[0]["ageGroup"], "mite+peewee")
+            self.assertEqual(listed[0]["ageGroup"], "mite+upper")
             self.assertEqual(listed[0]["themeLabel"], "Mount combo")
-            self.assertCountEqual(listed[0]["attended"], [kids["ComboAda"], kids["ComboBea"]])
+            self.assertCountEqual(
+                listed[0]["attended"],
+                [kids["ComboAda"], kids["ComboBea"]],
+            )
 
             status, level = admin.call(
                 "PUT",
@@ -834,7 +845,7 @@ class ApiTest(unittest.TestCase):
             self.assertEqual(status, 200)
             lines = [line for line in sheet.decode().splitlines() if line.startswith("2027-06-09,")]
             self.assertGreaterEqual(len(lines), 2)
-            self.assertTrue(all(line.split(",")[1] == "mite+peewee" for line in lines))
+            self.assertTrue(all(line.split(",")[1] == "mite+upper" for line in lines))
             joined = "\n".join(lines)
             self.assertIn("ComboAda", joined)
             self.assertIn("ComboBea", joined)
@@ -1042,8 +1053,8 @@ class ApiTest(unittest.TestCase):
             "/api/plans",
             {
                 "date": "2026-11-24",
-                "ageGroup": "teen",
-                "plan": {"mode": "grace", "settings": {"ageGroup": "teen"}, "lesson": {"items": []}},
+                "ageGroup": "upper",
+                "plan": {"mode": "grace", "settings": {"ageGroup": "upper"}, "lesson": {"items": []}},
             },
         )
         self.assertEqual(status, 201)
@@ -1052,8 +1063,8 @@ class ApiTest(unittest.TestCase):
             "/api/plans",
             {
                 "date": "2026-11-10",
-                "ageGroup": "peewee",
-                "plan": {"mode": "grace", "settings": {"ageGroup": "peewee"}, "lesson": {"items": []}},
+                "ageGroup": "upper",
+                "plan": {"mode": "grace", "settings": {"ageGroup": "upper"}, "lesson": {"items": []}},
             },
         )
         self.assertEqual(status, 201)
@@ -1100,6 +1111,93 @@ class ApiTest(unittest.TestCase):
         self.assertEqual(status, 404)
         admin.call("DELETE", f"/api/plans/{saved['id']}")
         admin.call("DELETE", f"/api/plans/{middle['id']}")
+
+    def test_age_group_migration_keeps_collisions(self):
+        fd, path = tempfile.mkstemp(suffix=".db")
+        os.close(fd)
+        conn = connect(path)
+        try:
+            migrate(conn)
+            conn.execute("INSERT INTO classes (id, date, age_group) VALUES ('k-mite', '2026-10-27', 'mite')")
+            conn.execute("INSERT INTO classes (id, date, age_group) VALUES ('k-jr', '2026-11-10', 'junior')")
+            conn.execute("INSERT INTO classes (id, date, age_group) VALUES ('k-pw', '2026-11-10', 'peewee')")
+            conn.execute("INSERT INTO classes (id, date, age_group) VALUES ('k-teen', '2026-11-24', 'teen')")
+            plan = json.dumps(
+                {
+                    "mode": "grace",
+                    "settings": {"ageGroup": "mite", "ages": "4–6 Mighty Mite"},
+                    "lesson": {"items": [{"id": "ls-old", "name": "Old", "ages": ["peewee", "junior", "teen"]}]},
+                }
+            )
+            conn.execute(
+                """
+                INSERT INTO lesson_plans
+                  (id, class_date, age_group, plan_json, created_by, updated_by, created_at, updated_at)
+                VALUES ('lp-ecd22b41', '2026-10-27', 'mite', ?, 'u', 'u', 't', 't')
+                """,
+                (plan,),
+            )
+            older = json.dumps({"mode": "grace", "settings": {"ageGroup": "peewee", "ages": "7–9 Pee Wee"}})
+            conn.execute(
+                """
+                INSERT INTO lesson_plans
+                  (id, class_date, age_group, plan_json, created_by, updated_by, created_at, updated_at)
+                VALUES ('lp-upper', '2026-12-08', 'peewee', ?, 'u', 'u', 't', 't')
+                """,
+                (older,),
+            )
+            conn.commit()
+            migrate(conn)
+            self.assertEqual(
+                conn.execute("SELECT age_group FROM classes WHERE id='k-mite'").fetchone()["age_group"],
+                "mite",
+            )
+            self.assertEqual(
+                conn.execute("SELECT age_group FROM classes WHERE id='k-teen'").fetchone()["age_group"],
+                "upper",
+            )
+            same_day = {
+                row["id"]: row["age_group"]
+                for row in conn.execute("SELECT id, age_group FROM classes WHERE date='2026-11-10'")
+            }
+            self.assertEqual(same_day["k-jr"], "upper")
+            self.assertEqual(same_day["k-pw"], "peewee")
+            flags = list(conn.execute("SELECT * FROM age_group_flags"))
+            self.assertEqual(len(flags), 1)
+            self.assertEqual(flags[0]["source"], "classes")
+            self.assertEqual(flags[0]["row_id"], "k-pw")
+            self.assertEqual(flags[0]["wanted"], "upper")
+            self.assertIn("another row already uses", flags[0]["note"])
+            saved = conn.execute(
+                "SELECT age_group, plan_json FROM lesson_plans WHERE id='lp-ecd22b41'"
+            ).fetchone()
+            self.assertEqual(saved["age_group"], "mite")
+            body = json.loads(saved["plan_json"])
+            self.assertEqual(body["settings"]["ageGroup"], "mite")
+            self.assertEqual(body["settings"]["ages"], "4–7 Mighty Mites")
+            self.assertEqual(body["lesson"]["items"][0]["ages"], ["mite", "upper"])
+            folded = conn.execute(
+                "SELECT age_group, plan_json FROM lesson_plans WHERE id='lp-upper'"
+            ).fetchone()
+            self.assertEqual(folded["age_group"], "upper")
+            folded_body = json.loads(folded["plan_json"])
+            self.assertEqual(folded_body["settings"]["ageGroup"], "upper")
+            self.assertEqual(folded_body["settings"]["ages"], "8–10")
+            migrate(conn)
+            self.assertEqual(conn.execute("SELECT COUNT(*) AS n FROM age_group_flags").fetchone()["n"], 1)
+            self.assertEqual(conn.execute("SELECT COUNT(*) AS n FROM classes").fetchone()["n"], 4)
+            self.assertEqual(conn.execute("SELECT COUNT(*) AS n FROM lesson_plans").fetchone()["n"], 2)
+            again = json.loads(
+                conn.execute("SELECT plan_json FROM lesson_plans WHERE id='lp-ecd22b41'").fetchone()["plan_json"]
+            )
+            self.assertEqual(again["settings"]["ages"], "4–7 Mighty Mites")
+            self.assertEqual(
+                conn.execute("SELECT age_group FROM classes WHERE id='k-pw'").fetchone()["age_group"],
+                "peewee",
+            )
+        finally:
+            conn.close()
+            os.remove(path)
 
 
 def _handler(api):

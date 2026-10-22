@@ -7,9 +7,9 @@ const vm = require("vm");
 const root = path.join(__dirname, "..");
 const P = require("../js/plan-math.js");
 
-assert.strictEqual(P.ageLimitLabel(["peewee", "junior", "teen"]), `For ages ${P.AGE_RANGES.peewee}+`);
-assert.strictEqual(P.ageLimitLabel(["junior", "teen"]), `For ages ${P.AGE_RANGES.junior}+`);
-assert.strictEqual(P.ageLimitLabel(["teen"]), `For ages ${P.AGE_RANGES.teen}`);
+assert.strictEqual(P.ageLimitLabel(["peewee", "junior", "teen"]), `For ages ${P.AGE_RANGES.mite} and ${P.AGE_RANGES.upper}`);
+assert.strictEqual(P.ageLimitLabel(["junior", "teen"]), `For ages ${P.AGE_RANGES.upper}`);
+assert.strictEqual(P.ageLimitLabel(["teen"]), "For ages 13–15");
 assert.strictEqual(P.ageLimitLabel(["mite"]), `For ages ${P.AGE_RANGES.mite}`);
 assert.strictEqual(P.ageLimitLabel([]), "");
 
@@ -75,8 +75,8 @@ const scissor = DATA.activities.find((item) => item.id === "ls-scissor");
 const sickle = DATA.activities.find((item) => item.id === "ls-sickle");
 assert.ok(scissor.ages.includes("mite"));
 assert.ok(!sickle.ages.includes("mite"));
-assert.ok(!sickle.ages.includes("peewee"));
-assert.strictEqual(P.ageLimitLabel(Array.from(sickle.ages)), `For ages ${P.AGE_RANGES.junior}+`);
+assert.ok(!sickle.ages.includes("mite"));
+assert.strictEqual(P.ageLimitLabel(Array.from(sickle.ages)), `For ages ${P.AGE_RANGES.upper}`);
 
 const app = fs.readFileSync(path.join(root, "js/app.js"), "utf8");
 const css = fs.readFileSync(path.join(root, "css/styles.css"), "utf8");

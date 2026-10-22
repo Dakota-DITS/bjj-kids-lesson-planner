@@ -19,6 +19,7 @@ from server.db import (
     cleanup,
     connect,
     is_class_day,
+    is_legacy_storage_key,
     iso,
     migrate,
     new_id,
@@ -1096,6 +1097,10 @@ class Api:
         raw = str(value or "").strip().lower()
         if not raw:
             raise ValueError("Choose an age group.")
+        # A leftover row from before the two-group change keeps its key so a
+        # save does not overwrite the plan that already uses the new key.
+        if is_legacy_storage_key(raw):
+            return raw
         canonical = normalize_age_group(raw)
         if raw != canonical:
             raise ValueError("Choose an age group.")

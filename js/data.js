@@ -1,4 +1,4 @@
-/* Built-in pool. Grace BJJ Kids ages 4–15, plus the toddler intro preset. */
+/* Built-in pool. Grace BJJ Kids ages 4–10, plus the toddler intro preset. */
 
 window.BJJ_DATA = {
   logo: "/img/logo/grace-logo-mark-transparent.png",
@@ -6,31 +6,17 @@ window.BJJ_DATA = {
   ageGroups: {
     mite: {
       id: "mite",
-      label: "Mighty Mite",
-      range: "4–6",
+      label: "Mighty Mites",
+      range: "4–7",
       focus: "Motor skills, balance, listening, games, and basic body movement.",
       pace: "Volume is decreased. Switch as soon as they start wandering.",
     },
-    peewee: {
-      id: "peewee",
-      label: "Pee Wee",
-      range: "7–9",
-      focus: "Structured partner drills, fundamental positions, escapes, and basic submission defense.",
+    upper: {
+      id: "upper",
+      label: "",
+      range: "8–10",
+      focus: "Partner drills, positions, escapes, technique, and controlled sparring.",
       pace: "Warm-up counts stay as written.",
-    },
-    junior: {
-      id: "junior",
-      label: "Junior",
-      range: "10–12",
-      focus: "Technical precision, positional flow, and sparring control.",
-      pace: "Warm-up counts are increased.",
-    },
-    teen: {
-      id: "teen",
-      label: "Teen",
-      range: "13–15",
-      focus: "Advanced techniques, chains, leadership, and the transition to adult class.",
-      pace: "Warm-up counts are doubled. They can take more volume.",
     },
   },
 
@@ -54,10 +40,8 @@ window.BJJ_DATA = {
     "Praise by name. One short sentence at a time. Kids call you teacher. Switch as soon as they start wandering.",
 
   ageNotes: {
-    mite: "Warm-up note: Mighty Mite (4–6). Volume is decreased. Switch as soon as they start wandering. One short sentence at a time.",
-    peewee: "Warm-up note: Pee Wee (7–9). Warm-up counts are as written. One short sentence at a time.",
-    junior: "Warm-up note: Junior (10–12). Warm-up counts are increased. Still one short sentence at a time.",
-    teen: "Warm-up note: Teen (13–15). Warm-up counts are doubled. They can take more volume. Still one short sentence at a time.",
+    mite: "Warm-up note: Mighty Mites (4–7). Volume is decreased. Switch as soon as they start wandering. One short sentence at a time.",
+    upper: "Warm-up note: 8–10. Warm-up counts are as written. One short sentence at a time.",
     toddler:
       "Warm-up note: Toddler intro (ages 3–5). The 3–4 year olds had a harder time keeping up, so cut the warm-up if most of the group is that young.",
   },
