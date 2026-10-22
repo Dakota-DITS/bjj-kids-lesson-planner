@@ -12,8 +12,8 @@
   <meta name="apple-mobile-web-app-title" content="Grace BJJ Staff" />
   <link rel="icon" href="/icons/staff-favicon-32.png" type="image/png" sizes="32x32" />
   <link rel="apple-touch-icon" href="/icons/staff-apple-touch-icon.png" sizes="180x180" />
-  <link rel="stylesheet" href="/css/styles.css?v=20261021-21" />
-  <script src="/pwa.js?v=20261021-21" defer></script>
+  <link rel="stylesheet" href="/css/styles.css?v=20261021-22" />
+  <script src="/pwa.js?v=20261021-22" defer></script>
 </head>
 <body>
   <p id="gate" class="gate">Checking the teacher login…</p>
@@ -54,6 +54,7 @@
         <button type="button" data-view="review">Review</button>
         <button type="button" data-view="progress">Progress</button>
         <button type="button" data-view="checkin">Check-in</button>
+        <button type="button" data-view="calendar">Calendar</button>
       </div>
 
       <p id="importBanner" class="panel hint hidden">
@@ -64,11 +65,12 @@
       <section class="panel">
         <h2>Age group</h2>
         <div class="seg ages" id="ageGroup" role="group" aria-label="Age group. Choose one, or more than one for a combo class.">
-          <button type="button" data-group="mite" class="on" aria-pressed="true">4–7<small>Mighty Mites</small></button>
-          <button type="button" data-group="upper" aria-pressed="false">8–10</button>
+          <button type="button" data-group="mite" class="on" aria-pressed="true"><span class="age-range">3–6</span><small>Mighty Mites</small></button>
+          <button type="button" data-group="upper" aria-pressed="false"><span class="age-range">7–10</span><small>Pee Wees</small></button>
         </div>
         <p class="hint">Tap one group, or more than one for a combo class.</p>
         <p class="hint" id="ageBlurb"></p>
+        <p class="potty-note">Kids ages 3–6 must be fully potty trained to join class.</p>
       </section>
 
       <section class="panel">
@@ -93,11 +95,12 @@
           <p class="hint" id="staffBeltNote"></p>
           <div class="field">
             <label for="ages">Ages on the plan</label>
-            <input id="ages" value="4–7 Mighty Mites" />
+            <input id="ages" value="3–6 Mighty Mites" />
           </div>
           <div class="field">
             <label for="date">Date</label>
             <input id="date" type="date" />
+            <p class="hint warn hidden" id="dateSkipNote"></p>
           </div>
           <div class="field">
             <label for="startTime">Start</label>
@@ -380,6 +383,34 @@
       </div>
       <section class="work-view hidden" id="reviewView"></section>
       <section class="work-view hidden" id="progressView"></section>
+      <section class="work-view hidden" id="calendarView">
+        <h2>Class calendar</h2>
+        <p class="hint" id="calendarIntro">Regular classes stay on the 2nd and 4th Tuesday, 5:30–6:15 PM PT, starting Tuesday, October 27, 2026.</p>
+        <form id="extraClassForm" class="calendar-extra admin-only">
+          <h3>Add a make-up class</h3>
+          <div class="grid-2">
+            <div class="field">
+              <label for="extraDate">Date</label>
+              <input id="extraDate" type="date" required />
+            </div>
+            <div class="field grow">
+              <label for="extraReason">Reason, optional</label>
+              <input id="extraReason" maxlength="120" placeholder="Make-up for a skipped Tuesday" />
+            </div>
+            <div class="field">
+              <label for="extraStart">Start</label>
+              <input id="extraStart" type="time" value="17:30" />
+            </div>
+            <div class="field">
+              <label for="extraEnd">End</label>
+              <input id="extraEnd" type="time" value="18:15" />
+            </div>
+          </div>
+          <button class="primary" type="submit">Add make-up class</button>
+          <p class="form-note" id="extraNote" role="status"></p>
+        </form>
+        <div id="calendarList" class="calendar-list"></div>
+      </section>
       <section class="work-view hidden" id="checkinView">
         <h2>Check-in</h2>
         <p class="btn-row"><a class="ghost" href="/api/export/attendance.csv">Download attendance CSV</a></p>
@@ -413,8 +444,8 @@
               <select id="claimGroup">
                 <option value="">Choose a class</option>
                 <option value="toddler">Toddler 3–5</option>
-                <option value="mite">Mighty Mites 4–7</option>
-                <option value="upper">8–10</option>
+                <option value="mite">Mighty Mites 3–6</option>
+                <option value="upper">Pee Wees 7–10</option>
               </select>
             </div>
             <div class="field">
@@ -432,6 +463,7 @@
               </select>
             </div>
           </div>
+          <p class="potty-note hidden" id="claimPotty">Kids ages 3–6 must be fully potty trained to join class.</p>
           <p class="form-note" id="claimNote" role="alert"></p>
           <div class="btn-row">
             <button class="primary" type="submit">Save student</button>
@@ -534,8 +566,8 @@
       <div class="field">
         <span>Ages</span>
         <div class="age-checks" id="actAges">
-          <label><input type="checkbox" value="mite" /> 4–7</label>
-          <label><input type="checkbox" value="upper" /> 8–10</label>
+          <label><input type="checkbox" value="mite" /> 3–6</label>
+          <label><input type="checkbox" value="upper" /> 7–10</label>
           <label><input type="checkbox" value="toddler" /> Toddler preset</label>
         </div>
       </div>
@@ -588,12 +620,13 @@
     </form>
   </dialog>
 
-  <script src="/vendor/qrcode-generator/qrcode.js?v=20261021-21"></script>
-  <script src="/vendor/jsQR/jsQR.js?v=20261021-21"></script>
-  <script src="/js/plan-math.js?v=20261021-21"></script>
-  <script src="/js/data.js?v=20261021-21"></script>
-  <script src="/js/curriculum.js?v=20261021-21"></script>
-  <script src="/js/api.js?v=20261021-21"></script>
-  <script src="/js/app.js?v=20261021-21"></script>
+  <script src="/vendor/qrcode-generator/qrcode.js?v=20261021-22"></script>
+  <script src="/vendor/jsQR/jsQR.js?v=20261021-22"></script>
+  <script src="/calendar/class-days.js?v=20261021-22"></script>
+  <script src="/js/plan-math.js?v=20261021-22"></script>
+  <script src="/js/data.js?v=20261021-22"></script>
+  <script src="/js/curriculum.js?v=20261021-22"></script>
+  <script src="/js/api.js?v=20261021-22"></script>
+  <script src="/js/app.js?v=20261021-22"></script>
 </body>
 </html>

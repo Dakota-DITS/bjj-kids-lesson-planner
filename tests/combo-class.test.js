@@ -25,7 +25,7 @@ assert.ok(js.includes("P.kidFitsClass("));
 assert.ok(js.includes("P.olderVariationNote("));
 assert.ok(js.includes("P.COMBO_SPARRING_SAFETY"));
 assert.ok(js.includes('class="combo-note"'));
-assert.ok(math.includes("Partner kids within their own age group and similar size. Never pair a 4–7 with an 8–10."));
+assert.ok(math.includes("Partner kids within their own age group and similar size. Never pair a 3–6 with a 7–10."));
 assert.ok(css.includes(".combo-note"));
 assert.ok(css.includes('body[data-print="lesson"] .combo-note'));
 assert.ok(css.includes("min-height: 44px"));

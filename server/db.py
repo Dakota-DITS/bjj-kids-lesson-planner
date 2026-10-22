@@ -39,27 +39,31 @@ AGE_GROUP_AGES = {
     "toddler": 4,
     "mite": 5,
     "upper": 9,
-    # Claim aliases from the old four groups. 8, 11, and 14 all sit in 8–10.
+    # Old claim aliases fold into 7–10. The stand-in ages stay inside Pee Wees.
     "peewee": 8,
-    "junior": 11,
-    "teen": 14,
+    "junior": 10,
+    "teen": 10,
 }
 _PLAN_AGE_LABELS = {
-    "4–6 Mighty Mite": "4–7 Mighty Mites",
-    "4–6 Mighty Mites": "4–7 Mighty Mites",
-    "Mighty Mite 4–6": "Mighty Mites 4–7",
-    "7–9 Pee Wee": "8–10",
-    "Pee Wee 7–9": "8–10",
-    "10–12 Junior": "8–10",
-    "Junior 10–12": "8–10",
-    "13–15 Teen": "8–10",
-    "Teen 13–15": "8–10",
-    "Combo class: 4–6 + 7–9": "Combo class: 4–7 + 8–10",
-    "Combo class: 4–6 + 10–12": "Combo class: 4–7 + 8–10",
-    "Combo class: 4–6 + 13–15": "Combo class: 4–7 + 8–10",
-    "Combo class: 7–9 + 10–12": "8–10",
-    "Combo class: 7–9 + 13–15": "8–10",
-    "Combo class: 10–12 + 13–15": "8–10",
+    "4–6 Mighty Mite": "3–6 Mighty Mites",
+    "4–6 Mighty Mites": "3–6 Mighty Mites",
+    "Mighty Mite 4–6": "Mighty Mites 3–6",
+    "4–7 Mighty Mites": "3–6 Mighty Mites",
+    "Mighty Mites 4–7": "Mighty Mites 3–6",
+    "7–9 Pee Wee": "7–10 Pee Wees",
+    "Pee Wee 7–9": "Pee Wees 7–10",
+    "8–10": "7–10 Pee Wees",
+    "10–12 Junior": "7–10 Pee Wees",
+    "Junior 10–12": "7–10 Pee Wees",
+    "13–15 Teen": "7–10 Pee Wees",
+    "Teen 13–15": "7–10 Pee Wees",
+    "Combo class: 4–6 + 7–9": "Combo class: 3–6 + 7–10",
+    "Combo class: 4–6 + 10–12": "Combo class: 3–6 + 7–10",
+    "Combo class: 4–6 + 13–15": "Combo class: 3–6 + 7–10",
+    "Combo class: 4–7 + 8–10": "Combo class: 3–6 + 7–10",
+    "Combo class: 7–9 + 10–12": "7–10 Pee Wees",
+    "Combo class: 7–9 + 13–15": "7–10 Pee Wees",
+    "Combo class: 10–12 + 13–15": "7–10 Pee Wees",
 }
 
 
@@ -99,7 +103,7 @@ def is_legacy_storage_key(value):
 def normalize_age_group(value):
     """Canonical class key stored in classes.age_group.
 
-    mite is 4–7 Mighty Mites. upper is 8–10. toddler stays the intro preset.
+    mite is 3–6 Mighty Mites. upper is 7–10 Pee Wees. toddler stays the intro preset.
     Old peewee, junior, and teen keys fold into upper. Two groups become
     mite+upper, youngest first. Unknown text still becomes mite.
     """
@@ -113,16 +117,16 @@ def normalize_age_group(value):
 def age_group_for_age(age):
     """Map a stored integer age. Birthdates are not stored.
 
-    4–7 is mite. 8–15 is upper so kids who were 10–15 are not left out.
-    Age 3 and younger stay outside these two class groups.
+    3–6 is mite (Mighty Mites). 7–10 is upper (Pee Wees).
+    Younger than 3 and older than 10 stay outside these two class groups.
     """
     try:
         number = int(age)
     except (TypeError, ValueError):
         return ""
-    if 4 <= number <= 7:
+    if 3 <= number <= 6:
         return "mite"
-    if 8 <= number <= 15:
+    if 7 <= number <= 10:
         return "upper"
     return ""
 
@@ -417,6 +421,15 @@ def migrate(conn):
           created_at TEXT NOT NULL,
           updated_at TEXT NOT NULL,
           UNIQUE(class_date, age_group)
+        );
+        CREATE TABLE IF NOT EXISTS class_exceptions (
+          date TEXT PRIMARY KEY,
+          kind TEXT NOT NULL CHECK(kind IN ('skip', 'extra')),
+          reason TEXT NOT NULL DEFAULT '',
+          start_time TEXT NOT NULL DEFAULT '17:30',
+          end_time TEXT NOT NULL DEFAULT '18:15',
+          created_by TEXT NOT NULL DEFAULT '',
+          created_at TEXT NOT NULL
         );
         """
     )

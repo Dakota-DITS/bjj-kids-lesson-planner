@@ -52,6 +52,7 @@
     editingPlanId: "",
     loadedPlanAge: "",
     savedPlans: [],
+    classExceptions: [],
   };
 
   let cameraStream = null;
@@ -440,7 +441,7 @@
 
   function ageLabel(id) {
     const group = DATA.ageGroups[id] || DATA.ageGroups[P.normalizeAgeKey(id)];
-    if (!group) return "4–7 Mighty Mites";
+    if (!group) return "3–6 Mighty Mites";
     const label = String(group.label || "").trim();
     return label ? `${group.range} ${label}` : group.range;
   }
@@ -2315,7 +2316,7 @@ function sparringSection(plan) {
   function renderHome() {
     const root = $("homeSummary");
     if (!root) return;
-    const iso = P.nextClassDate(new Date());
+    const iso = nextMeetingIso(new Date());
     const when = new Date(`${iso}T00:00:00`);
     const nextLabel = Number.isNaN(when.getTime())
       ? iso
@@ -2415,13 +2416,66 @@ function sparringSection(plan) {
     return date.toLocaleDateString(undefined, { weekday: "short", month: "short", day: "numeric", year: "numeric" });
   }
 
+  function classDayApi() {
+    return window.GRACE_CLASS_DAYS || null;
+  }
+
+  function nextMeetingIso(from) {
+    const days = classDayApi();
+    if (!days) return P.nextClassDate(from);
+    const hit = days.nextClass(from || new Date(), state.classExceptions);
+    return days.toIso(hit.year, hit.month, hit.day);
+  }
+
+  function exceptionOn(iso) {
+    return (state.classExceptions || []).find((item) => item.date === iso) || null;
+  }
+
+  function clockLabel(hhmm) {
+    const match = /^(\d{2}):(\d{2})$/.exec(String(hhmm || ""));
+    if (!match) return hhmm || "";
+    const hour = Number(match[1]);
+    const minute = match[2];
+    const suffix = hour >= 12 ? "PM" : "AM";
+    const h12 = hour % 12 || 12;
+    return `${h12}:${minute} ${suffix}`;
+  }
+
+  function noteSkippedDate() {
+    const note = $("dateSkipNote");
+    if (!note || !$("date")) return;
+    const hit = exceptionOn($("date").value);
+    if (hit && hit.kind === "skip") {
+      note.hidden = false;
+      note.textContent = `No class this day${hit.reason ? `: ${hit.reason}` : ""}. A saved plan on this date stays.`;
+      return;
+    }
+    note.hidden = true;
+    note.textContent = "";
+  }
+
+  function syncClaimPotty() {
+    const note = $("claimPotty");
+    if (!note) return;
+    const age = Number($("claimAge") && $("claimAge").value);
+    const group = $("claimGroup") ? $("claimGroup").value : "";
+    const byAge = Number.isInteger(age) && age >= 3 && age <= 6;
+    const byGroup = group === "mite" && !($("claimAge") && $("claimAge").value.trim());
+    note.classList.toggle("hidden", !(byAge || byGroup));
+  }
+
   function updateScheduleHint() {
     const el = $("scheduleHint");
     if (!el) return;
-    const next = P.nextClassDate(new Date());
+    const next = nextMeetingIso(new Date());
     const picked = $("date").value;
     let text = `2nd and 4th Tuesday, 5:30–6:15 PM PT. First class ${prettyDate(P.FIRST_CLASS_ISO)}. Next on the schedule: ${prettyDate(next)}.`;
-    if (picked && picked !== next) {
+    const pickedHit = exceptionOn(picked);
+    if (pickedHit && pickedHit.kind === "skip") {
+      text += ` This date is skipped${pickedHit.reason ? `: ${pickedHit.reason}` : ""}. The saved plan stays.`;
+    } else if (pickedHit && pickedHit.kind === "extra") {
+      text += " This date is a make-up class.";
+    } else if (picked && picked !== next) {
       const when = P.parseISODate(picked);
       text +=
         when && P.isClassTuesday(when) && when >= P.parseISODate(P.FIRST_CLASS_ISO)
@@ -2429,6 +2483,68 @@ function sparringSection(plan) {
           : " This date overrides the schedule.";
     }
     el.textContent = text;
+    noteSkippedDate();
+  }
+
+  function renderClassCalendar() {
+    const root = $("calendarList");
+    if (!root) return;
+    const days = classDayApi();
+    const intro = $("calendarIntro");
+    if (intro && !isAdmin()) {
+      intro.textContent = "Regular classes stay on the 2nd and 4th Tuesday, 5:30–6:15 PM PT. Ask an admin to skip a date or add a make-up.";
+    }
+    if (!days) {
+      root.innerHTML = `<p class="hint">The class calendar did not load.</p>`;
+      return;
+    }
+    const rows = days.upcomingMeetings(new Date(), 184, state.classExceptions);
+    if (!rows.length) {
+      root.innerHTML = `<p class="hint">No class dates in the next six months.</p>`;
+      return;
+    }
+    root.innerHTML = rows
+      .map((row) => {
+        const title = days.longDate(row.year, row.month, row.day);
+        const when = `${clockLabel(row.start)}–${clockLabel(row.end)}`;
+        if (row.skipped) {
+          const undo = isAdmin()
+            ? `<button class="ghost" type="button" data-cal-undo="${esc(row.iso)}">Undo skip</button>`
+            : "";
+          return `<article class="calendar-row is-skip">
+            <p><strong>${esc(title)}</strong><br>No class${row.reason ? `: ${esc(row.reason)}` : ""}</p>
+            ${undo}
+          </article>`;
+        }
+        if (row.extra) {
+          const remove = isAdmin()
+            ? `<button class="ghost" type="button" data-cal-undo="${esc(row.iso)}">Remove</button>`
+            : "";
+          return `<article class="calendar-row">
+            <p><strong>${esc(title)}</strong><br>Make-up · ${esc(when)}${row.reason ? `<br>${esc(row.reason)}` : ""}</p>
+            ${remove}
+          </article>`;
+        }
+        const skip = isAdmin()
+          ? `<input class="skip-reason" type="text" maxlength="120" placeholder="Reason, optional" aria-label="Reason for skipping ${esc(title)}" data-skip-reason="${esc(row.iso)}" />
+             <button class="ghost" type="button" data-cal-skip="${esc(row.iso)}">Skip this class</button>`
+          : "";
+        return `<article class="calendar-row">
+          <p><strong>${esc(title)}</strong><br>${esc(when)}</p>
+          ${skip}
+        </article>`;
+      })
+      .join("");
+  }
+
+  async function refreshClassExceptions() {
+    const body = await window.BJJ_API.send("GET", "/api/class-exceptions");
+    state.classExceptions = Array.isArray(body.exceptions) ? body.exceptions : [];
+    noteSkippedDate();
+    updateScheduleHint();
+    renderHome();
+    if (state.plansLoaded) renderSavedPlans();
+    if (state.view === "calendar") renderClassCalendar();
   }
 
   function writeClassCounts() {
@@ -3022,8 +3138,8 @@ function sparringSection(plan) {
   function groupForAge(age) {
     const n = Number(age);
     if (!Number.isFinite(n)) return null;
-    if (n >= 4 && n <= 7) return DATA.ageGroups.mite || null;
-    if (n >= 8 && n <= 15) return DATA.ageGroups.upper || null;
+    if (n >= 3 && n <= 6) return DATA.ageGroups.mite || null;
+    if (n >= 7 && n <= 10) return DATA.ageGroups.upper || null;
     return null;
   }
 
@@ -3141,17 +3257,19 @@ function sparringSection(plan) {
     $("reviewView").classList.toggle("hidden", view !== "review");
     $("progressView").classList.toggle("hidden", view !== "progress");
     $("checkinView").classList.toggle("hidden", view !== "checkin");
+    if ($("calendarView")) $("calendarView").classList.toggle("hidden", view !== "calendar");
     $("cardView").classList.toggle("hidden", view !== "cards");
     if ($("printTheseBtn")) $("printTheseBtn").classList.toggle("hidden", view !== "cards");
     if (view === "review") runPanel("Review", () => renderReview());
     if (view === "progress") runPanel("Progress", () => renderProgress());
     if (view === "checkin") {
-      if (!$("checkinDate").value) $("checkinDate").value = $("date").value || P.nextClassDate(new Date());
+      if (!$("checkinDate").value) $("checkinDate").value = $("date").value || nextMeetingIso(new Date());
       cameraHelp();
       renderCheckinList();
       renderCardRecords();
       refreshCards();
     }
+    if (view === "calendar") renderClassCalendar();
   }
 
   function normalizeCard(raw) {
@@ -3269,8 +3387,8 @@ function sparringSection(plan) {
   }
 
   const PAST_AGES = [
-    ["mite", "Mighty Mites 4–7"],
-    ["upper", "8–10"],
+    ["mite", "Mighty Mites 3–6"],
+    ["upper", "Pee Wees 7–10"],
     ["toddler", "Toddler 3–5"],
   ];
 
@@ -3819,6 +3937,7 @@ function sparringSection(plan) {
     $("claimName").value = "";
     $("claimAge").value = "";
     $("claimGroup").value = "";
+    syncClaimPotty();
     $("claimBelt").value = "white";
     $("claimStripes").value = "0";
     setFormNote("claimNote", "");
@@ -4035,11 +4154,15 @@ function sparringSection(plan) {
     root.innerHTML = plans
       .map((plan) => {
         const editing = plan.id === state.editingPlanId;
+        const skip = exceptionOn(plan.classDate);
+        const skipped = skip && skip.kind === "skip"
+          ? `<br><span class="warn-text">No class this day${skip.reason ? `: ${esc(skip.reason)}` : ""}. This saved plan stays.</span>`
+          : "";
         const remove = isAdmin()
           ? `<button class="danger" type="button" data-plan-delete="${esc(plan.id)}">Delete</button>`
           : "";
         return `<article class="saved-plan${editing ? " is-editing" : ""}">
-          <p>${esc(prettyDate(plan.classDate))} · ${esc(classLabel(plan.ageGroup))}${editing ? " · Editing" : ""}<br>${esc(plan.savedBy || "A teacher")} · ${esc(prettyStamp(plan.updatedAt))}</p>
+          <p>${esc(prettyDate(plan.classDate))} · ${esc(classLabel(plan.ageGroup))}${editing ? " · Editing" : ""}${skipped}<br>${esc(plan.savedBy || "A teacher")} · ${esc(prettyStamp(plan.updatedAt))}</p>
           <button class="ghost" type="button" data-plan-edit="${esc(plan.id)}">Edit</button>
           <button class="ghost" type="button" data-plan-print="${esc(plan.id)}">Print</button>
           <button class="ghost" type="button" data-plan-share="${esc(plan.id)}">Share</button>
@@ -4059,6 +4182,7 @@ function sparringSection(plan) {
   async function refreshSavedPlans() {
     const body = await window.BJJ_API.send("GET", "/api/plans");
     state.savedPlans = Array.isArray(body.plans) ? body.plans : [];
+    state.plansLoaded = true;
     if (state.editingPlanId && !state.savedPlans.some((item) => item.id === state.editingPlanId)) {
       state.editingPlanId = "";
     }
@@ -4551,7 +4675,7 @@ function sparringSection(plan) {
     });
 
     $("suggestDateBtn").addEventListener("click", () => {
-      $("date").value = P.nextClassDate(new Date());
+      $("date").value = nextMeetingIso(new Date());
       onClassField("date");
       toast("Date set to the next class.");
     });
@@ -5257,6 +5381,52 @@ function sparringSection(plan) {
       $("checkinStatus").textContent = "Card not linked.";
       $("checkinStatus").className = "checkin-status";
     });
+    if ($("claimAge")) $("claimAge").addEventListener("input", syncClaimPotty);
+    if ($("claimGroup")) $("claimGroup").addEventListener("change", syncClaimPotty);
+    if ($("extraClassForm")) {
+      $("extraClassForm").addEventListener("submit", async (event) => {
+        event.preventDefault();
+        if (!isAdmin()) return;
+        try {
+          await window.BJJ_API.send("POST", "/api/class-exceptions", {
+            date: $("extraDate").value,
+            kind: "extra",
+            reason: $("extraReason").value,
+            start: $("extraStart").value,
+            end: $("extraEnd").value,
+          });
+          $("extraDate").value = "";
+          $("extraReason").value = "";
+          setFormNote("extraNote", "Make-up class added.", true);
+          await refreshClassExceptions();
+        } catch (err) {
+          setFormNote("extraNote", err.message || "Could not add that class.");
+        }
+      });
+    }
+    if ($("calendarList")) {
+      $("calendarList").addEventListener("click", async (event) => {
+        const skip = event.target.closest("[data-cal-skip]");
+        const undo = event.target.closest("[data-cal-undo]");
+        if (!skip && !undo) return;
+        if (!isAdmin()) return;
+        try {
+          if (undo) {
+            await window.BJJ_API.send("DELETE", `/api/class-exceptions/${undo.dataset.calUndo}`);
+          } else {
+            const reasonInput = document.querySelector(`[data-skip-reason="${skip.dataset.calSkip}"]`);
+            await window.BJJ_API.send("POST", "/api/class-exceptions", {
+              date: skip.dataset.calSkip,
+              kind: "skip",
+              reason: reasonInput ? reasonInput.value : "",
+            });
+          }
+          await refreshClassExceptions();
+        } catch (err) {
+          toast(err.message || "Could not update the calendar.");
+        }
+      });
+    }
     if ($("cardRecordList")) {
       $("cardRecordList").addEventListener("click", async (event) => {
         const retire = event.target.closest("[data-retire-card]");
@@ -5643,7 +5813,7 @@ function sparringSection(plan) {
         view: state.view,
       }),
     };
-    if ($("date") && !$("date").value) $("date").value = P.nextClassDate(new Date());
+    if ($("date") && !$("date").value) $("date").value = nextMeetingIso(new Date());
     runPanel("Staff", () => {
       renderStaffPickers();
       renderStaffAdmin();
@@ -5670,6 +5840,7 @@ function sparringSection(plan) {
     runPanel("Schedule", updateScheduleHint);
     if (isAdmin()) refreshUsers().catch((err) => reportPanel("Logins", err));
     refreshSavedPlans().catch((err) => reportPanel("Saved plans", err));
+    refreshClassExceptions().catch((err) => reportPanel("Calendar", err));
     document.body.classList.add("authed");
     const gate = $("gate");
     if (gate) gate.hidden = true;

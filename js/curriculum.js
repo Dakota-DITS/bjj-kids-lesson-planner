@@ -397,7 +397,7 @@
       "Walk the grip toward their belt slowly until they tap.",
     ],
     "3 slow reps each side, then switch partners.",
-    "Slow. Let go the instant they tap. Do not rip the shoulder. 8–10 only."
+    "Slow. Let go the instant they tap. Do not rip the shoulder. 7–10 only."
   );
 
   tech(
@@ -474,7 +474,7 @@
       "Pull them toward you and scythe that leg so they fall. Come up on top.",
     ],
     "3 slow reps each side, then switch partners.",
-    "8–10. The hook takes the heel. Do not twist the knee. If the knee turns, let go. Finish on top.",
+    "7–10. The hook takes the heel. Do not twist the knee. If the knee turns, let go. Finish on top.",
     { themes: ["sweeps"], say: "Sickle the heel. Foot on the hip. Pull them down and come up on top.", tags: ["sweep"] }
   );
 
@@ -552,7 +552,7 @@
       "Squeeze slow, like a hug, and let go the instant they tap.",
     ],
     "3 slow reps each side, then switch partners.",
-    "8–10 only. Teach the tap first. No squeezing before the tap is practiced. Let go immediately. Stop the room if someone cranks."
+    "7–10 only. Teach the tap first. No squeezing before the tap is practiced. Let go immediately. Stop the room if someone cranks."
   );
 
   tech(
@@ -659,7 +659,7 @@
       "They do a side breakfall. You kneel into side control.",
     ],
     "5 slow reps each side, then switch partners.",
-    "8–10 only, and only after breakfalls. No reaping into the knee sideways. Let go if they don't fall clean. One pair at a time."
+    "7–10 only, and only after breakfalls. No reaping into the knee sideways. Let go if they don't fall clean. One pair at a time."
   );
 
   tech(
@@ -721,7 +721,7 @@
       "Hold the shape. Do not squeeze until the teacher says a one-second finish, then let go on the tap.",
     ],
     "3 slow reps each side, then switch partners.",
-    "8–10 only. One-second finish, then release. No cranking the neck. Teach the tap before the first rep."
+    "7–10 only. One-second finish, then release. No cranking the neck. Teach the tap before the first rep."
   );
   tech(
     "ls-pass-mount-back",

@@ -29,8 +29,8 @@ Log in at `/login/`, then the planner opens at `/app/`.
 
 ### Age groups
 
-- **4–7 Mighty Mites** — positions and movement. Sparring starts off for this group, and a kid still needs at least one stripe plus enough adults before it is turned on.
-- **8–10** — partner drills, escapes, sweeps, passes, and a slow americana and armbar from mount. Warm-up counts stay as written.
+- **3–6 Mighty Mites** — positions and movement. Kids this age must be fully potty trained. Sparring starts off for this group, and a kid still needs at least one stripe plus enough adults before it is turned on.
+- **7–10 Pee Wees** — partner drills, escapes, sweeps, passes, and a slow americana and armbar from mount. Warm-up counts stay as written.
 
 **Load first class plan** is the toddler intro (ages 3–5). It stays as a preset.
 
@@ -40,7 +40,7 @@ Every class opens with a short prayer, then line up by rank and bow in, warm up,
 
 The lesson keeps its minutes first. The opening prayer stays at 2 minutes. If the clock is tight, warm-up and base shrink before the lesson does. The closing game can shrink to about 3 minutes and stays on the plan when you asked for a game. Extra minutes go to the lesson.
 
-Auto theme picks the position that has gone the longest without being taught. You can lock a theme. Live sparring is for any age group, including 4–7, when a student has at least one stripe and enough adults are supervising for the 4:1 ratio. A 4–7 plan starts with sparring off. Otherwise that block is positional drilling.
+Auto theme picks the position that has gone the longest without being taught. You can lock a theme. Live sparring is for any age group, including 3–6, when a student has at least one stripe and enough adults are supervising for the 4:1 ratio. A 3–6 plan starts with sparring off. Otherwise that block is positional drilling.
 
 ### Roster, progress, and attendance
 

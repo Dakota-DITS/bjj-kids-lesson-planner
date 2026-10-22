@@ -741,11 +741,15 @@ class ApiTest(unittest.TestCase):
         self.assertEqual(normalize_age_group("peewee+mite"), "mite+upper")
         self.assertEqual(normalize_age_group("junior"), "upper")
         self.assertEqual(normalize_age_group("teen"), "upper")
+        self.assertEqual(age_group_for_age(3), "mite")
         self.assertEqual(age_group_for_age(5), "mite")
-        self.assertEqual(age_group_for_age(7), "mite")
+        self.assertEqual(age_group_for_age(6), "mite")
+        self.assertEqual(age_group_for_age(7), "upper")
         self.assertEqual(age_group_for_age(8), "upper")
-        self.assertEqual(age_group_for_age(14), "upper")
-        self.assertEqual(age_group_for_age(3), "")
+        self.assertEqual(age_group_for_age(10), "upper")
+        self.assertEqual(age_group_for_age(2), "")
+        self.assertEqual(age_group_for_age(11), "")
+        self.assertEqual(age_group_for_age(14), "")
         self.assertEqual(age_group_for_age(16), "")
         admin = self.client()
         status, _ = admin.login("dakota", "correct-horse")
@@ -758,8 +762,8 @@ class ApiTest(unittest.TestCase):
             for name, age, stripes in (
                 ("ComboAda", 5, 0),
                 ("ComboBea", 8, 1),
-                ("ComboCleo", 11, 1),
-                ("ComboDee", 14, 2),
+                ("ComboCleo", 7, 1),
+                ("ComboDee", 10, 2),
             ):
                 status, student = admin.call(
                     "POST",
@@ -1174,7 +1178,7 @@ class ApiTest(unittest.TestCase):
             self.assertEqual(saved["age_group"], "mite")
             body = json.loads(saved["plan_json"])
             self.assertEqual(body["settings"]["ageGroup"], "mite")
-            self.assertEqual(body["settings"]["ages"], "4–7 Mighty Mites")
+            self.assertEqual(body["settings"]["ages"], "3–6 Mighty Mites")
             self.assertEqual(body["lesson"]["items"][0]["ages"], ["mite", "upper"])
             folded = conn.execute(
                 "SELECT age_group, plan_json FROM lesson_plans WHERE id='lp-upper'"
@@ -1182,7 +1186,7 @@ class ApiTest(unittest.TestCase):
             self.assertEqual(folded["age_group"], "upper")
             folded_body = json.loads(folded["plan_json"])
             self.assertEqual(folded_body["settings"]["ageGroup"], "upper")
-            self.assertEqual(folded_body["settings"]["ages"], "8–10")
+            self.assertEqual(folded_body["settings"]["ages"], "7–10 Pee Wees")
             migrate(conn)
             self.assertEqual(conn.execute("SELECT COUNT(*) AS n FROM age_group_flags").fetchone()["n"], 1)
             self.assertEqual(conn.execute("SELECT COUNT(*) AS n FROM classes").fetchone()["n"], 4)
@@ -1190,7 +1194,7 @@ class ApiTest(unittest.TestCase):
             again = json.loads(
                 conn.execute("SELECT plan_json FROM lesson_plans WHERE id='lp-ecd22b41'").fetchone()["plan_json"]
             )
-            self.assertEqual(again["settings"]["ages"], "4–7 Mighty Mites")
+            self.assertEqual(again["settings"]["ages"], "3–6 Mighty Mites")
             self.assertEqual(
                 conn.execute("SELECT age_group FROM classes WHERE id='k-pw'").fetchone()["age_group"],
                 "peewee",
@@ -1198,6 +1202,94 @@ class ApiTest(unittest.TestCase):
         finally:
             conn.close()
             os.remove(path)
+
+
+    def test_class_calendar_admin_skip_and_makeup(self):
+        public = self.client()
+        status, open_list = public.call("GET", "/api/public/class-exceptions")
+        self.assertEqual(status, 200, open_list)
+        self.assertEqual(open_list["exceptions"], [])
+        teacher = self.client()
+        status, _ = teacher.login("alex", "correct-horse")
+        self.assertEqual(status, 200)
+        status, denied = teacher.call(
+            "POST",
+            "/api/class-exceptions",
+            {"date": "2027-03-09", "kind": "skip", "reason": "Church event"},
+        )
+        self.assertEqual(status, 403, denied)
+        self.assertIn("admin", denied["error"].lower())
+        status, readable = teacher.call("GET", "/api/class-exceptions")
+        self.assertEqual(status, 200, readable)
+        self.assertEqual(readable["exceptions"], [])
+        admin = self.client()
+        status, _ = admin.login("dakota", "correct-horse")
+        self.assertEqual(status, 200)
+        status, not_tuesday = admin.call(
+            "POST",
+            "/api/class-exceptions",
+            {"date": "2027-03-10", "kind": "skip", "reason": "Nope"},
+        )
+        self.assertEqual(status, 400, not_tuesday)
+        status, skipped = admin.call(
+            "POST",
+            "/api/class-exceptions",
+            {"date": "2027-03-09", "kind": "skip", "reason": "Church event"},
+        )
+        self.assertEqual(status, 200, skipped)
+        self.assertEqual(skipped["exception"]["kind"], "skip")
+        self.assertEqual(skipped["exception"]["reason"], "Church event")
+        self.assertEqual(skipped["exception"]["start"], "17:30")
+        self.assertEqual(skipped["exception"]["end"], "18:15")
+        status, extra = admin.call(
+            "POST",
+            "/api/class-exceptions",
+            {"date": "2027-03-10", "kind": "extra", "reason": "Make-up", "start": "17:30", "end": "18:15"},
+        )
+        self.assertEqual(status, 200, extra)
+        self.assertEqual(extra["exception"]["kind"], "extra")
+        status, again = admin.call(
+            "POST",
+            "/api/class-exceptions",
+            {"date": "2027-03-09", "kind": "skip", "reason": "Church event"},
+        )
+        self.assertEqual(status, 200, again)
+        status, public_rows = public.call("GET", "/api/public/class-exceptions")
+        self.assertEqual(status, 200, public_rows)
+        by_date = {row["date"]: row for row in public_rows["exceptions"]}
+        self.assertEqual(by_date["2027-03-09"]["kind"], "skip")
+        self.assertEqual(by_date["2027-03-09"]["reason"], "Church event")
+        self.assertEqual(by_date["2027-03-10"]["kind"], "extra")
+        self.assertNotIn("createdBy", by_date["2027-03-09"])
+        status, teacher_delete = teacher.call("DELETE", "/api/class-exceptions/2027-03-09")
+        self.assertEqual(status, 403, teacher_delete)
+        plan = {"mode": "grace", "settings": {"ageGroup": "upper", "title": "GRACE BJJ KIDS"}, "lesson": {"items": []}}
+        status, on_extra = admin.call(
+            "PUT",
+            "/api/plans",
+            {"date": "2027-03-10", "ageGroup": "upper", "plan": plan},
+        )
+        self.assertIn(status, (200, 201), on_extra)
+        status, on_skip = admin.call(
+            "PUT",
+            "/api/plans",
+            {"date": "2027-03-09", "ageGroup": "mite", "plan": plan},
+        )
+        self.assertIn(status, (200, 201), on_skip)
+        status, still = admin.call("GET", f"/api/plans/{on_skip['id']}")
+        self.assertEqual(status, 200, still)
+        self.assertEqual(still["classDate"], "2027-03-09")
+        status, undone = admin.call("DELETE", "/api/class-exceptions/2027-03-09")
+        self.assertEqual(status, 200, undone)
+        status, kept = admin.call("GET", f"/api/plans/{on_skip['id']}")
+        self.assertEqual(status, 200, kept)
+        self.assertEqual(kept["classDate"], "2027-03-09")
+        admin.call("DELETE", f"/api/plans/{on_skip['id']}")
+        admin.call("DELETE", f"/api/plans/{on_extra['id']}")
+        admin.call("DELETE", "/api/class-exceptions/2027-03-10")
+        status, empty = public.call("GET", "/api/public/class-exceptions")
+        self.assertEqual(status, 200, empty)
+        self.assertEqual(empty["exceptions"], [])
 
 
 def _handler(api):

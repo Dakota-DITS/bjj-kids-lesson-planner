@@ -167,7 +167,7 @@ async function main() {
     await page.type("#password", PASS);
     await page.click("button.big");
     const before = await ready(page);
-    assert.ok(before.includes("4–7"), before);
+    assert.ok(before.includes("3–6"), before);
     assert.ok(!before.includes("Combo class"), before);
 
     await evalStable(page, () => document.querySelector('#ageGroup button[data-group="upper"]').click());
@@ -182,7 +182,7 @@ async function main() {
     );
     assert.deepStrictEqual(pressed, { mite: "true", upper: "true" });
     const blurb = await evalStable(page, () => document.getElementById("ageBlurb").textContent);
-    assert.ok(blurb.includes("Combo class: 4–7 + 8–10"), blurb);
+    assert.ok(blurb.includes("Combo class: 3–6 + 7–10"), blurb);
     await evalStable(page, () => {
       const sel = document.getElementById("themeLock");
       sel.value = "guard";
@@ -193,12 +193,12 @@ async function main() {
       { timeout: 10000 }
     );
     const planText = await evalStable(page, () => document.getElementById("plan").textContent);
-    assert.ok(planText.includes("Combo class: 4–7 + 8–10"), planText.slice(0, 400));
+    assert.ok(planText.includes("Combo class: 3–6 + 7–10"), planText.slice(0, 400));
     assert.ok(planText.includes("Older kids:"), planText);
     assert.ok(planText.includes("Kimura from guard"), planText);
-    assert.ok(planText.includes("Never pair a 4–7 with an 8–10."), planText);
+    assert.ok(planText.includes("Never pair a 3–6 with a 7–10."), planText);
     const home = await evalStable(page, () => document.getElementById("homeSummary").textContent);
-    assert.ok(home.includes("Combo class: 4–7 + 8–10"), home);
+    assert.ok(home.includes("Combo class: 3–6 + 7–10"), home);
     const kids = await evalStable(page, () => document.getElementById("kidCount").value);
     assert.strictEqual(kids, "4", "combo ratio uses both selected groups, not someone outside 4–15");
 
@@ -239,7 +239,7 @@ async function main() {
     });
     await page.touchscreen.tap(again.x, again.y);
     await page.waitForFunction(
-      () => (document.getElementById("ageBlurb") || {}).textContent.includes("Combo class: 4–7 + 8–10"),
+      () => (document.getElementById("ageBlurb") || {}).textContent.includes("Combo class: 3–6 + 7–10"),
       { timeout: 10000 }
     );
     await evalStable(page, () => document.getElementById("menuToggle").click());
@@ -264,7 +264,7 @@ async function main() {
       view: document.getElementById("checkinView").textContent,
       list: document.getElementById("checkinList").textContent,
     }));
-    assert.ok(checkin.view.includes("Combo class: 4–7 + 8–10"), checkin.view.slice(0, 300));
+    assert.ok(checkin.view.includes("Combo class: 3–6 + 7–10"), checkin.view.slice(0, 300));
     assert.ok(checkin.list.includes("ComboAda"), checkin.list);
     assert.ok(checkin.list.includes("ComboBea"), checkin.list);
     assert.ok(checkin.list.includes("ComboCleo"), checkin.list);
@@ -285,7 +285,7 @@ async function main() {
     await evalStable(page, () => document.querySelector('[data-view="progress"]').click());
     await page.waitForSelector("#progressView h2");
     const progress = await evalStable(page, () => document.getElementById("progressView").textContent);
-    assert.ok(progress.includes("Combo class: 4–7 + 8–10"), progress.slice(0, 240));
+    assert.ok(progress.includes("Combo class: 3–6 + 7–10"), progress.slice(0, 240));
     assert.ok(progress.includes("1 of 8 classes"), progress);
 
     await evalStable(page, () => document.querySelector('#ageGroup button[data-group="upper"]').click());
@@ -294,7 +294,7 @@ async function main() {
       { timeout: 10000 }
     );
     const single = await evalStable(page, () => document.querySelector("#plan .plan-kicker").textContent);
-    assert.ok(single.includes("Mighty Mites") || single.includes("4–7"), single);
+    assert.ok(single.includes("Mighty Mites") || single.includes("3–6"), single);
     const singleKids = await evalStable(page, () => document.getElementById("kidCount").value);
     assert.strictEqual(singleKids, "4");
     assert.deepStrictEqual(errors, [], errors.join("\n"));
