@@ -29,5 +29,6 @@ DTEND;TZID=America/Los_Angeles:20261027T181500
 RRULE:FREQ=MONTHLY;BYDAY=2TU,4TU
 SUMMARY:Grace BJJ Kids
 DESCRIPTION:Kids class from 5:30 to 6:15 PM. Classes are free. 2nd and 4th Tuesday of each month.
+LOCATION:Grace Baptist Church\, 4197 State St\, Salem\, OR 97301
 END:VEVENT
 END:VCALENDAR
