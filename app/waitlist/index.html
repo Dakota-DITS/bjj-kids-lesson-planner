@@ -46,6 +46,16 @@
       padding: 14px;
     }
     .row { display: flex; flex-wrap: wrap; gap: 8px; }
+    .badge {
+      display: inline-flex;
+      align-items: center;
+      min-height: 28px;
+      padding: 2px 10px;
+      border-radius: 999px;
+      background: #fff7ed;
+      color: #1c1917;
+      font-weight: 700;
+    }
     .banner {
       background: #9b2a12;
       color: #fff7ed;
@@ -53,7 +63,7 @@
       padding: 12px 14px;
       font-weight: 700;
     }
-    .banner[hidden], #tools[hidden] { display: none !important; }
+    .banner[hidden], #tools[hidden], #filters[hidden] { display: none !important; }
     button:focus-visible, a:focus-visible { outline: 3px solid #fff7ed; outline-offset: 2px; }
   </style>
 </head>
@@ -64,8 +74,13 @@
     <p>This page does not email or text families. An admin contacts them.</p>
     <p id="spotBanner" class="banner" hidden></p>
     <p id="status">Checking the login…</p>
+    <div id="filters" class="row" hidden role="group" aria-label="Which waitlist">
+      <button type="button" data-filter="all" aria-pressed="true">All</button>
+      <button type="button" class="ghost" data-filter="mite" aria-pressed="false">3–6 Mighty Mites</button>
+      <button type="button" class="ghost" data-filter="upper" aria-pressed="false">7–10 Pee Wees</button>
+    </div>
     <div id="tools" hidden class="row">
-      <a class="button" href="/api/waitlist.csv">Download CSV</a>
+      <a class="button" id="csvLink" href="/api/waitlist.csv?group=all">Download CSV</a>
     </div>
     <div id="list"></div>
   </main>
@@ -74,7 +89,11 @@
     const list = document.getElementById("list");
     const tools = document.getElementById("tools");
     const spotBanner = document.getElementById("spotBanner");
+    const filters = document.getElementById("filters");
+    const csvLink = document.getElementById("csvLink");
     let csrf = "";
+    let filter = "all";
+    let latest = null;
 
     function text(value) {
       return String(value == null ? "" : value);
@@ -116,39 +135,23 @@
       return text(head.childName) + (head.parentName ? " (" + text(head.parentName) + ")" : "");
     }
 
-    function paint(body) {
-      const groups = body.groups || [];
-      const rows = body.entries || [];
-      list.textContent = "";
-      tools.hidden = false;
-      if (body.spotOpen) {
-        spotBanner.hidden = false;
-        const next = body.waitlistNext || {};
-        spotBanner.textContent = "A spot is open. Next in 3–6 Mighty Mites: " + family(next.mite) + ". Next in 7–10 Pee Wees: " + family(next.upper) + ". You choose which group to fill. This does not email or text them.";
-      } else {
-        spotBanner.hidden = true;
-        spotBanner.textContent = "";
-      }
-      status.textContent = rows.length ? rows.length + " waiting." : "No one is on the waitlist.";
-      groups.forEach((group) => {
-        const heading = document.createElement("h2");
-        heading.textContent = text(group.label);
-        list.append(heading);
-        const entries = group.entries || [];
-        if (!entries.length) {
-          const empty = document.createElement("p");
-          empty.textContent = "No one is on this list.";
-          list.append(empty);
-          return;
-        }
-        const ul = document.createElement("ul");
-        entries.forEach((entry) => {
-        const li = document.createElement("li");
-        const card = document.createElement("article");
-        card.className = "card";
-        const title = document.createElement("h3");
-        title.textContent = text(entry.position) + ". " + text(entry.childName);
-        card.append(title);
+    function placeBadge(entry) {
+      const short = entry.ageGroup === "upper" ? "7–10 #" : "3–6 #";
+      return short + text(entry.position);
+    }
+
+    function cardFor(entry) {
+      const li = document.createElement("li");
+      const card = document.createElement("article");
+      card.className = "card";
+      const badge = document.createElement("p");
+      const mark = document.createElement("span");
+      mark.className = "badge";
+      mark.textContent = placeBadge(entry);
+      badge.append(mark);
+      const title = document.createElement("h3");
+      title.textContent = text(entry.childName);
+      card.append(badge, title);
         line(card, text(entry.childAge) + " · " + text(entry.ageGroupLabel));
         line(card, text(entry.parentName));
         line(card, text(entry.email));
@@ -186,11 +189,59 @@
         row.append(contacted, enrolled, remove);
         card.append(row);
         li.append(card);
-        ul.append(li);
-        });
-        list.append(ul);
-      });
+        return li;
     }
+
+    function paint(body) {
+      latest = body;
+      const groups = body.groups || [];
+      const rows = body.entries || [];
+      list.textContent = "";
+      tools.hidden = false;
+      filters.hidden = false;
+      csvLink.href = "/api/waitlist.csv?group=" + filter;
+      if (body.spotOpen) {
+        spotBanner.hidden = false;
+        const next = body.waitlistNext || {};
+        spotBanner.textContent = "A spot is open. Next in 3–6 Mighty Mites: " + family(next.mite) + ". Next in 7–10 Pee Wees: " + family(next.upper) + ". You choose which group to fill. This does not email or text them.";
+      } else {
+        spotBanner.hidden = true;
+        spotBanner.textContent = "";
+      }
+      const visible = filter === "all"
+        ? (body.byJoined || rows)
+        : ((groups.find((group) => group.ageGroup === filter) || {}).entries || []);
+      status.textContent = visible.length
+        ? visible.length + " waiting."
+        : (filter === "all" ? "No one is on the waitlist." : "No one is on this list.");
+      if (filter !== "all") {
+        const group = groups.find((item) => item.ageGroup === filter);
+        const heading = document.createElement("h2");
+        heading.textContent = group ? text(group.label) : "";
+        list.append(heading);
+      }
+      if (!visible.length) {
+        const empty = document.createElement("p");
+        empty.textContent = filter === "all" ? "No one is on the waitlist." : "No one is on this list.";
+        list.append(empty);
+        return;
+      }
+      const ul = document.createElement("ul");
+      visible.forEach((entry) => ul.append(cardFor(entry)));
+      list.append(ul);
+    }
+
+    document.querySelectorAll("[data-filter]").forEach((button) => {
+      button.addEventListener("click", () => {
+        filter = button.dataset.filter || "all";
+        document.querySelectorAll("[data-filter]").forEach((item) => {
+          const on = item.dataset.filter === filter;
+          item.setAttribute("aria-pressed", on ? "true" : "false");
+          item.classList.toggle("ghost", !on);
+        });
+        if (latest) paint(latest);
+      });
+    });
 
     fetch("/api/me", { credentials: "same-origin" })
       .then(async (res) => {

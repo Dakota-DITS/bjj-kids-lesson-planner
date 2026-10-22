@@ -1873,6 +1873,8 @@ class ApiTest(unittest.TestCase):
             self.assertEqual(status, 200, listed)
             self.assertEqual([row["childName"] for row in listed["entries"]], ["Ada", "Cam", "Bea"])
             self.assertEqual([row["position"] for row in listed["entries"]], [1, 2, 1])
+            self.assertEqual([row["childName"] for row in listed["byJoined"]], ["Ada", "Bea", "Cam"])
+            self.assertEqual([row["position"] for row in listed["byJoined"]], [1, 1, 2])
             self.assertEqual([group["ageGroup"] for group in listed["groups"]], ["mite", "upper"])
             self.assertEqual([row["childName"] for row in listed["groups"][0]["entries"]], ["Ada", "Cam"])
             self.assertEqual([row["childName"] for row in listed["groups"][1]["entries"]], ["Bea"])
@@ -1901,6 +1903,23 @@ class ApiTest(unittest.TestCase):
             self.assertIn("7–10 Pee Wees", csv_text)
             self.assertTrue(csv_text.startswith("position,joined,status,"))
             self.assertIn(",age_group,", csv_text.splitlines()[0])
+            joined_lines = [line for line in csv_text.splitlines() if line]
+            self.assertEqual([line.split(",")[6] for line in joined_lines[1:]], ["Ada", "Bea", "Cam"])
+            self.assertEqual([line.split(",")[0] for line in joined_lines[1:]], ["1", "1", "2"])
+            status, mite_csv = admin.call("GET", "/api/waitlist.csv?group=mite", raw=True)
+            self.assertEqual(status, 200)
+            mite_lines = [line for line in mite_csv.decode().splitlines() if line]
+            self.assertEqual([line.split(",")[6] for line in mite_lines[1:]], ["Ada", "Cam"])
+            self.assertEqual([line.split(",")[0] for line in mite_lines[1:]], ["1", "2"])
+            self.assertNotIn("Bea", mite_csv.decode())
+            status, upper_csv = admin.call("GET", "/api/waitlist.csv?group=upper", raw=True)
+            self.assertEqual(status, 200)
+            upper_lines = [line for line in upper_csv.decode().splitlines() if line]
+            self.assertEqual([line.split(",")[6] for line in upper_lines[1:]], ["Bea"])
+            self.assertEqual(upper_lines[1].split(",")[0], "1")
+            self.assertIn("7–10 Pee Wees", upper_csv.decode())
+            status, bad_csv = admin.call("GET", "/api/waitlist.csv?group=nope", raw=True)
+            self.assertEqual(status, 400, bad_csv)
 
             status, wider = admin.call("PUT", "/api/kids-cap", {"cap": min(200, enrolled + 1)})
             self.assertEqual(status, 200, wider)

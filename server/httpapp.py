@@ -7,7 +7,7 @@ import re
 import secrets
 import sqlite3
 from datetime import datetime, timedelta
-from urllib.parse import unquote, urlparse
+from urllib.parse import parse_qs, unquote, urlparse
 
 import bcrypt
 
@@ -859,7 +859,8 @@ class Api:
         if path == "/api/waitlist.csv" and method == "GET":
             if not admin:
                 return self.send(handler, 403, {"error": "An admin manages the waitlist."})
-            return self.send_csv(handler, "grace-waitlist.csv", self.waitlist_csv(conn))
+            group = (parse_qs(urlparse(handler.path).query).get("group") or ["all"])[0]
+            return self.send_csv(handler, "grace-waitlist.csv", self.waitlist_csv(conn, group))
         wait_action = re.fullmatch(r"/api/waitlist/([A-Za-z0-9_-]{1,40})/(contacted|enrolled)", path)
         if wait_action and method == "POST":
             if not admin:
@@ -2079,9 +2080,11 @@ class Api:
             },
         ]
         snap = self.enrollment_snapshot(conn, staff=True)
+        entries = groups[0]["entries"] + groups[1]["entries"]
         return {
             "groups": groups,
-            "entries": groups[0]["entries"] + groups[1]["entries"],
+            "entries": entries,
+            "byJoined": sorted(entries, key=lambda item: (item["createdAt"], item["id"])),
             "spotOpen": snap["waitlistSpotOpen"],
             "waitlistNext": self.waitlist_next(conn),
             "enrolled": snap["enrolled"],
@@ -2104,26 +2107,36 @@ class Api:
         ).fetchall()
         return [self.waitlist_json(row, positions.get(row["id"])) for row in rows]
 
-    def waitlist_csv(self, conn):
+    def waitlist_csv(self, conn, group="all"):
+        if group not in ("all", "mite", "upper"):
+            raise ValueError("Choose All, 3–6, or 7–10.")
+        positions = {}
+        grouped = self.waitlist_grouped(conn)
+        for key, queued in grouped.items():
+            for index, row in enumerate(queued):
+                positions[row["id"]] = index + 1
+        if group == "all":
+            selected = self.waitlist_active_rows(conn)
+        else:
+            selected = grouped[group]
         rows = [[
             "position", "joined", "status", "parent_name", "email", "phone",
             "child_name", "child_age", "dob", "age_group", "note",
         ]]
-        for key in ("mite", "upper"):
-            for index, row in enumerate(self.waitlist_grouped(conn)[key]):
-                rows.append([
-                    index + 1,
-                    row["created_at"],
-                    row["status"],
-                    row["parent_name"],
-                    row["email"],
-                    row["phone"],
-                    row["child_name"],
-                    row["child_age"],
-                    row["dob"] or "",
-                    self.waitlist_group_label(row["age_group"]),
-                    row["note"] or "",
-                ])
+        for row in selected:
+            rows.append([
+                positions[row["id"]],
+                row["created_at"],
+                row["status"],
+                row["parent_name"],
+                row["email"],
+                row["phone"],
+                row["child_name"],
+                row["child_age"],
+                row["dob"] or "",
+                self.waitlist_group_label(row["age_group"]),
+                row["note"] or "",
+            ])
         return rows
 
     def set_waitlist_status(self, handler, conn, wid, status):
