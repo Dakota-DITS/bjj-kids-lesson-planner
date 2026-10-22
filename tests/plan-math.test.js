@@ -165,6 +165,68 @@ const extra = P.fitClassTimes(
   50 * 60
 );
 assert.strictEqual(extra.seconds.lesson, 1200 + 5 * 60);
+assert.strictEqual(extra.seconds.prayer, 0);
+
+const shape = {
+  opening: 120,
+  warmup: 180,
+  base: 240,
+  lesson: 1200,
+  water: 60,
+  sparring: 360,
+  game: 300,
+  finish: 120,
+};
+const fresh = P.coverOpeningPrayer(shape, 45 * 60);
+assert.strictEqual(fresh.prayer, P.PRAYER_SECONDS);
+assert.strictEqual(fresh.warmup, 180);
+assert.strictEqual(fresh.lesson, 1200);
+const freshFit = P.fitClassTimes(fresh, 45 * 60);
+assert.strictEqual(freshFit.sum, 45 * 60);
+assert.strictEqual(freshFit.seconds.lesson, 1200);
+assert.strictEqual(freshFit.seconds.prayer, 120);
+assert.strictEqual(freshFit.seconds.warmup, 180);
+assert.strictEqual(freshFit.squeezed, false);
+
+const savedWarmup = P.coverOpeningPrayer({ ...shape, warmup: 300 }, 45 * 60);
+assert.strictEqual(savedWarmup.warmup, 180);
+assert.strictEqual(savedWarmup.prayer, 120);
+assert.strictEqual(savedWarmup.lesson, 1200);
+const savedFit = P.fitClassTimes(savedWarmup, 45 * 60);
+assert.strictEqual(savedFit.sum, 45 * 60);
+assert.strictEqual(savedFit.seconds.lesson, 1200);
+assert.strictEqual(savedFit.squeezed, false);
+
+const longer = P.coverOpeningPrayer(shape, 50 * 60);
+assert.strictEqual(longer.warmup, 180);
+assert.strictEqual(longer.prayer, 120);
+const roomyFit = P.fitClassTimes(longer, 50 * 60);
+assert.strictEqual(roomyFit.seconds.lesson, 1200 + 5 * 60);
+assert.strictEqual(roomyFit.seconds.prayer, 120);
+assert.strictEqual(roomyFit.squeezed, false);
+
+const funded = P.fundOpeningPrayer({ warmup: 400, lesson: 1200, games: 300, opening: 480 });
+assert.strictEqual(funded.prayer, 120);
+assert.strictEqual(funded.warmup, 280);
+assert.strictEqual(funded.lesson, 1200);
+assert.strictEqual(funded.games, 300);
+assert.strictEqual(funded.opening, 480);
+const thinWarmup = P.fundOpeningPrayer({ warmup: 60, games: 300, lesson: 900 });
+assert.strictEqual(thinWarmup.warmup, 0);
+assert.strictEqual(thinWarmup.games, 240);
+assert.strictEqual(thinWarmup.lesson, 900);
+assert.strictEqual(thinWarmup.prayer, 120);
+const lessonOnly = P.fundOpeningPrayer({ lesson: 1200 });
+assert.strictEqual(lessonOnly.lesson, 1200);
+assert.strictEqual(lessonOnly.prayer, 120);
+
+const withPrayer = P.fitClassTimes(
+  { prayer: 120, opening: 120, warmup: 0, base: 240, lesson: 1200, water: 60, sparring: 360, game: 300, finish: 120 },
+  20 * 60
+);
+assert.strictEqual(withPrayer.sum, 20 * 60);
+assert.strictEqual(withPrayer.seconds.prayer, 120);
+assert.ok(withPrayer.seconds.lesson > withPrayer.seconds.game);
 
 const logs = [
   { taught: true, ageGroup: "peewee", theme: "mount" },

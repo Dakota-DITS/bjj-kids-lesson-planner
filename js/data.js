@@ -82,6 +82,18 @@ window.BJJ_DATA = {
     ],
   },
 
+  openingPrayer: {
+    id: "opening-prayer",
+    name: "Opening prayer",
+    how: "Gather the kids in close. Keep it short and warm.",
+    say: [
+      "Thank you, God, for this day. Thank you for our bodies, and for letting us train together.",
+      "Thank you, God, for this chance to learn jiu-jitsu. It's a gift from you. Help us use what we learn well: to protect, to help others, and never to hurt or show off.",
+      "Does anyone know someone who needs prayer? A friend who is out sick, or someone in your family? Tell me their name, and we will pray for them.",
+      "Amen.",
+    ],
+  },
+
   wildReset:
     "Okay Feet together, hands at your side, stand like a ninja!",
 
