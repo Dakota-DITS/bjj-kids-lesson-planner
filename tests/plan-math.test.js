@@ -293,6 +293,22 @@ assert.strictEqual(progress.classes[0].theme, "mount");
 assert.deepStrictEqual(progress.classes[0].attended, ["c-sam01"]);
 assert.strictEqual(progress.levels["c-sam01"], undefined);
 assert.strictEqual(progress.stripe.own, 40);
+const mapped = P.sanitizeProgress({
+  levels: { "c-sam01": { "ls-a": "introduced", "ls-b": "practicing", "ls-c": "help", "ls-d": "own" } },
+});
+assert.deepStrictEqual(P.LEVELS, ["introduced", "drilled", "rolling", "mastered"]);
+assert.deepStrictEqual(P.LEVEL_LABELS, {
+  introduced: "Introduced",
+  drilled: "Drilled",
+  rolling: "Applied in rolling",
+  mastered: "Mastered",
+});
+assert.deepStrictEqual(mapped.levels["c-sam01"], {
+  "ls-a": "introduced",
+  "ls-b": "drilled",
+  "ls-c": "rolling",
+  "ls-d": "mastered",
+});
 assert.strictEqual(progress.stripe.attend, 1);
 assert.strictEqual(P.STRIPES_ON_BELT, 4);
 assert.deepStrictEqual(P.BELT_GROUP_MIN_AGE, { grey: 4, yellow: 7, orange: 10, green: 13 });

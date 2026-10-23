@@ -721,7 +721,23 @@ function parseQr(value) {
   return "parent:" + web[1];
 }
 
-const LEVELS = ["introduced", "practicing", "help", "own"];
+const LEVELS = ["introduced", "drilled", "rolling", "mastered"];
+const LEVEL_LABELS = {
+  introduced: "Introduced",
+  drilled: "Drilled",
+  rolling: "Applied in rolling",
+  mastered: "Mastered",
+};
+const LEVEL_ALIASES = {
+  practicing: "drilled",
+  help: "rolling",
+  own: "mastered",
+};
+
+function canonicalLevel(level) {
+  if (LEVELS.includes(level)) return level;
+  return LEVEL_ALIASES[level] || "";
+}
 
 function sanitizeProgress(raw) {
   const progress = { classes: [], levels: {}, notes: {}, stripe: { own: 6, attend: 8 } };
@@ -760,7 +776,8 @@ function sanitizeProgress(raw) {
       const next = {};
       Object.entries(levels).forEach(([techId, level]) => {
         const tech = cleanId(techId);
-        if (tech && LEVELS.includes(level)) next[tech] = level;
+        const canonical = canonicalLevel(level);
+        if (tech && canonical) next[tech] = canonical;
       });
       if (Object.keys(next).length) progress.levels[kid] = next;
     });
@@ -1468,6 +1485,9 @@ function sanitizeProgress(raw) {
     parentQrText,
     parseQr,
     LEVELS,
+    LEVEL_LABELS,
+    LEVEL_ALIASES,
+    canonicalLevel,
     sanitizeProgress,
     SHARE_FALLBACK_NOTE,
     planPdfFilename,

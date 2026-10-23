@@ -233,7 +233,7 @@ def _ensure_parent_examples(conn, now):
         "SELECT 1 FROM levels WHERE student_id = 'demo-milo' AND tech_id = 'ls-upa'"
     ).fetchone():
         conn.execute(
-            "INSERT INTO levels (student_id, tech_id, level) VALUES ('demo-milo', 'ls-upa', 'practicing')"
+            "INSERT INTO levels (student_id, tech_id, level) VALUES ('demo-milo', 'ls-upa', 'drilled')"
         )
 
 
