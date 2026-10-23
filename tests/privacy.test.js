@@ -31,8 +31,9 @@ assert.ok(policy.includes("We do not knowingly collect information directly from
 assert.ok(policy.includes("does not sell personal information"));
 assert.equal(/google analytics|facebook pixel|we encrypt the database/i.test(policy), false);
 
+assert.ok(policy.includes("Effective date: October 23, 2026"));
+assert.equal(policy.includes("[Dakota to confirm: effective date]"), false);
 const placeholders = [
-  "[Dakota to confirm: effective date]",
   "[Dakota to confirm: period after the student stops attending]",
   "[Dakota to confirm: waitlist cleanup period]",
 ];
