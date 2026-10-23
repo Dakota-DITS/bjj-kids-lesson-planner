@@ -7,7 +7,7 @@ const root = path.join(__dirname, "..");
 const data = fs.readFileSync(path.join(root, "js/data.js"), "utf8");
 const app = fs.readFileSync(path.join(root, "js/app.js"), "utf8");
 const css = fs.readFileSync(path.join(root, "css/styles.css"), "utf8");
-const welcome = fs.readFileSync(path.join(root, "index.html"), "utf8");
+const welcome = fs.readFileSync(path.join(root, "kids/index.html"), "utf8");
 const readme = fs.readFileSync(path.join(root, "README.md"), "utf8");
 const staff = fs.readFileSync(path.join(root, "app/index.html"), "utf8");
 

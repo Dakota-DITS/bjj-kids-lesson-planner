@@ -34,6 +34,7 @@
     cards: [],
     pendingCard: "",
     session: null,
+    kidsEnrollment: { cap: 12, enrolled: 0, spotsOpen: 12, full: false, submissionsEnabled: false },
     featured: { sheetId: "", caption: "" },
     serverSheets: [],
     staff: [],
@@ -2288,12 +2289,23 @@ function sparringSection(plan) {
     list.innerHTML = ordered
       .map((kid) => {
         const id = esc(kid.id);
+        const waiver = kid.waiver || {};
+        const waiverLine = waiver.signed
+          ? `Waiver signed ${esc(waiver.signedOn)} by ${esc(waiver.signerName)}`
+          : "No signed waiver";
+        const waiverBtn = waiver.signed
+          ? `<button type="button" data-roster="waiver">View / print waiver</button>`
+          : "";
         return `<article class="card roster-card" data-id="${id}">
           <header>
             <h3>${esc(kid.name)}</h3>
             <span class="badge">age ${esc(kid.age)}</span>
           </header>
+          <p class="${waiver.signed ? "hint" : "error"}">${waiverLine}</p>
           <div class="roster-edit">
+            ${waiverBtn}
+            <button type="button" data-roster="token">New parent code</button>
+            <button type="button" data-roster="revoke">Turn off parent code</button>
             <select data-roster="belt" aria-label="Belt for ${esc(kid.name)}">${beltOptions}</select>
             <select data-roster="stripes" aria-label="Stripes for ${esc(kid.name)}">
               ${[0, 1, 2, 3, 4].map((n) => `<option value="${n}">${n} stripe${n === 1 ? "" : "s"}</option>`).join("")}
@@ -2352,10 +2364,11 @@ function sparringSection(plan) {
         <article class="home-card"><strong>Next class</strong><p>${esc(nextLabel)}, 5:30–6:15 PM</p><p>Opens with a short prayer.</p><p>Teacher ${esc(instructorName() || "the teacher")}</p>${
           P.isCombo(state.ageGroup) ? `<p>${esc(P.comboLabel(state.ageGroup))}</p>` : ""
         }</article>
-        <article class="home-card"><strong>Roster</strong><p>${esc(groups.join(" · "))}${outside ? esc(` · Other ages: ${outside}`) : ""}</p></article>
+        <article class="home-card"><strong>Roster</strong><p>${esc(enrollmentLine())}</p><p>${esc(groups.join(" · "))}${outside ? esc(` · Other ages: ${outside}`) : ""}</p></article>
         <article class="home-card"><strong>Close to a stripe</strong><p>${closeText}</p></article>
         <article class="home-card"><strong>Belt hint</strong><p>${beltText}</p></article>
       </div>`;
+    paintEnrollment();
   }
 
   function updateMeta() {
@@ -2879,7 +2892,10 @@ function sparringSection(plan) {
 
   function applyBootstrap(body) {
     state.session = body.user || null;
-    state.roster = (body.students || []).map((kid) => P.sanitizeRosterKid(kid)).filter(Boolean);
+    state.roster = (body.students || [])
+      .filter((kid) => !(kid && Number(kid.age) > 17))
+      .map((kid) => P.sanitizeRosterKid(kid))
+      .filter(Boolean);
     state.progress = P.sanitizeProgress({
       classes: body.classes,
       levels: body.levels,
@@ -2890,7 +2906,9 @@ function sparringSection(plan) {
     state.serverSheets = body.sheets || [];
     state.cards = (Array.isArray(body.cards) ? body.cards : []).map(normalizeCard).filter(Boolean);
     state.staff = (Array.isArray(body.staff) ? body.staff : []).map(normalizeStaff).filter(Boolean);
+    state.kidsEnrollment = body.kidsEnrollment || state.kidsEnrollment;
     document.body.classList.toggle("role-admin", isAdmin());
+    paintEnrollment();
     const who = $("whoami");
     if (who && state.session) who.textContent = `${sessionDisplayName()} · ${state.session.role}`;
     const banner = $("importBanner");
@@ -2908,6 +2926,50 @@ function sparringSection(plan) {
     select.value = state.featured.sheetId || "";
     if (!select.value) select.value = "";
     if ($("featuredCaption")) $("featuredCaption").value = state.featured.caption || "";
+  }
+
+  function enrollmentLine() {
+    const snap = state.kidsEnrollment || { enrolled: 0, cap: 12 };
+    const enrolled = Number(snap.enrolled);
+    const cap = Number(snap.cap);
+    if (!Number.isFinite(enrolled) || !Number.isFinite(cap)) return "";
+    return enrolled + " of " + cap + " enrolled";
+  }
+
+  function paintEnrollment() {
+    const line = enrollmentLine();
+    const roster = $("kidsEnrolled");
+    if (roster) roster.textContent = line;
+    const plan = $("planEnrolled");
+    if (plan) plan.textContent = line;
+    const input = $("kidsCap");
+    if (input && document.activeElement !== input && state.kidsEnrollment && state.kidsEnrollment.cap != null) {
+      input.value = String(state.kidsEnrollment.cap);
+    }
+    const banner = $("waitlistBanner");
+    if (banner) {
+      const snap = state.kidsEnrollment || {};
+      const active = Number(snap.waitlistActive) || 0;
+      const show = isAdmin() && snap.waitlistSpotOpen === true && active > 0;
+      banner.classList.toggle("hidden", !show);
+      banner.textContent = "";
+      if (show) {
+        const next = snap.waitlistNext || {};
+        function who(head) {
+          if (!head || !head.childName) return "no one waiting";
+          return head.childName + (head.parentName ? " (" + head.parentName + ")" : "");
+        }
+        banner.append(document.createTextNode(
+          "A spot is open. Next in 3–6 Mighty Mites: " + who(next.mite) +
+          ". Next in 7–10 Pee Wees: " + who(next.upper) +
+          ". You choose which group to fill. This does not email or text them. "
+        ));
+        const link = document.createElement("a");
+        link.href = "/app/waitlist/";
+        link.textContent = "Open the waitlist";
+        banner.append(link);
+      }
+    }
   }
 
   async function addKid() {
@@ -2928,15 +2990,47 @@ function sparringSection(plan) {
       stripes: $("rosterStripes").value,
     });
     if (!kid) return;
+    async function post(extra) {
+      return window.BJJ_API.send("POST", "/api/students", Object.assign({}, kid, extra || {}));
+    }
+    let saved;
     try {
-      const saved = await window.BJJ_API.send("POST", "/api/students", kid);
-      state.roster.push(P.sanitizeRosterKid(saved));
-      $("rosterName").value = "";
-      renderRoster();
-      syncPlanCounts();
-      toast(`${saved.name} is on the roster.`);
+      saved = await post();
     } catch (err) {
-      toast(err.message || "Could not add that student.");
+      if (!(err.status === 409 && err.needsConfirm)) {
+        toast(err.message || "Could not add that student.");
+        return;
+      }
+      if (!window.confirm(err.message)) return;
+      try {
+        saved = await post({ confirmOverCap: true });
+      } catch (err2) {
+        toast(err2.message || "Could not add that student.");
+        return;
+      }
+    }
+    if (saved.kidsEnrollment) state.kidsEnrollment = saved.kidsEnrollment;
+    state.roster.push(P.sanitizeRosterKid(saved));
+    $("rosterName").value = "";
+    renderRoster();
+    paintEnrollment();
+    syncPlanCounts();
+    toast(`${saved.name} is on the roster.`);
+  }
+
+  async function saveKidsCap() {
+    const cap = Number($("kidsCap") && $("kidsCap").value);
+    if (!isAdmin()) {
+      toast("An admin sets the kids class size.");
+      return;
+    }
+    try {
+      state.kidsEnrollment = await window.BJJ_API.send("PUT", "/api/kids-cap", { cap });
+      paintEnrollment();
+      renderHome();
+      toast("Kids class size saved.");
+    } catch (err) {
+      toast(err.message || "Could not save the kids class size.");
     }
   }
 
@@ -3764,9 +3858,16 @@ function sparringSection(plan) {
     return P.sortByRank(state.roster).filter((kid) => state.cardPick[kid.id] !== false);
   }
 
+  function kidQrText(kid) {
+    const path = P.parentQrText(kid && kid.parentToken);
+    if (!path) return P.qrPayload(kid.id);
+    const origin = window.location && window.location.origin ? window.location.origin : "";
+    return origin + path;
+  }
+
   function cardInner(kid, qrSize) {
     const group = groupForAge(kid.age);
-    const src = qrDataUrl(P.qrPayload(kid.id), qrSize);
+    const src = qrDataUrl(kidQrText(kid), qrSize);
     return `<img class="qr" alt="QR code for ${esc(kid.name)}" src="${src}" />
       <div>
         <img class="mini-logo card-logo" src="${esc(LOGO)}" alt="" />
@@ -3792,7 +3893,7 @@ function sparringSection(plan) {
     else if (layout === "signin") {
       const rows = P.sortByRank(state.roster)
         .map((kid) => {
-          const src = qrDataUrl(P.qrPayload(kid.id), 180);
+          const src = qrDataUrl(kidQrText(kid), 180);
           return `<div class="signin-row"><span class="box"></span><div><strong>${esc(kid.name)}</strong><br>${esc(
             P.beltLabel(kid.belt)
           )} · ${esc(stripeText(kid))}</div><img class="qr" alt="" src="${src}" /></div>`;
@@ -3877,6 +3978,13 @@ function sparringSection(plan) {
   }
 
   function resolveScan(id) {
+    const text = String(id || "");
+    if (text.startsWith("parent:")) {
+      const token = text.slice("parent:".length);
+      const linked = state.roster.find((item) => item.parentToken === token);
+      if (!linked) return { type: "unknown", message: "That code is not a Grace card." };
+      return { type: "student", id: linked.id };
+    }
     const kid = state.roster.find((item) => item.id === id);
     if (kid) return { type: "student", id: kid.id };
     const card = state.cards.find((item) => item.code === id);
@@ -4363,18 +4471,26 @@ function sparringSection(plan) {
     return `${names} ${kids.length === 1 ? "is" : "are"} not in this combo class.`;
   }
 
+  function waiverWarning(kids) {
+    const missing = (kids || []).filter((kid) => !kid.waiver || !kid.waiver.signed);
+    if (!missing.length) return "";
+    const names = missing.map((kid) => kid.name).join(", ");
+    return ` ${names} ${missing.length === 1 ? "does" : "do"} not have a signed waiver. Check-in is still saved.`;
+  }
+
   function showScanResult(result) {
     const el = $("checkinStatus");
     if (!el) return;
     const leftOut = outsideSentence(result.outside);
+    const warned = waiverWarning([].concat(result.known || [], result.dup || []));
     if (result.known.length) {
       const names = result.known.map((kid) => kid.name).join(", ");
       const extra = result.dup.length ? ` ${result.dup.map((kid) => kid.name).join(", ")} already checked in.` : "";
-      el.textContent = `${names} ${result.known.length === 1 ? "is" : "are"} here.${extra}${leftOut ? ` ${leftOut}` : ""}`;
+      el.textContent = `${names} ${result.known.length === 1 ? "is" : "are"} here.${extra}${leftOut ? ` ${leftOut}` : ""}${warned}`;
       el.className = "checkin-status ok";
       beep(true);
     } else if (result.dup.length) {
-      el.textContent = `${result.dup.map((kid) => kid.name).join(", ")} already checked in.${leftOut ? ` ${leftOut}` : ""}`;
+      el.textContent = `${result.dup.map((kid) => kid.name).join(", ")} already checked in.${leftOut ? ` ${leftOut}` : ""}${warned}`;
       el.className = "checkin-status dup";
       beep(false);
     } else if (leftOut) {
@@ -4684,6 +4800,7 @@ function sparringSection(plan) {
       onClassField("kidCount");
     });
     $("addKidBtn").addEventListener("click", addKid);
+    if ($("saveKidsCap")) $("saveKidsCap").addEventListener("click", saveKidsCap);
     $("rosterName").addEventListener("keydown", (event) => {
       if (event.key === "Enter") {
         event.preventDefault();
@@ -4717,17 +4834,70 @@ function sparringSection(plan) {
       renderRoster();
       if (state.plan) retimePlan();
     });
+    async function printStaffWaiver(waiverId) {
+      const detail = await window.BJJ_API.send("GET", `/api/waivers/${waiverId}`);
+      const win = window.open("", "_blank", "noopener,noreferrer");
+      if (!win) {
+        toast("Allow pop-ups to print the form.");
+        return;
+      }
+      const injuries = detail.payload && detail.payload.injuries ? detail.payload.injuries : "";
+      win.document.write(
+        `<!DOCTYPE html><title>Signed enrollment</title><body style="font-family:sans-serif;padding:24px">` +
+          `<h1>${esc(detail.participantName || "")}</h1>` +
+          `<p>Signed ${esc(detail.signedOn || "")} by ${esc(detail.signerName || "")}</p>` +
+          (injuries ? `<p>Injuries or medical notes: ${esc(injuries)}</p>` : "") +
+          (detail.signature ? `<img alt="Signature" src="${esc(detail.signature)}" />` : "") +
+          `</body>`
+      );
+      win.document.close();
+      win.focus();
+      win.print();
+    }
+
     $("rosterList").addEventListener("click", async (event) => {
+      const card = event.target.closest(".roster-card");
+      const kid = card && state.roster.find((item) => item.id === card.dataset.id);
+      if (event.target.closest("button[data-roster='waiver']") && kid && kid.waiver && kid.waiver.waiverId) {
+        try {
+          await printStaffWaiver(kid.waiver.waiverId);
+        } catch (err) {
+          toast(err.message || "Could not open that form.");
+        }
+        return;
+      }
+      if (event.target.closest("button[data-roster='token']") && kid) {
+        try {
+          const saved = await window.BJJ_API.send("POST", `/api/students/${kid.id}/parent-token`, {});
+          kid.parentToken = saved.parentToken || "";
+          toast("New parent code saved. Print the card again.");
+          renderRoster();
+        } catch (err) {
+          toast(err.message || "Could not replace the parent code.");
+        }
+        return;
+      }
+      if (event.target.closest("button[data-roster='revoke']") && kid) {
+        try {
+          await window.BJJ_API.send("POST", `/api/students/${kid.id}/parent-token`, { revoke: true });
+          kid.parentToken = "";
+          toast("Parent code turned off.");
+          renderRoster();
+        } catch (err) {
+          toast(err.message || "Could not turn off the parent code.");
+        }
+        return;
+      }
       const btn = event.target.closest("button[data-roster='delete']");
-      if (!btn) return;
+      if (!btn || !card) return;
       if (!isAdmin()) {
         toast("An admin removes students.");
         return;
       }
-      const card = btn.closest(".roster-card");
       const id = card.dataset.id;
       try {
-        await window.BJJ_API.send("DELETE", `/api/students/${id}`);
+        const removed = await window.BJJ_API.send("DELETE", `/api/students/${id}`);
+        if (removed && removed.kidsEnrollment) state.kidsEnrollment = removed.kidsEnrollment;
       } catch (err) {
         toast(err.message || "Could not remove that student.");
         return;
@@ -5535,10 +5705,13 @@ function sparringSection(plan) {
         const data = JSON.parse(raw);
         const progress = { ...(data.progress || {}) };
         delete progress.stripe;
-        await window.BJJ_API.send("POST", "/api/import", {
-          roster: data.roster || [],
-          progress,
-        });
+        const payload = { roster: data.roster || [], progress };
+        try {
+          await window.BJJ_API.send("POST", "/api/import", payload);
+        } catch (err) {
+          if (!(err.status === 409 && err.needsConfirm) || !window.confirm(err.message)) throw err;
+          await window.BJJ_API.send("POST", "/api/import", Object.assign({ confirmOverCap: true }, payload));
+        }
         localStorage.removeItem(IMPORT_KEY);
         await resync();
         toast("Imported the saved roster and attendance.");

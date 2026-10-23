@@ -1,0 +1,25 @@
+{
+  "_edit": "This file is the only place for adult class facts. Leave a field empty rather than guessing. The instructor is Pastor Pierre Rosa, a 4-stripe brown belt. Do not put a martial-arts title in front of the name. Do not change the rank to black or coral. coInstructor.rank is purple belt, confirmed for Rick Herrman. Do not invent any other rank. The public line adds ', ' plus rank only when that string is not empty. Do not draw a belt graphic. schedule.placeholder is used only when days or time is empty.",
+  "instructor": "Pastor Pierre Rosa, brown belt, 4 stripes",
+  "coInstructor": {
+    "name": "Rick Herrman",
+    "rank": "purple belt"
+  },
+  "schedule": {
+    "days": "Tuesdays and Thursdays",
+    "time": "6:30 – ~8:00 PM",
+    "timezone": "PT",
+    "location": "Grace Baptist Church, 4197 State St, Salem, OR 97301",
+    "placeholder": "Adult class schedule coming soon. Email us for details."
+  },
+  "audience": "Ages 11 and up (teens 11–18 and adults). All are welcome, women and men. Beginners are welcome.",
+  "giving": {
+    "heading": "Free, because grace is free.",
+    "lead": "Grace BJJ costs nothing, just like God's grace. Our salvation isn't earned by anything we give (Ephesians 2:8–9), yet we're still called to give cheerfully (2 Corinthians 9:7). We ask that you give what you feel called to give, with ",
+    "minimum": "a suggested minimum of $5 each class",
+    "tail": " if you're able. Every dollar goes toward mat care, equipment, and even helping keep the lights on. The more we receive, the more we're able to do. If you can't give, that's completely fine. You're just as welcome here.",
+    "url": "https://onrealm.org/GBCSalem/-/form/give/BJJ",
+    "linkLabel": "Give online"
+  },
+  "kidsNote": "The kids class meets on the 2nd and 4th Tuesday, 5:30–6:15 PM, right before the Tuesday adult class."
+}

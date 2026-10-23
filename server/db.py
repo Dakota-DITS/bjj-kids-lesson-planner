@@ -115,10 +115,12 @@ def normalize_age_group(value):
 
 
 def age_group_for_age(age):
-    """Map a stored integer age. Birthdates are not stored.
+    """Map a stored integer age onto a kids class.
 
     3–6 is mite (Mighty Mites). 7–10 is upper (Pee Wees).
     Younger than 3 and older than 10 stay outside these two class groups.
+    A date of birth is stored on the student only when a kids enrollment
+    form is linked, so that form is not counted a second time.
     """
     try:
         number = int(age)
@@ -320,7 +322,12 @@ def connect(path):
     conn = sqlite3.connect(path, timeout=10)
     conn.row_factory = sqlite3.Row
     conn.execute("PRAGMA foreign_keys = ON")
-    conn.execute("PRAGMA journal_mode = WAL")
+    # Demo sets MEMORY so SQLite does not create a sibling -wal file next to
+    # the production data directory. Production leaves this unset and stays WAL.
+    journal = os.environ.get("BJJ_SQLITE_JOURNAL", "WAL").upper()
+    if journal not in ("WAL", "DELETE", "TRUNCATE", "MEMORY"):
+        journal = "WAL"
+    conn.execute("PRAGMA journal_mode = " + journal)
     return conn
 
 
@@ -356,7 +363,8 @@ def migrate(conn):
           age INTEGER NOT NULL,
           belt TEXT NOT NULL,
           stripes INTEGER NOT NULL,
-          created_at TEXT NOT NULL
+          created_at TEXT NOT NULL,
+          dob TEXT NOT NULL DEFAULT ''
         );
         CREATE TABLE IF NOT EXISTS classes (
           id TEXT PRIMARY KEY,
@@ -431,6 +439,36 @@ def migrate(conn):
           created_by TEXT NOT NULL DEFAULT '',
           created_at TEXT NOT NULL
         );
+        CREATE TABLE IF NOT EXISTS waivers (
+          id TEXT PRIMARY KEY,
+          kind TEXT NOT NULL CHECK(kind IN ('adult', 'kids')),
+          submitted_at TEXT NOT NULL,
+          signed_on TEXT NOT NULL,
+          participant_name TEXT NOT NULL,
+          signer_name TEXT NOT NULL,
+          dob TEXT NOT NULL,
+          email TEXT NOT NULL,
+          phone TEXT NOT NULL,
+          payload_json TEXT NOT NULL,
+          signature_png TEXT NOT NULL,
+          parent_signature_png TEXT NOT NULL DEFAULT '',
+          added_to_roster INTEGER NOT NULL DEFAULT 0,
+          roster_student_id TEXT NOT NULL DEFAULT ''
+        );
+        CREATE TABLE IF NOT EXISTS waitlist (
+          id TEXT PRIMARY KEY,
+          created_at TEXT NOT NULL,
+          parent_name TEXT NOT NULL,
+          email TEXT NOT NULL,
+          phone TEXT NOT NULL,
+          child_name TEXT NOT NULL,
+          child_age INTEGER NOT NULL,
+          dob TEXT NOT NULL DEFAULT '',
+          age_group TEXT NOT NULL CHECK(age_group IN ('mite', 'upper')),
+          note TEXT NOT NULL DEFAULT '',
+          status TEXT NOT NULL DEFAULT 'waiting' CHECK(status IN ('waiting', 'contacted', 'enrolled', 'removed'))
+        );
+        CREATE INDEX IF NOT EXISTS waitlist_created_idx ON waitlist(created_at, id);
         """
     )
     # Live databases created before this column keep their rows. DEFAULT 0
@@ -440,6 +478,34 @@ def migrate(conn):
     if "must_change_password" not in columns:
         conn.execute("ALTER TABLE users ADD COLUMN must_change_password INTEGER NOT NULL DEFAULT 0")
     conn.execute("UPDATE users SET must_change_password = 0 WHERE must_change_password IS NULL")
+    student_columns = {row[1] for row in conn.execute("PRAGMA table_info(students)")}
+    if "dob" not in student_columns:
+        conn.execute("ALTER TABLE students ADD COLUMN dob TEXT NOT NULL DEFAULT ''")
+    waiver_columns = {row[1] for row in conn.execute("PRAGMA table_info(waivers)")}
+    if "added_to_roster" not in waiver_columns:
+        conn.execute("ALTER TABLE waivers ADD COLUMN added_to_roster INTEGER NOT NULL DEFAULT 0")
+    if "roster_student_id" not in waiver_columns:
+        conn.execute("ALTER TABLE waivers ADD COLUMN roster_student_id TEXT NOT NULL DEFAULT ''")
+    student_columns = {row[1] for row in conn.execute("PRAGMA table_info(students)")}
+    if "parent_token" not in student_columns:
+        conn.execute("ALTER TABLE students ADD COLUMN parent_token TEXT NOT NULL DEFAULT ''")
+    conn.execute(
+        """
+        CREATE UNIQUE INDEX IF NOT EXISTS students_parent_token_idx
+        ON students(parent_token) WHERE parent_token != ''
+        """
+    )
+    missing_tokens = conn.execute(
+        "SELECT id FROM students WHERE parent_token IS NULL OR parent_token = ''"
+    ).fetchall()
+    for row in missing_tokens:
+        for _ in range(5):
+            token = secrets.token_urlsafe(24)
+            taken = conn.execute("SELECT 1 FROM students WHERE parent_token = ?", (token,)).fetchone()
+            if taken:
+                continue
+            conn.execute("UPDATE students SET parent_token = ? WHERE id = ?", (token, row["id"]))
+            break
     migrate_age_groups(conn)
     conn.commit()
 

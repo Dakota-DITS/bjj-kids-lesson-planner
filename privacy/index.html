@@ -1,0 +1,153 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="bjj-base" content="">
+  <script src="/bjj-base.js?v=20261022-36"></script>
+  <meta name="robots" content="noindex, nofollow, noarchive, nosnippet">
+  <meta name="googlebot" content="noindex, nofollow">
+  <title>Privacy Policy · Grace BJJ</title>
+  <meta name="description" content="How Grace BJJ and Grace BJJ Kids handle information at Grace Baptist Church in Salem." />
+  <link rel="icon" href="/icons/favicon-32.png" type="image/png" sizes="32x32" />
+  <link rel="stylesheet" href="/css/waiver.css?v=20261022-36" />
+</head>
+<body>
+  <a class="skip" href="#main">Skip to content</a>
+  <header class="top">
+    <a href="/">Grace BJJ</a>
+    <a href="/kids/">Grace BJJ Kids</a>
+  </header>
+  <main class="sheet" id="main">
+    <img class="logo" src="/img/logo/grace-logo-mark-transparent.png" alt="Grace Jiu Jitsu" />
+    <h1>Privacy Policy</h1>
+    <p class="lede">Effective date: October 23, 2026</p>
+    <p>This page describes what this website actually does with information. It is written from the way the site is built.</p>
+
+    <section>
+      <h2>Who we are</h2>
+      <p>Grace BJJ and Grace BJJ Kids meet at Grace Baptist Church, 4197 State St, Salem, OR 97301. The adult class is for ages 11 and up. The kids class is a separate page on this same site.</p>
+      <p>Questions about this policy: <a href="mailto:dits%2Bbjj@mail.grokbot.com?subject=Grace%20BJJ%20privacy">dits+bjj@mail.grokbot.com</a></p>
+    </section>
+
+    <section>
+      <h2>What we collect and why</h2>
+      <p>Looking around the public pages does not create an account. We do not run ads, and we do not use an analytics product.</p>
+
+      <h3>Coloring sheets</h3>
+      <p>The coloring page lets someone type a child's name so it shows on a sheet they print at home. That name stays in the browser for the printout. It is not sent to our server.</p>
+
+      <h3>Giving</h3>
+      <p>The “Give online” button leaves this site and opens Realm, the church giving form. This site does not take card numbers or other payments. Realm, a service of ACS Technologies, handles the gift. Their privacy policy is at <a href="https://help.acst.com/en/trust-center/policies/privacy-policy" target="_blank" rel="noopener noreferrer">help.acst.com</a>.</p>
+
+      <h3>Email and maps</h3>
+      <p>The contact link opens your own email program. We do not run a message form on this site. The directions button opens Google Maps with the church address. We do not send your home address with that link.</p>
+
+      <h3>Class calendar file</h3>
+      <p>The kids calendar download is the class schedule. It does not include student names.</p>
+
+      <h3>Staff logins</h3>
+      <p>Teachers and admins sign in. There is no public sign-up. We store a username, a one-way hash of the password (not the password itself), and whether the person is an admin or a teacher.</p>
+      <p>After a successful sign-in, the browser keeps a cookie named <code>bjj_session</code> for 14 days. The cookie is HttpOnly and SameSite=Lax. In the server's normal setup it is also marked Secure, so the browser sends it only over HTTPS. The staff app also keeps a short-lived security token in memory so a save can be checked. A one-time sign-in token on the server expires after 10 minutes.</p>
+      <p>A failed sign-in stores the network address and the time, so repeated tries can be slowed down. Those rows are deleted after 2 hours.</p>
+
+      <h3>Roster, check-in, notes, and lesson plans</h3>
+      <p>For students on the roster we store a name, an age as a number, a belt, and stripes. When a kids enrollment form is linked to a student so the same child is not counted twice, we also store that child's date of birth on the roster. We also store which classes they attended, technique progress, and an optional note of up to 800 characters.</p>
+      <p>Check-in cards for a student on the roster use a web address. The long code is only in the part of the address after the # sign, so the server log stores the page address and not the code. The code is not the child's name. A parent who opens it enters the child's birth month and day before the page shows anything further. Staff can replace or turn off that code. A blank card that is not linked to a student yet is an id and a checksum. It is not a web address and it is not the child's name.</p>
+      <p>Lesson plans store the class date, age group, what is planned, and which staff names are on the plan. The staff list stores a name, belt, stripes, and whether that person has a login.</p>
+      <p>An admin can mark a class day as skipped or added and can type a short reason.</p>
+      <p>A staff phone or computer may still hold an older copy of the roster in the browser from before the server existed. Importing that copy sends it to the server. The browser can also keep coloring-sheet pictures a teacher uploaded on that device.</p>
+
+      <h3>Enrollment and waiver forms</h3>
+      <p>The adult form at <a href="/waiver/">/waiver/</a> and the kids form at <a href="/kids/waiver/">/kids/waiver/</a> can be read, printed, and submitted. A submission is saved on this server.</p>
+      <p>The adult form stores the student's name, address, email, phone, date of birth, goals, emergency contact name and phone, the typed name, the printed name, and a picture of the drawn signature. If the date of birth is under 18, it also stores the parent or guardian's name and signature.</p>
+      <p>The kids form stores the child's name and date of birth, the parent or guardian's name, address, email, phone, emergency contact name and phone, any injury or medical notes, goals, the typed name, the printed name, and a picture of the drawn signature. A parent or guardian fills out that form.</p>
+      <p>A logged-in teacher or admin can open one saved form, including the signature and any medical notes, from that student's roster card. The full list of forms and the spreadsheet export are limited to an admin. A visitor who is not logged in cannot open them. An admin can mark a kids form as already on the roster. The server may remember a network address in memory for about an hour to limit repeated tries. That list is not written into the database.</p>
+      <p>A kids form is attached to a roster student when it is sent from that child's card link and the birth month and day match the date of birth on the roster. A form sent without that card link is saved and is not attached by name. An admin can attach it by hand. An adult form is saved with an adult roster row. If that person is not on the roster yet, the server adds a row with the name, an age from the date of birth, a white belt with no stripes as the empty rank the roster requires, and a card code. Students 18 and older are not part of the kids class size.</p>
+      <p>The kids class has a size limit. It counts students ages 3–10 already on the roster, plus kids forms that are not yet on the roster. The same child is not counted twice when the name and date of birth match, or when an admin has marked the form as added. The adult class has no size limit. An admin can change the kids class size. The number starts at 12.</p>
+
+      <h3>Kids waitlist</h3>
+      <p>Joining the kids waitlist is turned off. The form does not send anything, and the server refuses it. We are not storing waitlist entries today.</p>
+      <p>If it is turned on later, it is offered only when the kids class is full. It would store the parent or guardian's name, email, and phone, the child's first name, the child's age or date of birth, the age group (3–6 or 7–10), an optional note, the time they joined, and a status an admin sets, such as contacted, enrolled, or removed. The age group comes from the age or date of birth. The parent or guardian sees that group and confirms it before the form is saved.</p>
+      <p>There are two lists, one for ages 3–6 and one for ages 7–10. Each list is in the order families joined, with its own place in line. The kids class size is still one number for both groups together. That list is visible to an admin only. A teacher login cannot open the list or its spreadsheet. The site does not email or text anyone on the waitlist, and it does not assign an open spot to a family. An admin uses the stored phone number or email themselves, and only if they choose to reach out about an opening. When a spot is open, the staff screen names the next family in each age group so an admin can choose which group to fill. It does not list every waiting family on the planner. An admin can mark a family as contacted, mark them enrolled (which takes them off the active list), or remove them. The software does not delete waitlist rows on a schedule. The admin backup includes the waitlist. An admin can also see both age groups together, in the order families joined, or one age group at a time. A family’s place in line stays the place in their own age group. The spreadsheet follows that choice: everyone, with the age group and that place in line, or only the age group on screen.</p>
+
+      <h3>Practice video</h3>
+      <p>The kids page shows a still picture from YouTube (<code>i.ytimg.com</code>). If someone presses play, the video loads from <code>youtube-nocookie.com</code>. Google may learn that the video was played. We do not send roster or form information with it. Google's privacy policy is at <a href="https://policies.google.com/privacy" target="_blank" rel="noopener noreferrer">policies.google.com/privacy</a>.</p>
+    </section>
+
+    <section>
+      <h2>Children's information</h2>
+      <p>We do not knowingly collect information directly from children under 13. A child is not asked to make an account or to send a form to our server.</p>
+      <p>A parent or guardian fills out the kids enrollment form. A parent can also open the child's class card, enter the birth month and day, and see the progress and waiver status described below. A child is not asked to send the form or to make an account. If the waitlist is turned on and the class is full, a parent or guardian would also fill out that short form. Staff enter a student's name and age on the roster. If an enrollment form is linked to the roster, the date of birth from the form is stored with the student. The name on a coloring sheet is typed for printing and stays on that device.</p>
+    </section>
+
+    <section>
+      <h2>Who can see it</h2>
+      <p>Public pages do not show the roster, staff notes, or who is on the waitlist. The class card page shows one child's first name, age group, belt and stripes, progress, and waiver status, and only after the birth month and day match. It does not show medical notes, the birthday, other students, the roster, the waitlist, or staff notes. The kids page shows how many spots are open. That is a count, not a list of names. When the kids class is full, the kids form says so and does not take a new child. A parent finishing the form from their child's card can still submit for that child. If the waitlist is turned on at the same time, the form offers a place on the waitlist instead of only an email address.</p>
+      <h3>Parent card page</h3>
+      <p>A parent can open the card address to see that one child's first name, age group, belt and stripes, how many techniques and classes are checked off, recent class dates when attendance is recorded, and whether the enrollment form is signed. If it is signed, the page shows the date, the signer's name, and a way to view or print that signed form. The print copy shows the participant name, the signer, the date, and the signature. It does not show injury or medical notes, the date of birth, the address, email, phone, or emergency contact. If it is not signed, the page links to the enrollment form.</p>
+      <p>The birth month and day are checked against the roster and are not stored as a new database row. Wrong tries are counted in memory for about an hour and are not written into the database. After a match, the browser keeps a cookie named <code>bjj_parent</code> for about 2 hours so the signed form can be opened. That cookie is HttpOnly and SameSite=Lax. It is a short-lived key, not the card code. The page is marked so search engines should not index it, and the personal response is marked so it is not cached. Staff can replace or turn off the card code, which also ends those keys.</p>
+      <p>A logged-in teacher can see and update the roster (name, age, belt, stripes, and a date of birth when one is stored), attendance, technique progress, notes, lesson plans, check-in cards, and the staff list, including login names tied to staff profiles. A teacher can open one signed enrollment form from the roster, including the signature and medical notes, and can replace or turn off that student's card code. A teacher can also download a roster spreadsheet and an attendance spreadsheet. The spreadsheet is name, age, belt, and stripes. A teacher can see how many kids are enrolled and cannot change the class size. A teacher cannot open the full enrollment list, its spreadsheet, or the waitlist.</p>
+      <p>An admin can do what a teacher can do, and can also add or remove students, set the kids class size, manage logins and passwords, edit the class calendar, publish coloring sheets, download a full backup, and open the full list of enrollment forms and their signature pictures. If the waitlist is turned on, an admin can open it and its spreadsheet. Removing a student also removes that student's notes and technique progress and retires their check-in card. A kids form that was linked to that student counts as not yet on the roster again. The date of birth, when stored, is included in the admin backup. The backup also includes waitlist rows once any exist.</p>
+      <p>Teachers cannot open the full enrollment list or the waitlist.</p>
+    </section>
+
+    <section>
+      <h2>We never sell or share information for marketing</h2>
+      <p>This site does not sell personal information. It does not send the roster, notes, or forms to an advertising or marketing service. The only people who see class records through the site are the staff logins described above.</p>
+    </section>
+
+    <section>
+      <h2>Third parties we actually use</h2>
+      <ul>
+        <li>Realm (ACS Technologies), only if you follow the giving link. We do not receive the payment.</li>
+        <li>YouTube and Google, only for the kids practice video and its preview picture.</li>
+        <li>Google Maps, only if you choose the directions link. The link contains the church address.</li>
+      </ul>
+      <p>Fonts on this site are files we host ourselves. We do not load a font service or an analytics service. Public pages may be cached by the edge network named in the server notes (Cloudflare). That cache is for pages and pictures. Staff pages are marked so they are not stored in that shared cache.</p>
+    </section>
+
+    <section>
+      <h2>Cookies and storage on your device</h2>
+      <ul>
+        <li>The staff session cookie, only after someone signs in.</li>
+        <li>The parent card cookie, for about 2 hours, only after the birth month and day match. It is not a tracking cookie.</li>
+        <li>A yes-or-no flag if you dismiss the “add to home screen” banner.</li>
+        <li>On a staff device, an older roster copy and pictures of uploaded coloring sheets, as described above.</li>
+        <li>A copy of public pages stored by the browser so the site can open if the network is briefly down. Staff pages are not put in that shared copy.</li>
+      </ul>
+      <p>The public pages do not set a tracking cookie. The parent card page sets only the short-lived cookie described above.</p>
+    </section>
+
+    <section>
+      <h2>How it's protected</h2>
+      <p>Passwords are stored as a hash. Staff pages and staff files require a login. One saved enrollment form can be opened by a logged-in teacher or admin. The full list is limited to admins. The parent card page shows only the fields described above, and only after the birth month and day match. The database file is not published as a web page. The API log records the visitor address and the request path. The card code is not part of that path. The log does not write form answers, the birth month, or the birth day.</p>
+      <p>The database file itself is not encrypted by this software.</p>
+    </section>
+
+    <section>
+      <h2>Retention</h2>
+      <p>Staff sessions are removed after they expire (14 days). One-time sign-in tokens expire after 10 minutes. Sign-in attempt addresses are deleted after 2 hours.</p>
+      <p>We keep signed enrollment and waiver forms for as long as the student is active in the program, and for [Dakota to confirm: period after the student stops attending] after that. We keep waitlist entries until the family is enrolled, asks to be removed, or [Dakota to confirm: waitlist cleanup period]. The software does not delete enrollment forms or waitlist entries on a schedule. An admin can take a waitlist family off the active list.</p>
+      <p>Roster records, notes, attendance, lesson plans, and staff accounts stay until someone with access removes them. The software does not delete them on a schedule.</p>
+    </section>
+
+    <section>
+      <h2>Your choices</h2>
+      <p>There is no button on the public site to download or delete your own record. An admin can remove a student from the roster.</p>
+      <p>To ask a question, or to ask to see, correct, or delete information, email <a href="mailto:dits%2Bbjj@mail.grokbot.com?subject=Grace%20BJJ%20privacy">dits+bjj@mail.grokbot.com</a>. Only the parent or guardian who signed the enrollment and waiver form (or the adult student who signed their own form) can ask us to view, correct, or delete that information. Email <a href="mailto:dits%2Bbjj@mail.grokbot.com?subject=Grace%20BJJ%20privacy">dits+bjj@mail.grokbot.com</a> from the address on the form, and we may ask you to confirm who you are before making changes. For a waitlist entry, the parent who submitted the entry can ask us to view, correct, or delete that information.</p>
+    </section>
+
+    <section>
+      <h2>Changes</h2>
+      <p>If this page changes, the text on this page is the current policy. If we change this policy, we'll update the date at the top of this page and let families know at the next class.</p>
+    </section>
+
+    <section>
+      <h2>Contact</h2>
+      <p>Grace BJJ · Grace Baptist Church, 4197 State St, Salem, OR 97301</p>
+      <p><a href="mailto:dits%2Bbjj@mail.grokbot.com?subject=Grace%20BJJ%20privacy">dits+bjj@mail.grokbot.com</a></p>
+    </section>
+  </main>
+</body>
+</html>
