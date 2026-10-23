@@ -19,7 +19,7 @@ assert.ok(page.includes('name="robots" content="noindex, nofollow, noarchive, no
 assert.ok(page.includes('name="googlebot" content="noindex, nofollow"'));
 assert.ok(page.includes('content="no-store"'));
 assert.ok(page.includes('name="bjj-base" content=""'));
-assert.ok(page.includes('src="/bjj-base.js?v=20261023-48"'));
+assert.ok(page.includes('src="/bjj-base.js?v=20261023-49"'));
 assert.ok(page.includes("Birth month"));
 assert.ok(page.includes("Birth day"));
 assert.ok(page.includes("View / print my signed waiver"));

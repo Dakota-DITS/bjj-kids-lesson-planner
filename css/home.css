@@ -33,14 +33,18 @@ a:hover { text-decoration: none; }
 .wrap { width: min(980px, calc(100% - 32px)); margin: 0 auto; }
 
 .hero { padding: 36px 0 12px; }
-.hero h1 {
-  margin: 12px 0 8px;
-  font-size: clamp(2.2rem, 6vw, 3.4rem);
-  font-weight: 700;
-  letter-spacing: -0.02em;
-  line-height: 1.05;
+.hero h1.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
 }
-.lede { margin: 0; max-width: 38rem; font-size: 1.2rem; color: var(--muted); }
+.lede { margin: 16px 0 0; max-width: 38rem; font-size: 1.2rem; color: var(--muted); }
 .hero .mark { width: min(220px, 58vw); }
 
 section { padding: 22px 0; }
