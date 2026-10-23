@@ -44,6 +44,11 @@ html {
   width: auto;
 }
 
+/* The kids lockup stacks KIDS under the mark, so the same 36px height
+   makes that word too small. A slightly taller image keeps it readable
+   without turning the bar into a second row. */
+.top .brand.kids-brand img { height: 58px; }
+
 .top .kids-pill {
   display: inline-flex;
   align-items: center;
@@ -152,6 +157,7 @@ html {
   .top-bar { width: min(980px, calc(100% - 16px)); }
   .top .brand { margin-right: auto; }
   .top .brand img { height: 32px; }
+  .top .brand.kids-brand img { height: 52px; }
   .top .site-nav { margin-left: 0; }
   .top .kids-pill {
     min-height: 44px;
