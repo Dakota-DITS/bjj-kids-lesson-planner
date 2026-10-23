@@ -4,12 +4,12 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <meta name="bjj-base" content="">
-  <script src="/bjj-base.js?v=20261023-45"></script>
+  <script src="/bjj-base.js?v=20261023-46"></script>
   <meta name="robots" content="noindex, nofollow, noarchive, nosnippet">
   <meta name="googlebot" content="noindex, nofollow">
-  <title>Enrollment forms · Grace BJJ Staff</title>
+  <title>Enrollment review · Grace BJJ Staff</title>
   <link rel="icon" href="/icons/staff-favicon-32.png" type="image/png" sizes="32x32" />
-  <script src="/pwa.js?v=20261023-45" defer></script>
+  <script src="/pwa.js?v=20261023-46" defer></script>
   <style>
     :root { color-scheme: dark; }
     body {
@@ -22,10 +22,13 @@
     }
     main { width: min(880px, calc(100% - 32px)); margin: 24px auto 48px; }
     a { color: #ffd7cc; }
-    h1 { font-size: 1.6rem; }
+    h1 { font-size: 1.6rem; margin-bottom: 8px; }
+    h2 { font-size: 1.35rem; margin: 28px 0 8px; }
+    h3 { font-size: 1.15rem; margin: 0 0 8px; }
     button, .button {
       display: inline-flex;
       align-items: center;
+      justify-content: center;
       min-height: 44px;
       padding: 0 14px;
       border-radius: 999px;
@@ -35,43 +38,394 @@
       font: inherit;
       font-weight: 700;
       text-decoration: none;
+      cursor: pointer;
     }
     .ghost { background: transparent; color: #f5f0e8; border: 2px solid #a8a29e; }
-    ul { list-style: none; padding: 0; }
-    li { margin: 0 0 10px; }
+    button[disabled] { opacity: 0.55; cursor: default; }
+    ul { list-style: none; padding: 0; margin: 0; }
+    li { margin: 0 0 12px; }
     .card {
       background: #292524;
       border: 1px solid #a8a29e;
       border-radius: 12px;
       padding: 14px;
     }
+    .card p { margin: 0 0 8px; }
+    .row { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+    .meta { color: #e7e5e4; }
+    .hint { color: #d6d3d1; }
+    .warn {
+      background: #44403c;
+      border: 2px solid #f5f0e8;
+      border-radius: 12px;
+      padding: 12px;
+      margin: 8px 0;
+    }
+    .staff-only {
+      background: #1c1917;
+      border-radius: 8px;
+      padding: 8px 10px;
+    }
+    label.pick {
+      display: flex;
+      gap: 10px;
+      align-items: flex-start;
+      min-height: 44px;
+      padding: 8px 0;
+      cursor: pointer;
+    }
+    input[type="radio"] { width: 1.25rem; height: 1.25rem; margin-top: 2px; }
+    input[type="search"], input[type="text"] {
+      width: 100%;
+      min-height: 44px;
+      box-sizing: border-box;
+      border-radius: 10px;
+      border: 2px solid #a8a29e;
+      background: #1c1917;
+      color: #f5f0e8;
+      font: inherit;
+      padding: 8px 12px;
+    }
+    .search-hit {
+      display: block;
+      width: 100%;
+      text-align: left;
+      border-radius: 10px;
+      margin-top: 6px;
+    }
     img.sig { width: min(420px, 100%); background: #fff; border-radius: 8px; }
-    .row { display: flex; flex-wrap: wrap; gap: 8px; }
-    button:focus-visible, a:focus-visible { outline: 3px solid #fff7ed; outline-offset: 2px; }
+    button:focus-visible, a:focus-visible, input:focus-visible {
+      outline: 3px solid #fff7ed;
+      outline-offset: 2px;
+    }
+    @media (max-width: 640px) {
+      .row button, .row .button { width: 100%; }
+    }
   </style>
 </head>
 <body>
   <main>
     <p><a href="/app/">Back to staff</a></p>
-    <h1>Enrollment forms</h1>
-    <p id="status">Checking the login…</p>
+    <h1>Enrollment review</h1>
+    <p>Kids and adults stay in separate lists. A form is not linked until you match it or add the student.</p>
+    <p id="status" role="status">Checking the login…</p>
     <div id="tools" hidden class="row">
       <a class="button" href="/api/waivers.csv">Download CSV</a>
     </div>
-    <ul id="list"></ul>
+    <section id="kidsSection" hidden>
+      <h2>Kids</h2>
+      <p id="kidsCap" class="hint"></p>
+      <ul id="kidsList"></ul>
+    </section>
+    <section id="adultsSection" hidden>
+      <h2>Adults</h2>
+      <ul id="adultsList"></ul>
+    </section>
     <article id="detail" class="card" hidden></article>
   </main>
   <script>
     const status = document.getElementById("status");
-    const list = document.getElementById("list");
     const detail = document.getElementById("detail");
     let csrf = "";
+    let roster = { kids: [], adults: [] };
 
     function text(value) {
-      return String(value || "");
+      return String(value == null ? "" : value);
     }
 
-    async function show(id) {
+    function line(parent, value) {
+      const p = document.createElement("p");
+      p.textContent = value;
+      parent.append(p);
+      return p;
+    }
+
+    function waiting(forms) {
+      return (forms || []).filter((form) => !form.linked);
+    }
+
+    function linkedForms(forms) {
+      return (forms || []).filter((form) => form.linked);
+    }
+
+    async function post(path, body) {
+      const res = await fetch(path, {
+        method: "POST",
+        credentials: "same-origin",
+        headers: { "Content-Type": "application/json", "X-CSRF-Token": csrf },
+        body: JSON.stringify(body || {}),
+      });
+      const payload = await res.json().catch(() => ({}));
+      return { res, payload };
+    }
+
+    function selectedId(card) {
+      const picked = card.querySelector("input[type=radio]:checked");
+      return picked ? picked.value : "";
+    }
+
+    function renderSuggestion(form, suggestion) {
+      const label = document.createElement("label");
+      label.className = "pick";
+      const input = document.createElement("input");
+      input.type = "radio";
+      input.name = "pick-" + form.id;
+      input.value = suggestion.studentId;
+      if (form.preselectId && form.preselectId === suggestion.studentId) input.checked = true;
+      const span = document.createElement("span");
+      const bits = [suggestion.name, "age " + text(suggestion.age)];
+      if (suggestion.dob) bits.push("born " + suggestion.dob);
+      if (suggestion.reasons && suggestion.reasons.length) bits.push(suggestion.reasons.join(", "));
+      if (suggestion.exact) bits.push("exact");
+      span.textContent = bits.join(" · ");
+      label.append(input, span);
+      return label;
+    }
+
+    function renderSearch(form, card, program) {
+      const search = document.createElement("input");
+      search.type = "search";
+      search.placeholder = "Search the roster";
+      search.setAttribute("aria-label", "Search the " + program + " roster");
+      const hits = document.createElement("div");
+      search.addEventListener("input", () => {
+        hits.textContent = "";
+        const query = search.value.trim().toLowerCase();
+        if (query.length < 2) return;
+        const rows = (roster[program] || []).filter((student) => {
+          const hay = [student.name, student.parentName, student.email, student.phone, student.dob].join(" ").toLowerCase();
+          return hay.includes(query);
+        }).slice(0, 8);
+        rows.forEach((student) => {
+          const btn = document.createElement("button");
+          btn.type = "button";
+          btn.className = "ghost search-hit";
+          btn.textContent = student.name + " · age " + text(student.age) + (student.dob ? " · born " + student.dob : "");
+          btn.addEventListener("click", () => {
+            let radio = card.querySelector('input[value="' + student.id + '"]');
+            if (!radio) {
+              const label = renderSuggestion(form, {
+                studentId: student.id,
+                name: student.name,
+                age: student.age,
+                dob: student.dob,
+                reasons: ["Roster search"],
+                exact: false,
+              });
+              radio = label.querySelector("input");
+              card.querySelector(".suggestions").append(label);
+            }
+            radio.checked = true;
+            syncMatch(card);
+          });
+          hits.append(btn);
+        });
+        if (!rows.length) line(hits, "No roster name matches that search.");
+      });
+      return [search, hits];
+    }
+
+    function syncMatch(card) {
+      const match = card.querySelector("[data-act=match]");
+      if (match) match.disabled = !selectedId(card);
+    }
+
+    function renderForm(form, program) {
+      const li = document.createElement("li");
+      const card = document.createElement("article");
+      card.className = "card";
+      card.dataset.waiver = form.id;
+      const title = document.createElement("h3");
+      title.textContent = text(form.participantName);
+      card.append(title);
+      const facts = [
+        "Signed " + text(form.signedOn),
+        "Born " + text(form.dob),
+        form.ageGroupLabel ? text(form.ageGroupLabel) : "Age " + text(form.age),
+      ];
+      if (form.parentName) facts.push("Parent or guardian " + form.parentName);
+      facts.push("Email " + text(form.email));
+      facts.push("Phone " + text(form.phone));
+      if (form.emergencyName) facts.push("Emergency " + form.emergencyName + " " + text(form.emergencyPhone));
+      facts.forEach((fact) => {
+        const p = document.createElement("p");
+        p.className = "meta";
+        p.textContent = fact;
+        card.append(p);
+      });
+      if (form.injuries) {
+        const note = document.createElement("p");
+        note.className = "staff-only";
+        note.textContent = "Medical notes, staff only: " + form.injuries;
+        card.append(note);
+      }
+      if (form.linked) {
+        line(card, "Linked to " + text(form.rosterStudentName) + ". Unlink if this is the wrong student.");
+      } else if (form.preselectId) {
+        const note = document.createElement("p");
+        note.className = "hint";
+        note.textContent = "Exact match selected. It is not saved until you match.";
+        card.append(note);
+      } else if (form.addedToRoster) {
+        line(card, "This form was marked on the roster without a student.");
+      }
+
+      const suggestions = document.createElement("div");
+      suggestions.className = "suggestions";
+      const suggestTitle = document.createElement("p");
+      suggestTitle.textContent = form.suggestions && form.suggestions.length ? "Suggested matches" : "No suggested matches.";
+      suggestions.append(suggestTitle);
+      (form.suggestions || []).forEach((suggestion) => suggestions.append(renderSuggestion(form, suggestion)));
+      card.append(suggestions);
+      renderSearch(form, card, program).forEach((node) => card.append(node));
+
+      const actions = document.createElement("div");
+      actions.className = "row";
+      const match = document.createElement("button");
+      match.type = "button";
+      match.dataset.act = "match";
+      match.textContent = "Match to existing student";
+      match.disabled = !form.preselectId;
+      match.addEventListener("click", () => saveMatch(form, card, match));
+      const add = document.createElement("button");
+      add.type = "button";
+      add.className = "ghost";
+      add.dataset.act = "add";
+      add.textContent = "Add to roster";
+      add.hidden = !!form.linked;
+      add.addEventListener("click", () => saveAdd(form, card, add, false));
+      const view = document.createElement("button");
+      view.type = "button";
+      view.className = "ghost";
+      view.textContent = "View form";
+      view.addEventListener("click", () => showDetail(form.id));
+      actions.append(match, add, view);
+      if (form.linked) {
+        const unlink = document.createElement("button");
+        unlink.type = "button";
+        unlink.className = "ghost";
+        unlink.textContent = "Unlink";
+        unlink.addEventListener("click", () => saveUnlink(form, unlink));
+        actions.append(unlink);
+      }
+      card.append(actions);
+      const notice = document.createElement("p");
+      notice.className = "warn";
+      notice.hidden = true;
+      card.append(notice);
+      card.addEventListener("change", () => syncMatch(card));
+      li.append(card);
+      return li;
+    }
+
+    function renderProgram(list, forms, program) {
+      list.textContent = "";
+      const open = waiting(forms);
+      const done = linkedForms(forms);
+      if (!open.length) {
+        const li = document.createElement("li");
+        li.textContent = program === "kids" ? "No kids forms are waiting for review." : "No adult forms are waiting for review.";
+        list.append(li);
+      }
+      open.forEach((form) => list.append(renderForm(form, program)));
+      if (done.length) {
+        const li = document.createElement("li");
+        const heading = document.createElement("h3");
+        heading.textContent = "Linked";
+        li.append(heading);
+        list.append(li);
+        done.forEach((form) => list.append(renderForm(form, program)));
+      }
+    }
+
+    async function loadReview() {
+      const res = await fetch("/api/enrollment-review", { credentials: "same-origin" });
+      const body = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        status.textContent = body.error || "The list could not be loaded.";
+        return;
+      }
+      roster = body.roster || { kids: [], adults: [] };
+      document.getElementById("tools").hidden = false;
+      document.getElementById("kidsSection").hidden = false;
+      document.getElementById("adultsSection").hidden = false;
+      const kids = body.kids || [];
+      const adults = body.adults || [];
+      const cap = body.kidsEnrollment || {};
+      const capLine = document.getElementById("kidsCap");
+      const enrolled = text(cap.enrolled);
+      const size = text(cap.cap);
+      capLine.textContent = cap.full
+        ? "The kids class is full (" + enrolled + " of " + size + "). Adding a new child asks you to confirm. The waitlist is off."
+        : enrolled + " of " + size + " kids spots are filled. The waitlist is off.";
+      renderProgram(document.getElementById("kidsList"), kids, "kids");
+      renderProgram(document.getElementById("adultsList"), adults, "adults");
+      const waitingCount = waiting(kids).length + waiting(adults).length;
+      status.textContent = waitingCount
+        ? waitingCount + " form" + (waitingCount === 1 ? "" : "s") + " waiting for review."
+        : "No forms are waiting for review.";
+    }
+
+    async function saveMatch(form, card, button) {
+      const studentId = selectedId(card);
+      if (!studentId) {
+        status.textContent = "Choose a student first.";
+        return;
+      }
+      button.disabled = true;
+      const { res, payload } = await post("/api/waivers/" + encodeURIComponent(form.id) + "/match", { studentId });
+      if (!res.ok) {
+        button.disabled = false;
+        status.textContent = payload.error || "Could not match that form.";
+        return;
+      }
+      status.textContent = form.participantName + " is linked. Their waiver is on that student's card.";
+      await loadReview();
+    }
+
+    async function saveAdd(form, card, button, confirm) {
+      button.disabled = true;
+      const { res, payload } = await post("/api/waivers/" + encodeURIComponent(form.id) + "/add", {
+        confirmOverCap: confirm === true,
+      });
+      if (res.status === 409 && payload.needsConfirm) {
+        button.disabled = false;
+        const notice = card.querySelector(".warn");
+        notice.hidden = false;
+        notice.textContent = payload.error || "The kids class is full.";
+        let anyway = notice.querySelector("button");
+        if (!anyway) {
+          anyway = document.createElement("button");
+          anyway.type = "button";
+          anyway.textContent = "Add to roster anyway";
+          anyway.addEventListener("click", () => saveAdd(form, card, anyway, true));
+          notice.append(document.createElement("br"), anyway);
+        }
+        status.textContent = payload.error || "The kids class is full.";
+        return;
+      }
+      if (!res.ok) {
+        button.disabled = false;
+        status.textContent = payload.error || "Could not add that student.";
+        return;
+      }
+      status.textContent = text(payload.name) + " is on the roster and this form is their waiver.";
+      await loadReview();
+    }
+
+    async function saveUnlink(form, button) {
+      button.disabled = true;
+      const { res, payload } = await post("/api/waivers/" + encodeURIComponent(form.id) + "/unlink", {});
+      if (!res.ok) {
+        button.disabled = false;
+        status.textContent = payload.error || "Could not unlink that form.";
+        return;
+      }
+      status.textContent = form.participantName + " is unlinked. Match again if you pick someone else.";
+      await loadReview();
+    }
+
+    async function showDetail(id) {
       const res = await fetch("/api/waivers/" + encodeURIComponent(id), { credentials: "same-origin" });
       const body = await res.json().catch(() => ({}));
       if (!res.ok) {
@@ -84,7 +438,7 @@
       const title = document.createElement("h2");
       title.textContent = text(body.participantName) + " · " + text(body.kind);
       detail.append(title);
-      const lines = [
+      [
         "Signed " + text(body.signedOn),
         "DOB " + text(body.dob),
         "Email " + text(body.email),
@@ -93,58 +447,21 @@
         "Parent " + text(payload.parentName),
         "Emergency " + text(payload.emergencyName) + " " + text(payload.emergencyPhone),
         "Goals " + (Array.isArray(payload.goals) ? payload.goals.join(", ") : ""),
-        "Injuries " + text(payload.injuries),
+        "Medical notes, staff only: " + text(payload.injuries),
         "Printed name " + text(payload.printName),
-      ];
-      lines.forEach((line) => {
-        const p = document.createElement("p");
-        p.textContent = line;
-        detail.append(p);
-      });
+      ].forEach((value) => line(detail, value));
       function addSig(label, src) {
         if (!src) return;
-        const p = document.createElement("p");
-        p.textContent = label;
+        line(detail, label);
         const img = document.createElement("img");
         img.className = "sig";
         img.alt = label;
         img.src = src;
-        detail.append(p, img);
+        detail.append(img);
       }
       addSig("Signature", body.signature);
       addSig("Parent signature", body.parentSignature);
-      if (body.kind === "kids") {
-        const mark = document.createElement("button");
-        mark.type = "button";
-        mark.className = "ghost";
-        if (body.addedToRoster) {
-          mark.disabled = true;
-          mark.textContent = "This child is on the roster";
-        } else {
-          mark.textContent = "This child is on the roster";
-          mark.addEventListener("click", async () => {
-            mark.disabled = true;
-            const saved = await fetch("/api/waivers/" + encodeURIComponent(id) + "/roster", {
-              method: "POST",
-              credentials: "same-origin",
-              headers: { "Content-Type": "application/json", "X-CSRF-Token": csrf },
-              body: "{}",
-            });
-            const payload = await saved.json().catch(() => ({}));
-            if (!saved.ok) {
-              mark.disabled = false;
-              status.textContent = payload.error || "Could not update that form.";
-              return;
-            }
-            mark.disabled = true;
-            mark.textContent = "This child is on the roster";
-            status.textContent = "That form will not be counted again.";
-          });
-        }
-        const row = document.createElement("p");
-        row.append(mark);
-        detail.append(row);
-      }
+      detail.scrollIntoView({ block: "nearest" });
     }
 
     fetch("/api/me", { credentials: "same-origin" })
@@ -162,25 +479,7 @@
           return;
         }
         csrf = me.csrf || "";
-        const res = await fetch("/api/waivers", { credentials: "same-origin" });
-        const body = await res.json().catch(() => ({}));
-        if (!res.ok) {
-          status.textContent = body.error || "The list could not be loaded.";
-          return;
-        }
-        document.getElementById("tools").hidden = false;
-        const rows = body.waivers || [];
-        status.textContent = rows.length ? rows.length + " on file." : "No enrollment forms yet.";
-        rows.forEach((row) => {
-          const li = document.createElement("li");
-          const btn = document.createElement("button");
-          btn.type = "button";
-          btn.className = "ghost";
-          btn.textContent = text(row.signedOn) + " · " + text(row.kind) + " · " + text(row.participantName);
-          btn.addEventListener("click", () => show(row.id));
-          li.append(btn);
-          list.append(li);
-        });
+        await loadReview();
       })
       .catch(() => {
         status.textContent = "The list could not be loaded.";

@@ -364,7 +364,10 @@ def migrate(conn):
           belt TEXT NOT NULL,
           stripes INTEGER NOT NULL,
           created_at TEXT NOT NULL,
-          dob TEXT NOT NULL DEFAULT ''
+          dob TEXT NOT NULL DEFAULT '',
+          parent_name TEXT NOT NULL DEFAULT '',
+          parent_email TEXT NOT NULL DEFAULT '',
+          parent_phone TEXT NOT NULL DEFAULT ''
         );
         CREATE TABLE IF NOT EXISTS classes (
           id TEXT PRIMARY KEY,
@@ -489,6 +492,14 @@ def migrate(conn):
     student_columns = {row[1] for row in conn.execute("PRAGMA table_info(students)")}
     if "parent_token" not in student_columns:
         conn.execute("ALTER TABLE students ADD COLUMN parent_token TEXT NOT NULL DEFAULT ''")
+    student_columns = {row[1] for row in conn.execute("PRAGMA table_info(students)")}
+    # Parent contact is copied only when staff add a student from a form.
+    # Existing rows stay blank until then. Medical notes stay in the staff notes table.
+    for column in ("parent_name", "parent_email", "parent_phone"):
+        if column not in student_columns:
+            conn.execute(
+                f"ALTER TABLE students ADD COLUMN {column} TEXT NOT NULL DEFAULT ''"
+            )
     conn.execute(
         """
         CREATE UNIQUE INDEX IF NOT EXISTS students_parent_token_idx

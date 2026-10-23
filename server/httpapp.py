@@ -934,6 +934,10 @@ class Api:
             if not admin:
                 return self.send(handler, 403, {"error": "An admin reviews enrollment forms."})
             return self.list_waivers(handler, conn)
+        if path == "/api/enrollment-review" and method == "GET":
+            if not admin:
+                return self.send(handler, 403, {"error": "An admin reviews enrollment forms."})
+            return self.enrollment_review(handler, conn)
         if path == "/api/waivers.csv" and method == "GET":
             if not admin:
                 return self.send(handler, 403, {"error": "An admin reviews enrollment forms."})
@@ -943,6 +947,21 @@ class Api:
             if not admin:
                 return self.send(handler, 403, {"error": "An admin reviews enrollment forms."})
             return self.mark_waiver_on_roster(handler, conn, waiver_roster.group(1))
+        waiver_match_post = re.fullmatch(r"/api/waivers/([A-Za-z0-9_-]{1,40})/match", path)
+        if waiver_match_post and method == "POST":
+            if not admin:
+                return self.send(handler, 403, {"error": "An admin reviews enrollment forms."})
+            return self.match_waiver_student(handler, conn, waiver_match_post.group(1))
+        waiver_add = re.fullmatch(r"/api/waivers/([A-Za-z0-9_-]{1,40})/add", path)
+        if waiver_add and method == "POST":
+            if not admin:
+                return self.send(handler, 403, {"error": "An admin reviews enrollment forms."})
+            return self.add_waiver_student(handler, conn, waiver_add.group(1))
+        waiver_unlink = re.fullmatch(r"/api/waivers/([A-Za-z0-9_-]{1,40})/unlink", path)
+        if waiver_unlink and method == "POST":
+            if not admin:
+                return self.send(handler, 403, {"error": "An admin reviews enrollment forms."})
+            return self.unlink_waiver(handler, conn, waiver_unlink.group(1))
         waiver_match = re.fullmatch(r"/api/waivers/([A-Za-z0-9_-]{1,40})", path)
         if waiver_match and method == "GET":
             return self.waiver_detail(handler, conn, waiver_match.group(1))
@@ -2065,6 +2084,336 @@ class Api:
             },
         )
 
+    def waiver_payload(self, row):
+        try:
+            payload = json.loads(row["payload_json"] or "{}")
+        except (TypeError, json.JSONDecodeError):
+            payload = {}
+        return payload if isinstance(payload, dict) else {}
+
+    def phone_key(self, value):
+        digits = "".join(ch for ch in str(value or "") if ch.isdigit())
+        if len(digits) == 11 and digits.startswith("1"):
+            digits = digits[1:]
+        return digits
+
+    def student_in_program(self, student, kind):
+        try:
+            age = int(student["age"])
+        except (TypeError, ValueError):
+            return False
+        if kind == "kids":
+            return age < 11
+        return age >= 11
+
+    def contact_index(self, conn):
+        index = {}
+        rows = conn.execute(
+            "SELECT roster_student_id, email, phone, payload_json, added_to_roster FROM waivers"
+        ).fetchall()
+        for row in rows:
+            sid = row["roster_student_id"] or ""
+            if not sid or not int(row["added_to_roster"] or 0):
+                continue
+            bucket = index.setdefault(sid, {"names": [], "emails": [], "phones": []})
+            if row["email"]:
+                bucket["emails"].append(row["email"])
+            if row["phone"]:
+                bucket["phones"].append(row["phone"])
+            payload = self.waiver_payload(row)
+            parent = payload.get("parentName") or ""
+            if parent:
+                bucket["names"].append(parent)
+            emergency = payload.get("emergencyPhone") or ""
+            if emergency:
+                bucket["phones"].append(emergency)
+        return index
+
+    def contacts_for(self, student, index):
+        bucket = {
+            "names": list(index.get(student["id"], {}).get("names", [])),
+            "emails": list(index.get(student["id"], {}).get("emails", [])),
+            "phones": list(index.get(student["id"], {}).get("phones", [])),
+        }
+        parent = self.cell(student, "parent_name", "") or ""
+        email = self.cell(student, "parent_email", "") or ""
+        phone = self.cell(student, "parent_phone", "") or ""
+        if parent:
+            bucket["names"].append(parent)
+        if email:
+            bucket["emails"].append(email)
+        if phone:
+            bucket["phones"].append(phone)
+        return bucket
+
+    def rank_waiver_student(self, waiver, payload, student, contacts):
+        reasons = []
+        score = 0
+        wname = self.norm_name(waiver["participant_name"])
+        sname = self.norm_name(student["name"])
+        wset = {tok for tok in wname.split() if tok}
+        sset = {tok for tok in sname.split() if tok}
+        if wname and wname == sname:
+            score += 50
+            reasons.append("Same name")
+        else:
+            shared = {tok for tok in wset & sset if len(tok) >= 3}
+            if wset and sset and wset == sset:
+                score += 40
+                reasons.append("Same name")
+            elif shared and (wset <= sset or sset <= wset):
+                score += 30
+                reasons.append("Similar name")
+            elif shared:
+                score += 12
+                reasons.append("Similar name")
+        wdob = waiver["dob"] or ""
+        sdob = self.cell(student, "dob", "") or ""
+        exact_dob = bool(wdob and sdob and wdob == sdob)
+        if exact_dob:
+            score += 40
+            reasons.append("Same birth date")
+        elif wdob and sdob and len(wdob) == 10 and len(sdob) == 10 and wdob[5:] == sdob[5:]:
+            score += 8
+            reasons.append("Same month and day")
+        parent = self.norm_name(payload.get("parentName"))
+        parent_hit = False
+        if parent:
+            for name in contacts["names"]:
+                if parent == self.norm_name(name):
+                    score += 25
+                    reasons.append("Same parent or guardian")
+                    parent_hit = True
+                    break
+            if not parent_hit:
+                pset = {tok for tok in parent.split() if len(tok) >= 3}
+                for name in contacts["names"]:
+                    other = {tok for tok in self.norm_name(name).split() if len(tok) >= 3}
+                    if pset & other:
+                        score += 10
+                        reasons.append("Similar parent or guardian")
+                        break
+        wemail = str(waiver["email"] or "").casefold()
+        if wemail and any(str(item or "").casefold() == wemail for item in contacts["emails"]):
+            score += 25
+            reasons.append("Same email")
+        wphone = self.phone_key(waiver["phone"])
+        if len(wphone) >= 7 and any(self.phone_key(item) == wphone for item in contacts["phones"]):
+            score += 20
+            reasons.append("Same phone")
+        exact = bool(wname and wname == sname and exact_dob)
+        return score, reasons, exact
+
+    def waiver_suggestions(self, waiver, payload, students, index):
+        ranked = []
+        for student in students:
+            if not self.student_in_program(student, waiver["kind"]):
+                continue
+            score, reasons, exact = self.rank_waiver_student(
+                waiver, payload, student, self.contacts_for(student, index)
+            )
+            if score <= 0:
+                continue
+            ranked.append(
+                {
+                    "studentId": student["id"],
+                    "name": student["name"],
+                    "age": student["age"],
+                    "dob": self.cell(student, "dob", "") or "",
+                    "score": score,
+                    "reasons": reasons,
+                    "exact": exact,
+                }
+            )
+        ranked.sort(key=lambda item: (-item["score"], item["name"].casefold(), item["studentId"]))
+        exacts = [item for item in ranked if item["exact"]]
+        preselect = exacts[0]["studentId"] if len(exacts) == 1 else ""
+        return ranked[:5], preselect
+
+    def roster_pick(self, student):
+        return {
+            "id": student["id"],
+            "name": student["name"],
+            "age": student["age"],
+            "dob": self.cell(student, "dob", "") or "",
+            "parentName": self.cell(student, "parent_name", "") or "",
+            "email": self.cell(student, "parent_email", "") or "",
+            "phone": self.cell(student, "parent_phone", "") or "",
+        }
+
+    def review_form(self, row, students, index, linked):
+        payload = self.waiver_payload(row)
+        try:
+            age = int(payload.get("age"))
+        except (TypeError, ValueError):
+            age = self.waiver_years(row["dob"])
+        suggestions, preselect = self.waiver_suggestions(row, payload, students, index)
+        if linked is not None:
+            preselect = linked["id"]
+        return {
+            "id": row["id"],
+            "kind": row["kind"],
+            "submittedAt": row["submitted_at"],
+            "signedOn": row["signed_on"],
+            "participantName": row["participant_name"],
+            "signerName": row["signer_name"],
+            "dob": row["dob"],
+            "age": age if age is not None else "",
+            "ageGroupLabel": self.age_group_label(age) if age is not None else "",
+            "email": row["email"],
+            "phone": row["phone"],
+            "parentName": payload.get("parentName") or "",
+            "emergencyName": payload.get("emergencyName") or "",
+            "emergencyPhone": payload.get("emergencyPhone") or "",
+            "injuries": payload.get("injuries") or "",
+            "addedToRoster": bool(int(self.cell(row, "added_to_roster", 0) or 0)),
+            "rosterStudentId": linked["id"] if linked is not None else "",
+            "rosterStudentName": linked["name"] if linked is not None else "",
+            "linked": linked is not None,
+            "suggestions": suggestions,
+            "preselectId": preselect,
+        }
+
+    def enrollment_review(self, handler, conn):
+        students = list(conn.execute("SELECT * FROM students ORDER BY name COLLATE NOCASE"))
+        by_id = {row["id"]: row for row in students}
+        index = self.contact_index(conn)
+        kids = []
+        adults = []
+        for row in conn.execute("SELECT * FROM waivers ORDER BY submitted_at DESC"):
+            sid = row["roster_student_id"] or ""
+            linked = by_id.get(sid) if sid else None
+            form = self.review_form(row, students, index, linked)
+            if row["kind"] == "kids":
+                kids.append(form)
+            else:
+                adults.append(form)
+        snap = self.enrollment_snapshot(conn, staff=True)
+        return self.send(
+            handler,
+            200,
+            {
+                "kids": kids,
+                "adults": adults,
+                "roster": {
+                    "kids": [self.roster_pick(row) for row in students if self.student_in_program(row, "kids")],
+                    "adults": [self.roster_pick(row) for row in students if self.student_in_program(row, "adult")],
+                },
+                "kidsEnrollment": {
+                    "cap": snap["cap"],
+                    "enrolled": snap["enrolled"],
+                    "full": snap["full"],
+                    "waitlistEnabled": snap["waitlistEnabled"],
+                },
+            },
+        )
+
+    def waiver_row(self, conn, wid):
+        return conn.execute("SELECT * FROM waivers WHERE id = ?", (wid,)).fetchone()
+
+    def match_waiver_student(self, handler, conn, wid):
+        body = self.read_json(handler)
+        row = self.waiver_row(conn, wid)
+        if not row:
+            return self.send(handler, 404, {"error": "That enrollment form is not on file."})
+        sid = clean_id(body.get("studentId"))
+        if not sid:
+            raise ValueError("Choose a student on the roster.")
+        student = conn.execute("SELECT * FROM students WHERE id = ?", (sid,)).fetchone()
+        if not student:
+            return self.send(handler, 404, {"error": "That student is not on the roster."})
+        if not self.student_in_program(student, row["kind"]):
+            raise ValueError("That student is in the other program.")
+        self.remember_dob(conn, sid, row["dob"])
+        self.link_waiver_row(conn, wid, sid)
+        conn.commit()
+        return self.send(
+            handler,
+            200,
+            {"ok": True, "rosterStudentId": sid, "waiver": self.waiver_for_student(conn, sid)},
+        )
+
+    def unlink_waiver(self, handler, conn, wid):
+        # Read the body so a keep-alive connection does not treat "{}" as the next request.
+        self.read_json(handler)
+        row = self.waiver_row(conn, wid)
+        if not row:
+            return self.send(handler, 404, {"error": "That enrollment form is not on file."})
+        previous = row["roster_student_id"] or ""
+        conn.execute(
+            "UPDATE waivers SET added_to_roster = 0, roster_student_id = '' WHERE id = ?",
+            (wid,),
+        )
+        conn.commit()
+        waiver = self.waiver_for_student(conn, previous) if previous else {"signed": False}
+        return self.send(handler, 200, {"ok": True, "waiver": waiver})
+
+    def add_waiver_student(self, handler, conn, wid):
+        body = self.read_json(handler)
+        confirm = body.get("confirmOverCap") is True
+        row = self.waiver_row(conn, wid)
+        if not row:
+            return self.send(handler, 404, {"error": "That enrollment form is not on file."})
+        existing_id = row["roster_student_id"] or ""
+        if existing_id and conn.execute("SELECT 1 FROM students WHERE id = ?", (existing_id,)).fetchone():
+            raise ValueError("Unlink this form before adding a new student.")
+        payload = self.waiver_payload(row)
+        name = clip(row["participant_name"], 40)
+        if not name:
+            raise ValueError("Add the student's name.")
+        dob = row["dob"] or ""
+        try:
+            age = int(payload.get("age"))
+        except (TypeError, ValueError):
+            age = self.waiver_years(dob)
+        if age is None or age < 0 or age > 120:
+            raise ValueError("That form needs a date of birth.")
+        if row["kind"] == "adult" and age < 11:
+            raise ValueError("This enrollment is for ages 11 and up.")
+        if row["kind"] == "kids" and age > 10:
+            raise ValueError("This enrollment is for ages 3–10.")
+        adding_kid = row["kind"] == "kids" and self.counts_as_kid(age)
+        before = None
+        if adding_kid:
+            self.lock_kids(conn)
+            before = self.kids_enrolled_count(conn)
+        sid = new_id("s-")
+        parent_name = clip(payload.get("parentName"), 120)
+        injuries = clip(payload.get("injuries"), 760).strip()
+        conn.execute(
+            """
+            INSERT INTO students (
+              id, name, age, belt, stripes, created_at, dob, parent_token,
+              parent_name, parent_email, parent_phone
+            ) VALUES (?, ?, ?, 'white', 0, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                sid,
+                name,
+                age,
+                iso(utcnow()),
+                dob,
+                self.new_parent_token(conn),
+                parent_name,
+                clip(row["email"], 160),
+                clip(row["phone"], 40),
+            ),
+        )
+        if injuries:
+            conn.execute(
+                "INSERT INTO notes (student_id, note) VALUES (?, ?)",
+                (sid, clip("Enrollment medical notes: " + injuries, 800)),
+            )
+        self.link_waiver_row(conn, wid, sid)
+        if adding_kid:
+            blocked = self.over_cap(conn, before)
+            if blocked and not confirm:
+                after, cap = blocked
+                conn.rollback()
+                return self.send(handler, 409, self.cap_confirm_body(before, after, cap))
+        conn.commit()
+        return self.send(handler, 201, self.student_payload(conn, sid))
+
     def allow_waitlist_post(self, ip):
         now = utcnow().timestamp()
         posts = [item for item in self._waitlist_posts if now - item[0] < 3600]
@@ -2608,45 +2957,6 @@ class Api:
         conn.commit()
         return self.send(handler, 200, {"parentToken": token})
 
-    def match_adult(self, conn, name, dob):
-        if not dob:
-            return None
-        target = self.norm_name(name)
-        for row in conn.execute("SELECT * FROM students"):
-            try:
-                age = int(row["age"])
-            except (TypeError, ValueError):
-                continue
-            if age < 11:
-                continue
-            if (row["dob"] or "") == dob and self.norm_name(row["name"]) == target:
-                return row
-        return None
-
-    def create_adult_from_waiver(self, conn, name, dob, age):
-        if age < 11 or age > 120:
-            raise ValueError("This enrollment is for ages 11 and up.")
-        sid = new_id("s-")
-        now = iso(utcnow())
-        token = self.new_parent_token(conn)
-        # White belt with no stripes is the empty rank the roster column requires.
-        conn.execute(
-            """
-            INSERT INTO students (id, name, age, belt, stripes, created_at, dob, parent_token)
-            VALUES (?, ?, ?, 'white', 0, ?, ?, ?)
-            """,
-            (sid, clip(name, 40), age, now, dob, token),
-        )
-        code = "b-" + secrets.token_hex(16)
-        conn.execute(
-            """
-            INSERT INTO cards (code, status, student_id, created_at, claimed_at)
-            VALUES (?, 'claimed', ?, ?, ?)
-            """,
-            (code, sid, now, now),
-        )
-        return sid
-
     def waiver_parent_match(self, conn, body):
         token = str(body.get("parentToken") or "").strip()
         if not token:
@@ -2756,14 +3066,12 @@ class Api:
                     parent_signature,
                 ),
             )
+            # A parent card already names one student. Every other form waits
+            # for staff to confirm a match or add the person. An exact name and
+            # birth date is only a suggestion.
             if linked:
                 self.link_waiver_row(conn, wid, linked["id"])
-            elif kind == "adult":
-                existing = self.match_adult(conn, name, dob)
-                if existing:
-                    self.link_waiver_row(conn, wid, existing["id"])
-                else:
-                    self.link_waiver_row(conn, wid, self.create_adult_from_waiver(conn, name, dob, age))
+                self.remember_dob(conn, linked["id"], dob)
             if kind == "kids":
                 blocked = self.over_cap(conn, before)
                 if blocked:

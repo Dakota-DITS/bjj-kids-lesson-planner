@@ -53,7 +53,17 @@ assert.ok(kids.includes('id="signaturePad"'));
 assert.ok(kids.includes('id="submitBtn" disabled'));
 assert.ok(kidsHome.includes('href="/kids/waiver/"'));
 assert.ok(staff.includes('href="/app/waivers/"'));
+assert.ok(staff.includes("Enrollment review"));
 assert.ok(staff.includes("admin-only"));
+const review = fs.readFileSync(path.join(root, "app/waivers/index.html"), "utf8");
+assert.ok(review.includes("Enrollment review"));
+assert.ok(review.includes("<h2>Kids</h2>"));
+assert.ok(review.includes("<h2>Adults</h2>"));
+assert.ok(review.includes("Match to existing student"));
+assert.ok(review.includes("Add to roster"));
+assert.ok(review.includes("Unlink"));
+assert.ok(review.includes('name="robots" content="noindex, nofollow, noarchive, nosnippet"'));
+assert.equal(review.includes("/api/waivers/") && review.includes("/match"), true);
 assert.ok(css.includes("break-inside: avoid"));
 assert.ok(css.includes("@media print"));
 
