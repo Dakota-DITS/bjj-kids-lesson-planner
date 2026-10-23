@@ -151,11 +151,95 @@ button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible
   outline-offset: 2px;
 }
 
+/* Adult enrollment uses the dark home theme. Kids enrollment stays on the light sheet. */
+body[data-kind="adult"] {
+  background: #1c1917;
+  color: #f5f0e8;
+  font-family: "Liberation Sans", "Noto Sans", "Segoe UI", sans-serif;
+}
+body[data-kind="adult"] .sheet > section,
+body[data-kind="adult"] form {
+  background: #292524;
+  border: 1px solid #a8a29e;
+  border-radius: 14px;
+  padding: 16px 16px 8px;
+  margin: 14px 0;
+}
+body[data-kind="adult"] h1 {
+  font-size: clamp(2rem, 5vw, 2.6rem);
+  letter-spacing: -0.02em;
+  line-height: 1.1;
+  color: #f5f0e8;
+}
+body[data-kind="adult"] h2,
+body[data-kind="adult"] h3,
+body[data-kind="adult"] legend,
+body[data-kind="adult"] label,
+body[data-kind="adult"] .check { color: #f5f0e8; }
+body[data-kind="adult"] a { color: #ffd7cc; }
+body[data-kind="adult"] .lede,
+body[data-kind="adult"] .hint { color: #d6d3d1; }
+body[data-kind="adult"] .logo {
+  background: #fff8f3;
+  border-radius: 14px;
+  padding: 8px 10px;
+}
+body[data-kind="adult"] button,
+body[data-kind="adult"] .button {
+  background: #9b2a12;
+  color: #fff7ed;
+}
+body[data-kind="adult"] .ghost {
+  background: transparent;
+  color: #f5f0e8;
+  border: 2px solid #a8a29e;
+}
+body[data-kind="adult"] input,
+body[data-kind="adult"] select,
+body[data-kind="adult"] textarea {
+  background: #fffdf8;
+  color: #1c1917;
+  border-color: #a8a29e;
+}
+body[data-kind="adult"] .pad {
+  background: #fff;
+  border-color: #a8a29e;
+}
+body[data-kind="adult"] fieldset { border-color: #a8a29e; }
+body[data-kind="adult"] .error { color: #ffd7cc; }
+body[data-kind="adult"] .closed {
+  background: #292524;
+  color: #fff7ed;
+  border: 1px solid #a8a29e;
+}
+
 @media print {
   .no-print { display: none !important; }
-  body { background: #fff; }
+  body,
+  body[data-kind="adult"] {
+    background: #fff !important;
+    color: #1c1917 !important;
+  }
   .sheet { width: auto; margin: 0; }
-  .logo { width: 180px; }
+  .logo { width: 180px; background: transparent !important; padding: 0 !important; }
+  body[data-kind="adult"] .sheet > section,
+  body[data-kind="adult"] form,
+  body[data-kind="adult"] fieldset {
+    background: #fff !important;
+    color: #1c1917 !important;
+    border-color: #ccc !important;
+    box-shadow: none !important;
+  }
+  body[data-kind="adult"] h1,
+  body[data-kind="adult"] h2,
+  body[data-kind="adult"] h3,
+  body[data-kind="adult"] p,
+  body[data-kind="adult"] li,
+  body[data-kind="adult"] label,
+  body[data-kind="adult"] legend,
+  body[data-kind="adult"] .lede,
+  body[data-kind="adult"] .check { color: #1c1917 !important; }
   h2, li, .field, fieldset, .legal p, .sig-block { break-inside: avoid; page-break-inside: avoid; }
-  a { color: #1c1917; text-decoration: none; }
+  a,
+  body[data-kind="adult"] a { color: #1c1917 !important; text-decoration: none; }
 }

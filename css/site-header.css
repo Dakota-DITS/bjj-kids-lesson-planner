@@ -1,0 +1,198 @@
+/* Slim public header. Links stay on one row from 801px up.
+   Narrow screens keep the logo and, on the adult site, the kids pill,
+   and open the rest from the menu button. */
+:root {
+  --demo-banner-h: 0px;
+  --site-header-h: 48px;
+}
+
+html {
+  scroll-padding-top: calc(var(--demo-banner-h) + var(--site-header-h));
+}
+
+.top {
+  position: sticky;
+  top: var(--demo-banner-h);
+  z-index: 40;
+  background: #141210;
+  border-bottom: 1px solid #a8a29e;
+}
+
+.top-bar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: min(980px, calc(100% - 24px));
+  margin: 0 auto;
+  min-height: 48px;
+  padding: 4px 0;
+}
+
+.top .brand {
+  display: flex;
+  align-items: center;
+  order: 1;
+  min-height: 36px;
+  padding: 0;
+  color: #f5f0e8;
+  text-decoration: none;
+}
+
+.top .brand img {
+  display: block;
+  height: 36px;
+  width: auto;
+}
+
+/* The kids lockup stacks KIDS under the mark, so the same 36px height
+   makes that word too small. A slightly taller image keeps it readable
+   without turning the bar into a second row. */
+.top .brand.kids-brand img { height: 58px; }
+
+.top .kids-pill {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  order: 3;
+  min-height: 36px;
+  padding: 0 12px;
+  border-radius: 999px;
+  background: #fff7ed;
+  color: #1c1917;
+  font-size: 0.92rem;
+  font-weight: 700;
+  text-decoration: none;
+  white-space: nowrap;
+}
+
+.top .kids-pill:hover { background: #ffd7cc; }
+
+.top .nav-toggle {
+  display: none;
+  order: 4;
+  align-items: center;
+  justify-content: center;
+  width: 44px;
+  height: 44px;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  border-radius: 10px;
+  background: transparent;
+  color: #f5f0e8;
+  cursor: pointer;
+}
+
+.top .nav-toggle-bars,
+.top .nav-toggle-bars::before,
+.top .nav-toggle-bars::after {
+  display: block;
+  width: 18px;
+  height: 2px;
+  border-radius: 1px;
+  background: currentColor;
+}
+
+.top .nav-toggle-bars { position: relative; }
+
+.top .nav-toggle-bars::before,
+.top .nav-toggle-bars::after {
+  content: "";
+  position: absolute;
+  left: 0;
+}
+
+.top .nav-toggle-bars::before { top: -6px; }
+.top .nav-toggle-bars::after { top: 6px; }
+
+.top .site-nav {
+  display: flex;
+  order: 2;
+  flex-wrap: nowrap;
+  align-items: center;
+  gap: 2px;
+  margin-left: auto;
+}
+
+.top .site-nav a {
+  display: inline-flex;
+  align-items: center;
+  min-height: 32px;
+  margin: 0;
+  padding: 0 7px;
+  border-radius: 8px;
+  color: #f5f0e8;
+  font-size: 0.92rem;
+  font-weight: 600;
+  text-decoration: none;
+  white-space: nowrap;
+}
+
+.top .site-nav a:hover,
+.top .site-nav a:focus-visible { background: #292524; }
+
+.top .site-nav a[aria-current="page"] { box-shadow: inset 0 -2px 0 #ffd7cc; }
+
+.top .site-nav .home-pill {
+  min-height: 32px;
+  padding: 0 10px;
+  border-radius: 999px;
+  background: #fff7ed;
+  color: #1c1917;
+  font-size: 0.86rem;
+  font-weight: 700;
+}
+
+.top .site-nav .home-pill:hover { background: #ffd7cc; }
+
+.top .brand:focus-visible,
+.top .kids-pill:focus-visible,
+.top .nav-toggle:focus-visible,
+.top .site-nav a:focus-visible {
+  outline: 3px solid #fff7ed;
+  outline-offset: 2px;
+}
+
+@media (max-width: 800px) {
+  .top-bar { width: min(980px, calc(100% - 16px)); }
+  .top .brand { margin-right: auto; }
+  .top .brand img { height: 32px; }
+  .top .brand.kids-brand img { height: 52px; }
+  .top .site-nav { margin-left: 0; }
+  .top .kids-pill {
+    min-height: 44px;
+    padding: 0 12px;
+    font-size: 0.84rem;
+  }
+  .top .nav-toggle { display: inline-flex; }
+  .top .site-nav {
+    display: none;
+    position: absolute;
+    top: 100%;
+    left: 0;
+    right: 0;
+    z-index: 41;
+    flex-direction: column;
+    align-items: stretch;
+    gap: 2px;
+    padding: 6px 10px 10px;
+    background: #141210;
+    border-bottom: 1px solid #a8a29e;
+  }
+  .top.is-open .site-nav { display: flex; }
+  .top .site-nav a {
+    min-height: 44px;
+    padding: 0 10px;
+    font-size: 1rem;
+  }
+  .top .site-nav .home-pill {
+    align-self: flex-start;
+    min-height: 44px;
+    margin: 2px 0;
+  }
+}
+
+@media print {
+  html { scroll-padding-top: 0; }
+  .top { position: static; }
+}

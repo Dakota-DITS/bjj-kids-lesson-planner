@@ -78,10 +78,13 @@ atLeast("staff waiver link", "#ffd7cc", "#1c1917", 4.5);
 atLeast("waitlist banner", "#fff7ed", "#9b2a12", 4.5);
 assert.ok(css.includes(".waitlist-banner"));
 assert.ok(css.includes("background: #9b2a12"));
-assert.ok(homeCss.includes(".kids-pill"));
 assert.ok(homeCss.includes("min-height: 44px"));
 const splashCss = fs.readFileSync(require("path").join(__dirname, "../css/splash.css"), "utf8");
-assert.ok(splashCss.includes(".site-nav .home-pill"));
 assert.ok(splashCss.includes("min-height: 44px"));
+const headerCss = fs.readFileSync(require("path").join(__dirname, "../css/site-header.css"), "utf8");
+assert.ok(headerCss.includes(".kids-pill"));
+assert.ok(headerCss.includes(".site-nav .home-pill"));
+assert.ok(headerCss.includes("scroll-padding-top"));
+assert.ok(headerCss.includes("max-width: 800px"));
 
 console.log("contrast checks passed");
