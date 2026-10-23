@@ -2289,12 +2289,23 @@ function sparringSection(plan) {
     list.innerHTML = ordered
       .map((kid) => {
         const id = esc(kid.id);
+        const waiver = kid.waiver || {};
+        const waiverLine = waiver.signed
+          ? `Waiver signed ${esc(waiver.signedOn)} by ${esc(waiver.signerName)}`
+          : "No signed waiver";
+        const waiverBtn = waiver.signed
+          ? `<button type="button" data-roster="waiver">View / print waiver</button>`
+          : "";
         return `<article class="card roster-card" data-id="${id}">
           <header>
             <h3>${esc(kid.name)}</h3>
             <span class="badge">age ${esc(kid.age)}</span>
           </header>
+          <p class="${waiver.signed ? "hint" : "error"}">${waiverLine}</p>
           <div class="roster-edit">
+            ${waiverBtn}
+            <button type="button" data-roster="token">New parent code</button>
+            <button type="button" data-roster="revoke">Turn off parent code</button>
             <select data-roster="belt" aria-label="Belt for ${esc(kid.name)}">${beltOptions}</select>
             <select data-roster="stripes" aria-label="Stripes for ${esc(kid.name)}">
               ${[0, 1, 2, 3, 4].map((n) => `<option value="${n}">${n} stripe${n === 1 ? "" : "s"}</option>`).join("")}
@@ -2881,7 +2892,10 @@ function sparringSection(plan) {
 
   function applyBootstrap(body) {
     state.session = body.user || null;
-    state.roster = (body.students || []).map((kid) => P.sanitizeRosterKid(kid)).filter(Boolean);
+    state.roster = (body.students || [])
+      .filter((kid) => !(kid && Number(kid.age) > 17))
+      .map((kid) => P.sanitizeRosterKid(kid))
+      .filter(Boolean);
     state.progress = P.sanitizeProgress({
       classes: body.classes,
       levels: body.levels,
@@ -3844,9 +3858,16 @@ function sparringSection(plan) {
     return P.sortByRank(state.roster).filter((kid) => state.cardPick[kid.id] !== false);
   }
 
+  function kidQrText(kid) {
+    const path = P.parentQrText(kid && kid.parentToken);
+    if (!path) return P.qrPayload(kid.id);
+    const origin = window.location && window.location.origin ? window.location.origin : "";
+    return origin + path;
+  }
+
   function cardInner(kid, qrSize) {
     const group = groupForAge(kid.age);
-    const src = qrDataUrl(P.qrPayload(kid.id), qrSize);
+    const src = qrDataUrl(kidQrText(kid), qrSize);
     return `<img class="qr" alt="QR code for ${esc(kid.name)}" src="${src}" />
       <div>
         <img class="mini-logo card-logo" src="${esc(LOGO)}" alt="" />
@@ -3872,7 +3893,7 @@ function sparringSection(plan) {
     else if (layout === "signin") {
       const rows = P.sortByRank(state.roster)
         .map((kid) => {
-          const src = qrDataUrl(P.qrPayload(kid.id), 180);
+          const src = qrDataUrl(kidQrText(kid), 180);
           return `<div class="signin-row"><span class="box"></span><div><strong>${esc(kid.name)}</strong><br>${esc(
             P.beltLabel(kid.belt)
           )} · ${esc(stripeText(kid))}</div><img class="qr" alt="" src="${src}" /></div>`;
@@ -3957,6 +3978,13 @@ function sparringSection(plan) {
   }
 
   function resolveScan(id) {
+    const text = String(id || "");
+    if (text.startsWith("parent:")) {
+      const token = text.slice("parent:".length);
+      const linked = state.roster.find((item) => item.parentToken === token);
+      if (!linked) return { type: "unknown", message: "That code is not a Grace card." };
+      return { type: "student", id: linked.id };
+    }
     const kid = state.roster.find((item) => item.id === id);
     if (kid) return { type: "student", id: kid.id };
     const card = state.cards.find((item) => item.code === id);
@@ -4443,18 +4471,26 @@ function sparringSection(plan) {
     return `${names} ${kids.length === 1 ? "is" : "are"} not in this combo class.`;
   }
 
+  function waiverWarning(kids) {
+    const missing = (kids || []).filter((kid) => !kid.waiver || !kid.waiver.signed);
+    if (!missing.length) return "";
+    const names = missing.map((kid) => kid.name).join(", ");
+    return ` ${names} ${missing.length === 1 ? "does" : "do"} not have a signed waiver. Check-in is still saved.`;
+  }
+
   function showScanResult(result) {
     const el = $("checkinStatus");
     if (!el) return;
     const leftOut = outsideSentence(result.outside);
+    const warned = waiverWarning([].concat(result.known || [], result.dup || []));
     if (result.known.length) {
       const names = result.known.map((kid) => kid.name).join(", ");
       const extra = result.dup.length ? ` ${result.dup.map((kid) => kid.name).join(", ")} already checked in.` : "";
-      el.textContent = `${names} ${result.known.length === 1 ? "is" : "are"} here.${extra}${leftOut ? ` ${leftOut}` : ""}`;
+      el.textContent = `${names} ${result.known.length === 1 ? "is" : "are"} here.${extra}${leftOut ? ` ${leftOut}` : ""}${warned}`;
       el.className = "checkin-status ok";
       beep(true);
     } else if (result.dup.length) {
-      el.textContent = `${result.dup.map((kid) => kid.name).join(", ")} already checked in.${leftOut ? ` ${leftOut}` : ""}`;
+      el.textContent = `${result.dup.map((kid) => kid.name).join(", ")} already checked in.${leftOut ? ` ${leftOut}` : ""}${warned}`;
       el.className = "checkin-status dup";
       beep(false);
     } else if (leftOut) {
@@ -4798,14 +4834,66 @@ function sparringSection(plan) {
       renderRoster();
       if (state.plan) retimePlan();
     });
+    async function printStaffWaiver(waiverId) {
+      const detail = await window.BJJ_API.send("GET", `/api/waivers/${waiverId}`);
+      const win = window.open("", "_blank", "noopener,noreferrer");
+      if (!win) {
+        toast("Allow pop-ups to print the form.");
+        return;
+      }
+      const injuries = detail.payload && detail.payload.injuries ? detail.payload.injuries : "";
+      win.document.write(
+        `<!DOCTYPE html><title>Signed enrollment</title><body style="font-family:sans-serif;padding:24px">` +
+          `<h1>${esc(detail.participantName || "")}</h1>` +
+          `<p>Signed ${esc(detail.signedOn || "")} by ${esc(detail.signerName || "")}</p>` +
+          (injuries ? `<p>Injuries or medical notes: ${esc(injuries)}</p>` : "") +
+          (detail.signature ? `<img alt="Signature" src="${esc(detail.signature)}" />` : "") +
+          `</body>`
+      );
+      win.document.close();
+      win.focus();
+      win.print();
+    }
+
     $("rosterList").addEventListener("click", async (event) => {
+      const card = event.target.closest(".roster-card");
+      const kid = card && state.roster.find((item) => item.id === card.dataset.id);
+      if (event.target.closest("button[data-roster='waiver']") && kid && kid.waiver && kid.waiver.waiverId) {
+        try {
+          await printStaffWaiver(kid.waiver.waiverId);
+        } catch (err) {
+          toast(err.message || "Could not open that form.");
+        }
+        return;
+      }
+      if (event.target.closest("button[data-roster='token']") && kid) {
+        try {
+          const saved = await window.BJJ_API.send("POST", `/api/students/${kid.id}/parent-token`, {});
+          kid.parentToken = saved.parentToken || "";
+          toast("New parent code saved. Print the card again.");
+          renderRoster();
+        } catch (err) {
+          toast(err.message || "Could not replace the parent code.");
+        }
+        return;
+      }
+      if (event.target.closest("button[data-roster='revoke']") && kid) {
+        try {
+          await window.BJJ_API.send("POST", `/api/students/${kid.id}/parent-token`, { revoke: true });
+          kid.parentToken = "";
+          toast("Parent code turned off.");
+          renderRoster();
+        } catch (err) {
+          toast(err.message || "Could not turn off the parent code.");
+        }
+        return;
+      }
       const btn = event.target.closest("button[data-roster='delete']");
-      if (!btn) return;
+      if (!btn || !card) return;
       if (!isAdmin()) {
         toast("An admin removes students.");
         return;
       }
-      const card = btn.closest(".roster-card");
       const id = card.dataset.id;
       try {
         const removed = await window.BJJ_API.send("DELETE", `/api/students/${id}`);

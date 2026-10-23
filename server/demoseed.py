@@ -5,7 +5,9 @@ production database. Demo logins are dakota and pierre, both admins.
 Their passwords are passed in by the caller and are not stored in the repo.
 """
 
+import json
 import os
+import secrets
 
 from server.db import connect, iso, migrate, utcnow
 from server.httpapp import USER_RE, hash_password
@@ -113,10 +115,10 @@ def _insert_examples(conn, now):
     for sid, name, age, belt, stripes, dob, note in students:
         conn.execute(
             """
-            INSERT INTO students (id, name, age, belt, stripes, created_at, dob)
-            VALUES (?, ?, ?, ?, ?, ?, ?)
+            INSERT INTO students (id, name, age, belt, stripes, created_at, dob, parent_token)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
             """,
-            (sid, name, age, belt, stripes, now, dob),
+            (sid, name, age, belt, stripes, now, dob, secrets.token_urlsafe(24)),
         )
         conn.execute("INSERT INTO notes (student_id, note) VALUES (?, ?)", (sid, note))
 
@@ -176,6 +178,65 @@ def _insert_examples(conn, now):
     conn.execute("INSERT INTO settings (key, value) VALUES ('demo_seed', '1')")
 
 
+def _ensure_parent_examples(conn, now):
+    """Fill parent-card codes and one signed plus one unsigned EXAMPLE waiver.
+
+    Safe to run again. It does not print the codes and does not open data.db.
+    """
+    rows = conn.execute("SELECT id, parent_token FROM students").fetchall()
+    for row in rows:
+        if row["parent_token"]:
+            continue
+        conn.execute(
+            "UPDATE students SET parent_token = ? WHERE id = ?",
+            (secrets.token_urlsafe(24), row["id"]),
+        )
+    milo = conn.execute("SELECT id, dob FROM students WHERE id = 'demo-milo'").fetchone()
+    if milo and not conn.execute("SELECT 1 FROM waivers WHERE id = 'demo-waiver-milo'").fetchone():
+        payload = {
+            "demo": True,
+            "injuries": "EXAMPLE-MEDICAL-NOTE",
+            "address": "4197 State St",
+            "emergencyName": "EXAMPLE Emergency",
+            "emergencyPhone": "555-0199",
+            "note": "FAKE preview data. Not a real student.",
+        }
+        conn.execute(
+            """
+            INSERT INTO waivers (
+              id, kind, submitted_at, signed_on, participant_name, signer_name, dob, email, phone,
+              payload_json, signature_png, parent_signature_png, added_to_roster, roster_student_id
+            ) VALUES (?, 'kids', ?, '2026-01-15', ?, ?, ?, ?, ?, ?, ?, ?, 1, 'demo-milo')
+            """,
+            (
+                "demo-waiver-milo",
+                now,
+                "EXAMPLE Mite Milo Preview",
+                "EXAMPLE Parent Milo Preview",
+                milo["dob"] or "2021-06-01",
+                "milo.preview@example.com",
+                "555-0111",
+                json.dumps(payload),
+                PNG,
+                PNG,
+            ),
+        )
+    if milo and not conn.execute("SELECT 1 FROM classes WHERE id = 'demo-class-milo'").fetchone():
+        conn.execute(
+            """
+            INSERT INTO classes (id, date, age_group, theme, theme_label, techniques, game, attended, taught)
+            VALUES ('demo-class-milo', '2026-10-27', 'mite', 'mount', 'Mount', '[]', '', ?, 1)
+            """,
+            (json.dumps(["demo-milo"]),),
+        )
+    if milo and not conn.execute(
+        "SELECT 1 FROM levels WHERE student_id = 'demo-milo' AND tech_id = 'ls-upa'"
+    ).fetchone():
+        conn.execute(
+            "INSERT INTO levels (student_id, tech_id, level) VALUES ('demo-milo', 'ls-upa', 'practicing')"
+        )
+
+
 def seed_demo(path, passwords, reset_password=False):
     """Write example rows and the two demo admins. reset_password is accepted and ignored.
 
@@ -205,6 +266,7 @@ def seed_demo(path, passwords, reset_password=False):
         now = iso(utcnow())
         if not students:
             _insert_examples(conn, now)
+        _ensure_parent_examples(conn, now)
         _drop_other_users(conn)
         for username, display_name in DEMO_ADMINS:
             _ensure_admin(conn, username, display_name, cleaned[username], now)

@@ -1,6 +1,10 @@
 {
-  "_edit": "This file is the only place for adult class facts. Leave a field empty rather than guessing. The instructor is Pastor Pierre Rosa, a 4-stripe brown belt. Do not put a martial-arts title in front of the name. Do not change the rank to black or coral. schedule.placeholder is used only when days or time is empty.",
+  "_edit": "This file is the only place for adult class facts. Leave a field empty rather than guessing. The instructor is Pastor Pierre Rosa, a 4-stripe brown belt. Do not put a martial-arts title in front of the name. Do not change the rank to black or coral. coInstructor.rank is purple belt, confirmed for Rick Herrman. Do not invent any other rank. The public line adds ', ' plus rank only when that string is not empty. Do not draw a belt graphic. schedule.placeholder is used only when days or time is empty.",
   "instructor": "Pastor Pierre Rosa, brown belt, 4 stripes",
+  "coInstructor": {
+    "name": "Rick Herrman",
+    "rank": "purple belt"
+  },
   "schedule": {
     "days": "Tuesdays and Thursdays",
     "time": "6:30 – ~8:00 PM",

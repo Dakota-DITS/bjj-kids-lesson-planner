@@ -1,0 +1,178 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="bjj-base" content="">
+  <script src="/bjj-base.js?v=20261022-36"></script>
+  <meta name="robots" content="noindex, nofollow, noarchive, nosnippet">
+  <meta name="googlebot" content="noindex, nofollow">
+  <meta http-equiv="Cache-Control" content="no-store" />
+  <meta name="referrer" content="no-referrer" />
+  <title>Class card · Grace BJJ</title>
+  <meta name="description" content="A parent checks one child's class card at Grace BJJ." />
+  <link rel="icon" href="/icons/favicon-32.png" type="image/png" sizes="32x32" />
+  <link rel="stylesheet" href="/css/waiver.css?v=20261022-36" />
+</head>
+<body>
+  <a class="skip" href="#main">Skip to content</a>
+  <header class="top no-print"><a href="/">Grace BJJ</a></header>
+  <main class="sheet" id="main">
+    <img class="logo" src="/img/logo/grace-logo-mark-transparent.png" alt="Grace Jiu Jitsu" />
+    <h1>Class card</h1>
+    <p id="lead">Enter the birth month and day from the enrollment form. The year stays off this page.</p>
+    <p class="error" id="gateNote" role="alert"></p>
+    <form id="gate" hidden>
+      <div class="field">
+        <label for="month">Birth month</label>
+        <input id="month" name="month" type="number" inputmode="numeric" min="1" max="12" required autocomplete="off" />
+      </div>
+      <div class="field">
+        <label for="day">Birth day</label>
+        <input id="day" name="day" type="number" inputmode="numeric" min="1" max="31" required autocomplete="off" />
+      </div>
+      <p class="row no-print"><button type="submit">Show this card</button></p>
+    </form>
+    <section id="card" hidden>
+      <h2 id="who"></h2>
+      <p id="group"></p>
+      <p id="rank"></p>
+      <h2>Progress</h2>
+      <p id="progress"></p>
+      <p id="recent"></p>
+      <h2>Enrollment form</h2>
+      <p id="waiver"></p>
+      <p class="row no-print">
+        <button type="button" id="printWaiver" hidden>View / print my signed waiver</button>
+        <a class="button" id="signLink" hidden href="/kids/waiver/">Sign the enrollment form</a>
+      </p>
+      <section id="printCopy" hidden>
+        <h2>Signed enrollment</h2>
+        <p id="printWho"></p>
+        <p id="printWhen"></p>
+        <img id="printSig" alt="Signature" hidden />
+        <img id="printParentSig" alt="Parent or guardian signature" hidden />
+      </section>
+    </section>
+  </main>
+  <script>
+    (function () {
+      var token = (location.hash || "").replace(/^#/, "");
+      var gate = document.getElementById("gate");
+      var note = document.getElementById("gateNote");
+      var card = document.getElementById("card");
+
+      function say(message) {
+        note.textContent = message || "";
+      }
+
+      if (!/^[A-Za-z0-9_-]{20,80}$/.test(token)) {
+        say("Open this page from the class card.");
+        return;
+      }
+
+      fetch("/api/me", { credentials: "same-origin", cache: "no-store" })
+        .then(function (res) {
+          if (res.ok) location.replace("/app/#" + token);
+        })
+        .catch(function () {});
+
+      gate.hidden = false;
+      gate.addEventListener("submit", function (event) {
+        event.preventDefault();
+        say("");
+        var month = Number(document.getElementById("month").value);
+        var day = Number(document.getElementById("day").value);
+        fetch("/api/public/parent", {
+          method: "POST",
+          credentials: "same-origin",
+          cache: "no-store",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ token: token, month: month, day: day })
+        })
+          .then(function (res) {
+            return res.json().then(function (body) {
+              return { ok: res.ok, body: body || {} };
+            });
+          })
+          .then(function (result) {
+            if (!result.ok) throw new Error(result.body.error || "Those details don't match.");
+            paint(result.body, month, day);
+          })
+          .catch(function (err) {
+            say(err.message || "Those details don't match.");
+          });
+      });
+
+      function paint(profile, month, day) {
+        gate.hidden = true;
+        card.hidden = false;
+        document.getElementById("who").textContent = profile.firstName || "";
+        document.getElementById("group").textContent = profile.ageGroup || "";
+        document.getElementById("rank").textContent =
+          (profile.beltLabel || "White") + " belt, " + (profile.stripesLabel || "no stripes");
+        var progress = profile.progress || {};
+        document.getElementById("progress").textContent =
+          (progress.techniques || 0) + " techniques checked off. " +
+          (progress.classes || 0) + " classes checked off.";
+        var recent = Array.isArray(progress.recentAttendance) ? progress.recentAttendance : [];
+        document.getElementById("recent").textContent = recent.length
+          ? "Recent attendance: " + recent.join(", ")
+          : "No attendance recorded yet.";
+        var waiver = profile.waiver || {};
+        var sign = document.getElementById("signLink");
+        var printBtn = document.getElementById("printWaiver");
+        if (waiver.signed) {
+          document.getElementById("waiver").textContent =
+            "Signed " + (waiver.signedOn || "") + " by " + (waiver.signerName || "") + ".";
+          printBtn.hidden = false;
+          sign.hidden = true;
+        } else {
+          document.getElementById("waiver").textContent = "Not signed yet.";
+          printBtn.hidden = true;
+          sign.hidden = false;
+          sign.href = profile.signForm === "adult" ? "/waiver/" : "/kids/waiver/";
+          sign.addEventListener("click", function () {
+            try {
+              sessionStorage.setItem("bjj-parent-sign", JSON.stringify({
+                token: token,
+                month: month,
+                day: day
+              }));
+            } catch (err) { /* the form still opens */ }
+          });
+        }
+        printBtn.addEventListener("click", function () {
+          fetch("/api/public/parent/waiver", { credentials: "same-origin", cache: "no-store" })
+            .then(function (res) {
+              return res.json().then(function (body) {
+                if (!res.ok) throw new Error((body && body.error) || "That form is not available.");
+                return body;
+              });
+            })
+            .then(function (body) {
+              document.getElementById("printWho").textContent = body.participantName || "";
+              document.getElementById("printWhen").textContent =
+                "Signed " + (body.signedOn || "") + " by " + (body.signerName || "") + ".";
+              var img = document.getElementById("printSig");
+              if (body.signature) {
+                img.src = body.signature;
+                img.hidden = false;
+              }
+              var parentImg = document.getElementById("printParentSig");
+              if (body.parentSignature) {
+                parentImg.src = body.parentSignature;
+                parentImg.hidden = false;
+              }
+              document.getElementById("printCopy").hidden = false;
+              window.print();
+            })
+            .catch(function (err) {
+              say(err.message || "That form is not available.");
+            });
+        });
+      }
+    })();
+  </script>
+</body>
+</html>

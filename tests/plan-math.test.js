@@ -274,6 +274,15 @@ const cardId = "c-sam01";
 assert.strictEqual(P.parseQr(P.qrPayload(cardId)), cardId);
 assert.strictEqual(P.parseQr("GBJJ1|c-sam01|zzzz"), "");
 assert.strictEqual(P.parseQr("not-a-card"), "");
+assert.strictEqual(P.parseQr("1"), "");
+assert.strictEqual(P.parseQr("https://bjj.bettrbook.com/p/#1"), "");
+const parentToken = "abcDEF123_-xyzABCDE98765";
+assert.strictEqual(P.parseQr("https://bjj.bettrbook.com/p/#" + parentToken), "parent:" + parentToken);
+assert.strictEqual(P.parseQr("https://bjj.bettrbook.com/demo/p/#" + parentToken), "parent:" + parentToken);
+assert.strictEqual(P.parentQrText(parentToken), "/p/#" + parentToken);
+assert.strictEqual(P.parentQrText("1"), "");
+assert.equal(P.parentQrText(parentToken).includes("http"), false);
+assert.strictEqual(P.qrPayload("card1").startsWith("GBJJ1|"), true);
 const progress = P.sanitizeProgress({
   classes: [{ id: "bad id", date: "2026-10-27", ageGroup: "mite", theme: "Mount!", taught: 1, attended: ["c-sam01", "<x>"] }],
   levels: { "c-sam01": { "ls-upa": "own", "ls-upa": "nope" } },

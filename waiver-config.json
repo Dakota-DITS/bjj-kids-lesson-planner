@@ -1,4 +1,23 @@
 {
-  "waiverSubmissionsEnabled": false,
-  "waitlistEnabled": false
+  "_edit": "Edit copy to change the enrollment wording families see. The pages fill the legal paragraphs from copy after they load. The HTML files keep the same words so Print still works if this file is slow. Change both together. waiverSubmissionsEnabled saves a submission. waitlistEnabled stays false until a waitlist is opened.",
+  "waiverSubmissionsEnabled": true,
+  "waitlistEnabled": false,
+  "copy": {
+    "adult": {
+      "risksTitle": "Acknowledgement of Risks, Injury & Obligations",
+      "risks": "I acknowledge that the activity I will be engaging in is a dangerous activity and that by participating I am exposed to certain risks. I assume the risk and responsibility for any injury, death or property damage resulting from my participation. I acknowledge and understand that while participating in this activity: I may be injured physically. I may cause injury to other people. I am responsible for my personal property. Other people participating in the activity may cause injury to me or damage to my property. The conditions in which the activity is conducted may vary without warning. Grace Baptist Church of Salem, Oregon or any instructors teaching on behalf of Grace Baptist Church of Salem, Oregon are not responsible for damage or injury to your personal property.",
+      "releaseTitle": "Release and Indemnity",
+      "release": "I participate in the above activity at my sole risk and responsibility. I indemnify and hold harmless Grace Baptist Church of Salem, Oregon or any instructors teaching on behalf of Grace Baptist Church of Salem, Oregon against any and all claims, damage, demands, rights of action, or causes of action, of any person or entity, that may arise from injuries or damages sustained by me or my fellow students and instructors.",
+      "hygieneTitle": "Guidelines to Follow",
+      "hygiene": "Appropriate clothing, footwear, protection, and gear must be worn at all times. Each student/participant must follow the guidelines on pages 1 and 2. Hygiene is important. Communicable diseases spread easily in a training environment. Do yourself and others a service by not bringing unwanted germs into the gym. Come to class clean, shower, or clean off after work before stepping on the mats. Thank you for making the gym at Grace Baptist Church of Salem, Oregon a clean, safe, and enjoyable place to be. By signing this form, you acknowledge that you have read, understand, and agree to the above statements."
+    },
+    "kids": {
+      "risksTitle": "Acknowledgement of Risks, Injury & Obligations",
+      "risks": "I am the parent or guardian of the minor child named on this form. I acknowledge that the activity my child will be engaging in is a dangerous activity and that by participating my child is exposed to certain risks. I assume the risk and responsibility for any injury, death or property damage resulting from my child's participation. I acknowledge and understand that while my child is participating in this activity: My child may be injured physically. My child may cause injury to other people. I am responsible for my child's personal property. Other people participating in the activity may cause injury to my child or damage to my child's property. The conditions in which the activity is conducted may vary without warning. Grace Baptist Church of Salem, Oregon or any instructors teaching on behalf of Grace Baptist Church of Salem, Oregon are not responsible for damage or injury to personal property.",
+      "releaseTitle": "Release and Indemnity",
+      "release": "My child participates in the above activity at my sole risk and responsibility. I indemnify and hold harmless Grace Baptist Church of Salem, Oregon or any instructors teaching on behalf of Grace Baptist Church of Salem, Oregon against any and all claims, damage, demands, rights of action, or causes of action, of any person or entity, that may arise from injuries or damages sustained by my child or by fellow students and instructors.",
+      "hygieneTitle": "Guidelines to Follow",
+      "hygiene": "Appropriate clothing, footwear, protection, and gear must be worn at all times. Each student/participant must follow the guidelines on pages 1 and 2. Hygiene is important. Communicable diseases spread easily in a training environment. Do yourself and others a service by not bringing unwanted germs into the gym. Come to class clean, shower, or clean off after work before stepping on the mats. Thank you for making the gym at Grace Baptist Church of Salem, Oregon a clean, safe, and enjoyable place to be. By signing this form, I acknowledge that I have read, understand, and agree to the above statements, and I consent on behalf of my minor child."
+    }
+  }
 }

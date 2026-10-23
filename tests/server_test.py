@@ -32,6 +32,7 @@ class Client:
     def __init__(self, base):
         self.base = base
         self.cookie = ""
+        self.cookies = {}
         self.csrf = ""
 
     def call(self, method, path, body=None, csrf=None, raw=False):
@@ -42,6 +43,8 @@ class Client:
         token = self.csrf if csrf is None else csrf
         if method != "GET" and token:
             req.add_header("X-CSRF-Token", token)
+        if self.cookies:
+            self.cookie = "; ".join(f"{key}={value}" for key, value in self.cookies.items())
         if self.cookie:
             req.add_header("Cookie", self.cookie)
         try:
@@ -61,9 +64,20 @@ class Client:
             return err.code, parsed
 
     def _take_cookie(self, headers):
-        set_cookie = headers.get("Set-Cookie") or ""
-        if "bjj_session=" in set_cookie:
-            self.cookie = set_cookie.split(";", 1)[0]
+        values = headers.get_all("Set-Cookie") if hasattr(headers, "get_all") else []
+        if not values:
+            one = headers.get("Set-Cookie")
+            values = [one] if one else []
+        for raw in values:
+            pair = raw.split(";", 1)[0]
+            name, sep, value = pair.partition("=")
+            if not sep or not name:
+                continue
+            if value == "" or "Max-Age=0" in raw:
+                self.cookies.pop(name, None)
+            else:
+                self.cookies[name] = value
+        self.cookie = "; ".join(f"{key}={value}" for key, value in self.cookies.items())
 
     def login(self, username, password):
         status, pre = self.call("GET", "/api/auth/csrf")
@@ -1315,6 +1329,7 @@ class ApiTest(unittest.TestCase):
         return body
 
     def test_waivers_stay_closed_and_admins_review_them(self):
+        self.api.cfg["waiver_submissions_enabled"] = False
         guest = self.client()
         status, denied = guest.call("POST", "/api/public/waivers", self.waiver_body())
         self.assertEqual(status, 403, denied)
@@ -1364,8 +1379,12 @@ class ApiTest(unittest.TestCase):
                 ),
             )
             self.assertEqual(status, 201, kids_saved)
-            status, still_hidden = teacher.call("GET", "/api/waivers/" + saved["id"])
-            self.assertEqual(status, 403, still_hidden)
+            status, teacher_detail = teacher.call("GET", "/api/waivers/" + saved["id"])
+            self.assertEqual(status, 200, teacher_detail)
+            self.assertTrue(teacher_detail["signature"].startswith("data:image/png"))
+            self.assertEqual(teacher_detail["payload"]["parentName"], "Pat Parent")
+            status, guest_hidden = guest.call("GET", "/api/waivers/" + saved["id"])
+            self.assertEqual(status, 401, guest_hidden)
             status, detail = admin.call("GET", "/api/waivers/" + saved["id"])
             self.assertEqual(status, 200, detail)
             self.assertTrue(detail["signature"].startswith("data:image/png"))
@@ -1379,6 +1398,251 @@ class ApiTest(unittest.TestCase):
             self.assertNotIn("data:image", text)
         finally:
             self.api.cfg["waiver_submissions_enabled"] = None
+
+    def test_parent_card_hides_medical_notes(self):
+        from datetime import date
+
+        self.api._parent_fails = []
+        self.api._parent_grants = {}
+        self.api._waiver_posts = []
+        self.api.cfg["waiver_submissions_enabled"] = True
+        guest = self.client()
+        teacher = self.client()
+        teacher.login("alex", "correct-horse")
+        admin = self.client()
+        admin.login("dakota", "correct-horse")
+        year = date.today().year
+        dob_a = f"{year - 6}-04-04"
+        dob_b = f"{year - 6}-05-05"
+        created = []
+        try:
+            status, kid = admin.call(
+                "POST",
+                "/api/students",
+                {"name": "Ada Token", "age": 6, "belt": "grey", "stripes": 2, "dob": dob_a},
+            )
+            self.assertEqual(status, 201, kid)
+            created.append(kid["id"])
+            status, twin = admin.call(
+                "POST",
+                "/api/students",
+                {"name": "Ada Token", "age": 6, "belt": "white", "stripes": 0, "dob": dob_b},
+            )
+            self.assertEqual(status, 201, twin)
+            created.append(twin["id"])
+            status, blank = admin.call(
+                "POST",
+                "/api/students",
+                {"name": "Bea Token", "age": 7, "belt": "white", "stripes": 0},
+            )
+            self.assertEqual(status, 201, blank)
+            created.append(blank["id"])
+            status, boot = admin.call("GET", "/api/bootstrap")
+            self.assertEqual(status, 200, boot)
+            ada = next(row for row in boot["students"] if row["id"] == kid["id"])
+            twin_row = next(row for row in boot["students"] if row["id"] == twin["id"])
+            bea = next(row for row in boot["students"] if row["id"] == blank["id"])
+            token = ada["parentToken"]
+            self.assertGreaterEqual(len(token), 20)
+            self.assertNotEqual(token, kid["id"])
+            self.assertNotEqual(token, "1")
+            self.assertNotEqual(ada["parentToken"], twin_row["parentToken"])
+            status, hidden = guest.call("GET", "/api/bootstrap")
+            self.assertEqual(status, 401, hidden)
+            self.assertNotIn(token, json.dumps(hidden))
+            status, examples = guest.call("GET", "/api/public/demo-examples")
+            self.assertEqual(status, 404, examples)
+            status, public = guest.call("GET", "/api/public/kids-enrollment")
+            self.assertNotIn(token, json.dumps(public))
+            self.assertNotIn("parentToken", json.dumps(public))
+            admin.call("PUT", "/api/notes", {"studentId": kid["id"], "note": "STAFF-NOTE-SECRET"})
+            admin.call(
+                "POST",
+                "/api/attendance",
+                {
+                    "date": "2026-10-27",
+                    "ageGroup": "mite",
+                    "theme": "mount",
+                    "themeLabel": "Mount",
+                    "techniques": [{"id": "ls-upa", "name": "Upa", "position": "Mount", "theme": "mount"}],
+                    "game": "",
+                    "attended": [kid["id"]],
+                    "taught": True,
+                },
+            )
+            teacher.call("PUT", "/api/levels", {"studentId": kid["id"], "techId": "ls-upa", "level": "practicing"})
+
+            status, bad_token = guest.call("POST", "/api/public/parent", {"token": "1", "month": 4, "day": 4})
+            status_id, bad_id = guest.call(
+                "POST", "/api/public/parent", {"token": kid["id"], "month": 4, "day": 4}
+            )
+            status_date, bad_date = guest.call(
+                "POST", "/api/public/parent", {"token": token, "month": 1, "day": 1}
+            )
+            self.assertEqual(status, 400, bad_token)
+            self.assertEqual(status_id, 400, bad_id)
+            self.assertEqual(status_date, 400, bad_date)
+            self.assertEqual(bad_token["error"], bad_date["error"])
+            self.assertEqual(bad_id["error"], "Those details don't match.")
+            self.assertNotIn("Ada", json.dumps(bad_token))
+            self.assertNotIn(token, json.dumps(bad_date))
+
+            status, open_card = guest.call(
+                "POST", "/api/public/parent", {"token": token, "month": 4, "day": 4}
+            )
+            self.assertEqual(status, 200, open_card)
+            self.assertEqual(
+                set(open_card),
+                {
+                    "firstName",
+                    "ageGroup",
+                    "belt",
+                    "beltLabel",
+                    "stripes",
+                    "stripesLabel",
+                    "signForm",
+                    "progress",
+                    "waiver",
+                },
+            )
+            self.assertEqual(open_card["firstName"], "Ada")
+            self.assertEqual(open_card["ageGroup"], "3–6 Mighty Mites")
+            self.assertEqual(open_card["beltLabel"], "Grey")
+            self.assertEqual(open_card["stripesLabel"], "2 stripes")
+            self.assertEqual(open_card["signForm"], "kids")
+            self.assertGreaterEqual(open_card["progress"]["techniques"], 1)
+            self.assertGreaterEqual(open_card["progress"]["classes"], 1)
+            self.assertIn("2026-10-27", open_card["progress"]["recentAttendance"])
+            self.assertFalse(open_card["waiver"]["signed"])
+            dumped = json.dumps(open_card)
+            for banned in (dob_a, "STAFF-NOTE-SECRET", "SECRET-MEDICAL-NOTE", token, twin_row["parentToken"], "waitlist"):
+                self.assertNotIn(banned, dumped)
+            self.assertNotEqual(guest.cookies.get("bjj_parent"), token)
+            self.assertTrue(guest.cookies.get("bjj_parent"))
+            status, again = guest.call("GET", "/api/public/parent")
+            self.assertEqual(status, 200, again)
+            self.assertEqual(again["firstName"], "Ada")
+
+            status, unfinished = guest.call(
+                "POST",
+                "/api/public/parent",
+                {"token": bea["parentToken"], "month": 1, "day": 1},
+            )
+            self.assertEqual(status, 400, unfinished)
+            self.assertEqual(unfinished["error"], "Ask a teacher to finish this card.")
+            self.assertNotIn("Bea", json.dumps(unfinished))
+
+            before = guest.call("GET", "/api/public/kids-enrollment")[1]["enrolled"]
+            status, linked = guest.call(
+                "POST",
+                "/api/public/waivers",
+                self.waiver_body(
+                    kind="kids",
+                    participantName="Totally Other",
+                    email="token-view-a@example.com",
+                    dob=dob_a,
+                    parentName="Pat Parent",
+                    injuries="SECRET-MEDICAL-NOTE",
+                    parentToken=token,
+                    birthMonth=4,
+                    birthDay=4,
+                ),
+            )
+            self.assertEqual(status, 201, linked)
+            status, after = guest.call("GET", "/api/public/kids-enrollment")
+            self.assertEqual(after["enrolled"], before)
+            status, signed = guest.call("POST", "/api/public/parent", {"token": token, "month": 4, "day": 4})
+            self.assertEqual(status, 200, signed)
+            self.assertTrue(signed["waiver"]["signed"])
+            self.assertEqual(signed["waiver"]["signerName"], "Jordan Lee")
+            self.assertNotIn("SECRET-MEDICAL-NOTE", json.dumps(signed))
+            status, printed = guest.call("GET", "/api/public/parent/waiver")
+            self.assertEqual(status, 200, printed)
+            self.assertEqual(printed["participantName"], "Totally Other")
+            self.assertTrue(printed["signature"].startswith("data:image/png"))
+            self.assertNotIn("SECRET-MEDICAL-NOTE", json.dumps(printed))
+            self.assertNotIn("dob", printed)
+            self.assertNotIn("email", printed)
+            self.assertNotIn("injuries", printed)
+            status, twin_waiver = admin.call("GET", "/api/bootstrap")
+            twin_again = next(row for row in twin_waiver["students"] if row["id"] == twin["id"])
+            self.assertFalse(twin_again["waiver"]["signed"])
+            linked_row = next(row for row in twin_waiver["students"] if row["id"] == kid["id"])
+            self.assertTrue(linked_row["waiver"]["signed"])
+            self.assertEqual(linked_row["waiver"]["waiverId"], linked["id"])
+
+            status, loose = guest.call(
+                "POST",
+                "/api/public/waivers",
+                self.waiver_body(
+                    kind="kids",
+                    participantName="Ada Token",
+                    email="token-view-b@example.com",
+                    dob=dob_a,
+                    parentName="Pat Parent",
+                    injuries="SECRET-MEDICAL-NOTE",
+                ),
+            )
+            self.assertEqual(status, 201, loose)
+            status, listed = admin.call("GET", "/api/waivers/" + loose["id"])
+            self.assertEqual(listed["rosterStudentId"], "")
+            status, teacher_form = teacher.call("GET", "/api/waivers/" + linked["id"])
+            self.assertEqual(status, 200, teacher_form)
+            self.assertEqual(teacher_form["payload"]["injuries"], "SECRET-MEDICAL-NOTE")
+            status, guest_form = self.client().call("GET", "/api/waivers/" + linked["id"])
+            self.assertEqual(status, 401, guest_form)
+            status, teacher_list = teacher.call("GET", "/api/waivers")
+            self.assertEqual(status, 403, teacher_list)
+
+            other = self.client()
+            for _ in range(5):
+                status, missed = other.call(
+                    "POST",
+                    "/api/public/parent",
+                    {"token": twin_row["parentToken"], "month": 1, "day": 1},
+                )
+                self.assertEqual(status, 400, missed)
+            status, limited = other.call(
+                "POST",
+                "/api/public/parent",
+                {"token": twin_row["parentToken"], "month": 5, "day": 5},
+            )
+            self.assertEqual(status, 429, limited)
+            self.assertEqual(limited["error"], "Too many tries. Wait and try again.")
+            self.assertNotIn("Ada", json.dumps(limited))
+
+            status, revoked = admin.call(
+                "POST", f"/api/students/{kid['id']}/parent-token", {"revoke": True}
+            )
+            self.assertEqual(status, 200, revoked)
+            self.assertEqual(revoked["parentToken"], "")
+            status, dead = guest.call("POST", "/api/public/parent", {"token": token, "month": 4, "day": 4})
+            self.assertEqual(status, 400, dead)
+            self.assertEqual(dead["error"], "Those details don't match.")
+            status, renewed = teacher.call("POST", f"/api/students/{kid['id']}/parent-token", {})
+            self.assertEqual(status, 200, renewed)
+            self.assertGreaterEqual(len(renewed["parentToken"]), 20)
+            self.assertNotEqual(renewed["parentToken"], token)
+            status, fresh = self.client().call(
+                "POST",
+                "/api/public/parent",
+                {"token": renewed["parentToken"], "month": 4, "day": 4},
+            )
+            self.assertEqual(status, 200, fresh)
+            self.assertEqual(fresh["firstName"], "Ada")
+            self.assertNotIn("SECRET-MEDICAL-NOTE", json.dumps(fresh))
+        finally:
+            self.api.cfg["waiver_submissions_enabled"] = None
+            self.api._waiver_posts = []
+            self.api._parent_fails = []
+            self.api._parent_grants = {}
+            for sid in created:
+                admin.call("DELETE", f"/api/students/{sid}")
+            conn = connect(self.api.cfg["db_path"])
+            conn.execute("DELETE FROM waivers WHERE email LIKE 'token-view-%'")
+            conn.execute("DELETE FROM students WHERE name IN ('Ada Token', 'Bea Token')")
+            conn.commit()
+            conn.close()
 
     def _waiver_count(self):
         conn = connect(self.api.cfg["db_path"])
@@ -1433,6 +1697,7 @@ class ApiTest(unittest.TestCase):
         students = {row[1] for row in conn.execute("PRAGMA table_info(students)")}
         waivers = {row[1] for row in conn.execute("PRAGMA table_info(waivers)")}
         self.assertIn("dob", students)
+        self.assertIn("parent_token", students)
         self.assertIn("added_to_roster", waivers)
         self.assertIn("roster_student_id", waivers)
         row = conn.execute("SELECT added_to_roster, roster_student_id FROM waivers WHERE id = 'w-old'").fetchone()
@@ -1449,7 +1714,7 @@ class ApiTest(unittest.TestCase):
         self.assertEqual(status, 200, snap)
         self.assertEqual(set(snap), {"cap", "enrolled", "spotsOpen", "full", "submissionsEnabled", "waitlistEnabled"})
         self.assertEqual(snap["cap"], 12)
-        self.assertFalse(snap["submissionsEnabled"])
+        self.assertTrue(snap["submissionsEnabled"])
         self.assertFalse(snap["waitlistEnabled"])
         self.assertNotIn("Sam", json.dumps(snap))
 
@@ -1469,7 +1734,7 @@ class ApiTest(unittest.TestCase):
         self.assertEqual(changed["cap"], 9)
         status, seen = guest.call("GET", "/api/public/kids-enrollment")
         self.assertEqual(seen["cap"], 9)
-        self.assertEqual(seen["submissionsEnabled"], False)
+        self.assertEqual(seen["submissionsEnabled"], True)
         status, bad = admin.call("PUT", "/api/kids-cap", {"cap": 0})
         self.assertEqual(status, 400, bad)
         status, huge = admin.call("PUT", "/api/kids-cap", {"cap": 201})
@@ -2018,7 +2283,7 @@ class DemoIsolationTest(unittest.TestCase):
                     os.environ[key] = value
         with open(os.path.join(os.path.dirname(__file__), "..", "waiver-config.json"), encoding="utf-8") as handle:
             raw = json.load(handle)
-        self.assertFalse(raw["waiverSubmissionsEnabled"])
+        self.assertTrue(raw["waiverSubmissionsEnabled"])
         self.assertFalse(raw["waitlistEnabled"])
 
     def test_demo_seed_is_fake_and_refuses_production(self):
@@ -2089,6 +2354,16 @@ class DemoIsolationTest(unittest.TestCase):
             marker = conn.execute("SELECT value FROM settings WHERE key = 'demo_seed'").fetchone()
             self.assertEqual(marker["value"], "1")
             self.assertEqual(conn.execute("SELECT COUNT(*) AS n FROM waitlist").fetchone()["n"], 3)
+            tokens = [row["parent_token"] for row in conn.execute("SELECT id, parent_token FROM students")]
+            self.assertEqual(len(tokens), 12)
+            self.assertEqual(len(set(tokens)), 12)
+            self.assertTrue(all(len(token) >= 20 and token != "1" for token in tokens))
+            milo = conn.execute(
+                "SELECT roster_student_id, payload_json FROM waivers WHERE id = 'demo-waiver-milo'"
+            ).fetchone()
+            self.assertEqual(milo["roster_student_id"], "demo-milo")
+            self.assertIn("EXAMPLE-MEDICAL-NOTE", milo["payload_json"])
+            self.assertIsNone(conn.execute("SELECT 1 FROM waivers WHERE roster_student_id = 'demo-tess'").fetchone())
         finally:
             conn.close()
         prod_conn = connect(prod)
@@ -2124,6 +2399,7 @@ class DemoIsolationTest(unittest.TestCase):
         flags = json.loads(slurp(os.path.join(published, "waiver-config.json")))
         self.assertTrue(flags["waiverSubmissionsEnabled"])
         self.assertTrue(flags["waitlistEnabled"])
+        self.assertIn("I consent on behalf of my minor child.", flags["copy"]["kids"]["hygiene"])
         home = slurp(os.path.join(published, "index.html"))
         self.assertIn('name="bjj-base" content="/demo"', home)
         self.assertIn('href="/demo/kids/"', home)

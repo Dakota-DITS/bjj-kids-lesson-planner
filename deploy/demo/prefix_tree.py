@@ -88,7 +88,7 @@ def is_site_path(url):
     head = name.split("/", 1)[0]
     heads = {
         "api", "app", "kids", "waiver", "privacy", "coloring", "login", "calendar",
-        "css", "img", "icons", "fonts", "sheets", "js", "vendor",
+        "css", "img", "icons", "fonts", "sheets", "js", "vendor", "p",
     }
     exact = {
         "adult-class.json", "waiver-config.json", "manifest.webmanifest",
@@ -215,8 +215,12 @@ def publish(source, dest_root, base="/demo"):
                 shutil.copy2(src, dest)
 
     config_path = os.path.join(publish_dir, "waiver-config.json")
+    with open(config_path, encoding="utf-8") as handle:
+        published = json.load(handle)
+    published["waiverSubmissionsEnabled"] = True
+    published["waitlistEnabled"] = True
     with open(config_path, "w", encoding="utf-8") as handle:
-        json.dump({"waiverSubmissionsEnabled": True, "waitlistEnabled": True}, handle, indent=2)
+        json.dump(published, handle, indent=2)
         handle.write("\n")
     return publish_dir
 

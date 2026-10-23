@@ -126,33 +126,6 @@ h3 { margin: 0 0 8px; font-size: 1.15rem; }
 }
 .card p { margin: 0 0 8px; }
 .when { font-size: 1.15rem; font-weight: 700; }
-.belt-row { margin: 0 0 10px; }
-.belt {
-  display: inline-flex;
-  align-items: stretch;
-  width: 168px;
-  height: 22px;
-  border: 1px solid #f5f0e8;
-  border-radius: 3px;
-  overflow: hidden;
-}
-.belt-cloth {
-  flex: 1 1 auto;
-  background: #6b3a1f;
-}
-.belt-bar {
-  display: flex;
-  align-items: center;
-  justify-content: space-evenly;
-  width: 58px;
-  background: #0a0a0a;
-}
-.stripe {
-  width: 5px;
-  height: 14px;
-  background: #fff;
-  border-radius: 1px;
-}
 .button {
   display: inline-flex;
   align-items: center;

@@ -486,6 +486,26 @@ def migrate(conn):
         conn.execute("ALTER TABLE waivers ADD COLUMN added_to_roster INTEGER NOT NULL DEFAULT 0")
     if "roster_student_id" not in waiver_columns:
         conn.execute("ALTER TABLE waivers ADD COLUMN roster_student_id TEXT NOT NULL DEFAULT ''")
+    student_columns = {row[1] for row in conn.execute("PRAGMA table_info(students)")}
+    if "parent_token" not in student_columns:
+        conn.execute("ALTER TABLE students ADD COLUMN parent_token TEXT NOT NULL DEFAULT ''")
+    conn.execute(
+        """
+        CREATE UNIQUE INDEX IF NOT EXISTS students_parent_token_idx
+        ON students(parent_token) WHERE parent_token != ''
+        """
+    )
+    missing_tokens = conn.execute(
+        "SELECT id FROM students WHERE parent_token IS NULL OR parent_token = ''"
+    ).fetchall()
+    for row in missing_tokens:
+        for _ in range(5):
+            token = secrets.token_urlsafe(24)
+            taken = conn.execute("SELECT 1 FROM students WHERE parent_token = ?", (token,)).fetchone()
+            if taken:
+                continue
+            conn.execute("UPDATE students SET parent_token = ? WHERE id = ?", (token, row["id"]))
+            break
     migrate_age_groups(conn)
     conn.commit()
 

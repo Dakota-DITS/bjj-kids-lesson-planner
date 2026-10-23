@@ -18,7 +18,7 @@ const policy = read("privacy/index.html");
 const config = JSON.parse(read("waiver-config.json"));
 const sentence = "Kids class is full right now. Join the waitlist and we'll reach out when a spot opens.";
 
-assert.equal(config.waiverSubmissionsEnabled, false);
+assert.equal(config.waiverSubmissionsEnabled, true);
 assert.equal(config.waitlistEnabled, false);
 assert.ok(form.includes(sentence));
 assert.ok(form.includes('id="waitlistBox"'));

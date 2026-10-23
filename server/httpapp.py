@@ -51,6 +51,11 @@ DEFAULT_KIDS_CAP = 12
 KIDS_FULL = (
     "Kids class is full right now. Email dits+bjj@mail.grokbot.com to ask about the next opening."
 )
+PARENT_COOKIE = "bjj_parent"
+PARENT_GRANT_SECONDS = 7200
+PARENT_MISS = "Those details don't match."
+PARENT_INCOMPLETE = "Ask a teacher to finish this card."
+PARENT_LIMIT = "Too many tries. Wait and try again."
 
 
 def env_optional_bool(name):
@@ -109,6 +114,8 @@ class Api:
         conn.close()
         self._waiver_posts = []
         self._waitlist_posts = []
+        self._parent_fails = []
+        self._parent_grants = {}
 
     def db(self):
         return connect(self.cfg["db_path"])
@@ -247,7 +254,12 @@ class Api:
             "csrf": csrf,
         }
 
-    def student_json(self, row):
+    def student_json(self, row, conn=None):
+        waiver = (
+            self.waiver_for_student(conn, row["id"])
+            if conn is not None
+            else {"signed": False, "signedOn": "", "signerName": "", "waiverId": ""}
+        )
         return {
             "id": row["id"],
             "name": row["name"],
@@ -255,6 +267,8 @@ class Api:
             "belt": row["belt"],
             "stripes": row["stripes"],
             "dob": self.cell(row, "dob", "") or "",
+            "parentToken": self.cell(row, "parent_token", "") or "",
+            "waiver": waiver,
         }
 
     def cell(self, row, key, default=""):
@@ -364,7 +378,7 @@ class Api:
             staff = [self.staff_json(row) for row in self.staff_rows(conn)]
         except sqlite3.Error:
             staff = []
-        students = [self.student_json(row) for row in conn.execute("SELECT * FROM students ORDER BY name")]
+        students = [self.student_json(row, conn) for row in conn.execute("SELECT * FROM students ORDER BY name")]
         classes = [self.class_json(row) for row in conn.execute("SELECT * FROM classes ORDER BY date, age_group")]
         levels = {}
         for row in conn.execute("SELECT student_id, tech_id, level FROM levels"):
@@ -613,6 +627,14 @@ class Api:
                 return self.submit_waiver(handler)
             if method == "POST" and path == "/api/public/waitlist":
                 return self.join_waitlist(handler)
+            if method == "POST" and path == "/api/public/parent":
+                return self.public_parent_check(handler)
+            if method == "GET" and path == "/api/public/parent":
+                return self.public_parent_grant(handler)
+            if method == "GET" and path == "/api/public/parent/waiver":
+                return self.public_parent_waiver(handler)
+            if method == "GET" and path == "/api/public/demo-examples":
+                return self.public_demo_examples(handler)
             image = re.match(r"^/api/public/sheets/([A-Za-z0-9_-]{1,40})/image$", path)
             if method == "GET" and image:
                 return self.public_image(handler, image.group(1))
@@ -923,9 +945,10 @@ class Api:
             return self.mark_waiver_on_roster(handler, conn, waiver_roster.group(1))
         waiver_match = re.fullmatch(r"/api/waivers/([A-Za-z0-9_-]{1,40})", path)
         if waiver_match and method == "GET":
-            if not admin:
-                return self.send(handler, 403, {"error": "An admin reviews enrollment forms."})
             return self.waiver_detail(handler, conn, waiver_match.group(1))
+        parent_token_route = re.fullmatch(r"/api/students/([A-Za-z0-9_-]{1,40})/parent-token", path)
+        if parent_token_route and method == "POST":
+            return self.rotate_parent_token(handler, conn, parent_token_route.group(1))
         return self.send(handler, 404, {"error": "That address is not part of the API."})
 
     def get_csrf(self, handler):
@@ -1451,8 +1474,19 @@ class Api:
             return self.send(handler, 409, {"error": "That card is already linked to a student."})
         now = iso(utcnow())
         conn.execute(
-            "INSERT INTO students (id, name, age, belt, stripes, created_at) VALUES (?, ?, ?, ?, ?, ?)",
-            (student["id"], student["name"], student["age"], student["belt"], student["stripes"], now),
+            """
+            INSERT INTO students (id, name, age, belt, stripes, created_at, parent_token)
+            VALUES (?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                student["id"],
+                student["name"],
+                student["age"],
+                student["belt"],
+                student["stripes"],
+                now,
+                self.new_parent_token(conn),
+            ),
         )
         conn.execute(
             """
@@ -1567,10 +1601,20 @@ class Api:
             id_map[raw.get("id")] = student["id"]
             conn.execute(
                 """
-                INSERT INTO students (id, name, age, belt, stripes, created_at) VALUES (?, ?, ?, ?, ?, ?)
-                ON CONFLICT(id) DO UPDATE SET name = excluded.name, age = excluded.age, belt = excluded.belt, stripes = excluded.stripes
+                INSERT INTO students (id, name, age, belt, stripes, created_at, parent_token)
+                VALUES (?, ?, ?, ?, ?, ?, ?)
+                ON CONFLICT(id) DO UPDATE SET
+                  name = excluded.name, age = excluded.age, belt = excluded.belt, stripes = excluded.stripes
                 """,
-                (student["id"], student["name"], student["age"], student["belt"], student["stripes"], iso(utcnow())),
+                (
+                    student["id"],
+                    student["name"],
+                    student["age"],
+                    student["belt"],
+                    student["stripes"],
+                    iso(utcnow()),
+                    self.new_parent_token(conn),
+                ),
             )
         for entry in (progress.get("classes") or [])[:400]:
             if not isinstance(entry, dict):
@@ -1872,34 +1916,20 @@ class Api:
                 return row
         return None
 
-    def attach_new_waiver(self, conn, wid, name, dob, age):
-        if not self.counts_as_kid(age):
-            return
-        match = self.match_kid(conn, name, dob)
-        if match:
-            self.link_waiver_row(conn, wid, match["id"])
-
     def link_student_forms(self, conn, student_id, name, age, dob, waiver_id=""):
-        if waiver_id:
-            row = conn.execute(
-                "SELECT id, kind, dob FROM waivers WHERE id = ?",
-                (waiver_id,),
-            ).fetchone()
-            if row and row["kind"] == "kids":
-                if not dob:
-                    dob = row["dob"] or ""
-                    self.remember_dob(conn, student_id, dob)
-                self.link_waiver_row(conn, row["id"], student_id)
-        if not dob or not self.counts_as_kid(age):
+        # A typed name is not enough to attach a form. Staff pass waiverId,
+        # or the parent card token is checked in submit_waiver.
+        if not waiver_id:
             return
-        target = self.norm_name(name)
-        rows = conn.execute(
-            "SELECT id, participant_name, dob FROM waivers WHERE kind = 'kids' AND added_to_roster = 0"
-        ).fetchall()
-        for row in rows:
-            if (row["dob"] or "") == dob and self.norm_name(row["participant_name"]) == target:
-                self.link_waiver_row(conn, row["id"], student_id)
+        row = conn.execute(
+            "SELECT id, kind, dob FROM waivers WHERE id = ?",
+            (waiver_id,),
+        ).fetchone()
+        if row and row["kind"] == "kids":
+            if not dob:
+                dob = row["dob"] or ""
                 self.remember_dob(conn, student_id, dob)
+            self.link_waiver_row(conn, row["id"], student_id)
 
     def unlink_student_forms(self, conn, student_id):
         conn.execute(
@@ -1909,7 +1939,7 @@ class Api:
 
     def student_payload(self, conn, sid):
         row = conn.execute("SELECT * FROM students WHERE id = ?", (sid,)).fetchone()
-        body = self.student_json(row)
+        body = self.student_json(row, conn)
         body["kidsEnrollment"] = self.enrollment_snapshot(conn, staff=True, next_names=True)
         return body
 
@@ -1925,8 +1955,20 @@ class Api:
             self.lock_kids(conn)
             before = self.kids_enrolled_count(conn)
         conn.execute(
-            "INSERT INTO students (id, name, age, belt, stripes, created_at, dob) VALUES (?, ?, ?, ?, ?, ?, ?)",
-            (raw["id"], raw["name"], raw["age"], raw["belt"], raw["stripes"], iso(utcnow()), dob),
+            """
+            INSERT INTO students (id, name, age, belt, stripes, created_at, dob, parent_token)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                raw["id"],
+                raw["name"],
+                raw["age"],
+                raw["belt"],
+                raw["stripes"],
+                iso(utcnow()),
+                dob,
+                self.new_parent_token(conn),
+            ),
         )
         self.link_student_forms(conn, raw["id"], raw["name"], raw["age"], dob, waiver_id)
         if adding:
@@ -2264,6 +2306,362 @@ class Api:
             },
         )
 
+    def new_parent_token(self, conn):
+        for _ in range(5):
+            token = secrets.token_urlsafe(24)
+            taken = conn.execute("SELECT 1 FROM students WHERE parent_token = ?", (token,)).fetchone()
+            if not taken:
+                return token
+        raise ValueError("Could not make a card code.")
+
+    def waiver_for_student(self, conn, sid):
+        row = conn.execute(
+            """
+            SELECT id, signed_on, signer_name FROM waivers
+            WHERE roster_student_id = ? AND added_to_roster = 1
+            ORDER BY submitted_at DESC LIMIT 1
+            """,
+            (sid,),
+        ).fetchone()
+        if not row:
+            return {"signed": False, "signedOn": "", "signerName": "", "waiverId": ""}
+        return {
+            "signed": True,
+            "signedOn": row["signed_on"] or "",
+            "signerName": row["signer_name"] or "",
+            "waiverId": row["id"],
+        }
+
+    def belt_words(self, belt):
+        parts = [part for part in str(belt or "white").split("-") if part]
+        if not parts:
+            return "White"
+        return "-".join(part[:1].upper() + part[1:] for part in parts)
+
+    def stripes_words(self, stripes):
+        try:
+            count = int(stripes)
+        except (TypeError, ValueError):
+            count = 0
+        count = max(0, min(4, count))
+        if count == 0:
+            return "no stripes"
+        if count == 1:
+            return "1 stripe"
+        return f"{count} stripes"
+
+    def age_group_label(self, age):
+        try:
+            number = int(age)
+        except (TypeError, ValueError):
+            return ""
+        if 3 <= number <= 6:
+            return "3–6 Mighty Mites"
+        if 7 <= number <= 10:
+            return "7–10 Pee Wees"
+        if 11 <= number <= 17:
+            return "11–17"
+        if number >= 18:
+            return "18 and up"
+        return ""
+
+    def first_name(self, name):
+        parts = str(name or "").split()
+        return parts[0] if parts else ""
+
+    def dob_month_day(self, dob):
+        text = str(dob or "")
+        if not re.fullmatch(r"\d{4}-\d{2}-\d{2}", text):
+            return None
+        try:
+            born = datetime.strptime(text, "%Y-%m-%d").date()
+        except ValueError:
+            return None
+        if born.isoformat() != text:
+            return None
+        return born.month, born.day
+
+    def parent_token_row(self, conn, token):
+        text = str(token or "").strip()
+        if not re.fullmatch(r"[A-Za-z0-9_-]{20,80}", text):
+            return None
+        return conn.execute("SELECT * FROM students WHERE parent_token = ?", (text,)).fetchone()
+
+    def parent_month_day(self, month, day):
+        try:
+            month_n = int(month)
+            day_n = int(day)
+        except (TypeError, ValueError):
+            return None
+        if not (1 <= month_n <= 12 and 1 <= day_n <= 31):
+            return None
+        return month_n, day_n
+
+    def parent_attempt_open(self, ip, token):
+        now = utcnow().timestamp()
+        self._parent_fails = [item for item in self._parent_fails if now - item[0] < 3600]
+        token_fails = sum(1 for item in self._parent_fails if item[2] == token)
+        ip_fails = sum(1 for item in self._parent_fails if item[1] == ip)
+        return token_fails < 5 and ip_fails < 40
+
+    def note_parent_failure(self, ip, token):
+        self._parent_fails.append((utcnow().timestamp(), ip, str(token or "")))
+
+    def cookie_value(self, handler, name):
+        header = handler.headers.get("Cookie", "")
+        for part in header.split(";"):
+            key, _, value = part.strip().partition("=")
+            if key == name and value:
+                return value
+        return ""
+
+    def parent_cookie(self, token, max_age):
+        parts = [
+            f"{PARENT_COOKIE}={token}",
+            "HttpOnly",
+            "SameSite=Lax",
+            f"Path={self.cookie_path()}",
+            f"Max-Age={max_age}",
+        ]
+        if self.cfg["secure"]:
+            parts.append("Secure")
+        return "; ".join(parts)
+
+    def issue_parent_grant(self, student_id):
+        now = utcnow().timestamp()
+        self._parent_grants = {
+            key: row for key, row in self._parent_grants.items() if row["exp"] > now
+        }
+        grant = secrets.token_urlsafe(24)
+        self._parent_grants[grant] = {"student_id": student_id, "exp": now + PARENT_GRANT_SECONDS}
+        return grant
+
+    def drop_parent_grants(self, student_id):
+        self._parent_grants = {
+            key: row for key, row in self._parent_grants.items() if row["student_id"] != student_id
+        }
+
+    def parent_grant_student(self, handler):
+        grant = self.cookie_value(handler, PARENT_COOKIE)
+        row = self._parent_grants.get(grant)
+        if not row or row["exp"] <= utcnow().timestamp():
+            return ""
+        return row["student_id"]
+
+    def parent_progress(self, conn, sid):
+        techniques = conn.execute(
+            "SELECT COUNT(*) AS n FROM levels WHERE student_id = ?",
+            (sid,),
+        ).fetchone()["n"]
+        recent = []
+        classes = 0
+        rows = conn.execute("SELECT date, attended FROM classes ORDER BY date DESC").fetchall()
+        for row in rows:
+            if sid not in self.json_list(row["attended"]):
+                continue
+            classes += 1
+            if len(recent) < 6 and row["date"]:
+                recent.append(row["date"])
+        return {"techniques": int(techniques), "classes": classes, "recentAttendance": recent}
+
+    def parent_profile(self, conn, row):
+        age = row["age"]
+        group = self.age_group_label(age)
+        try:
+            number = int(age)
+        except (TypeError, ValueError):
+            number = 0
+        waiver = self.waiver_for_student(conn, row["id"])
+        return {
+            "firstName": self.first_name(row["name"]),
+            "ageGroup": group,
+            "belt": row["belt"],
+            "beltLabel": self.belt_words(row["belt"]),
+            "stripes": int(row["stripes"]),
+            "stripesLabel": self.stripes_words(row["stripes"]),
+            "signForm": "kids" if 3 <= number <= 10 else "adult",
+            "progress": self.parent_progress(conn, row["id"]),
+            "waiver": {
+                "signed": waiver["signed"],
+                "signedOn": waiver["signedOn"],
+                "signerName": waiver["signerName"],
+            },
+        }
+
+    def parent_send(self, handler, status, body, grant=""):
+        extra = None
+        if grant:
+            extra = [self.parent_cookie(grant, PARENT_GRANT_SECONDS)]
+        return self.send(handler, status, body, extra_cookies=extra, robots=True)
+
+    def public_parent_check(self, handler):
+        body = self.read_json(handler)
+        token = str(body.get("token") or "").strip()
+        ip = self.client_ip(handler)
+        if not self.parent_attempt_open(ip, token):
+            return self.parent_send(handler, 429, {"error": PARENT_LIMIT})
+        pair = self.parent_month_day(body.get("month"), body.get("day"))
+        conn = self.db()
+        try:
+            row = self.parent_token_row(conn, token)
+            if not row or not pair:
+                self.note_parent_failure(ip, token)
+                return self.parent_send(handler, 400, {"error": PARENT_MISS})
+            born = self.dob_month_day(row["dob"] or "")
+            if not born:
+                return self.parent_send(handler, 400, {"error": PARENT_INCOMPLETE})
+            if born != pair:
+                self.note_parent_failure(ip, token)
+                return self.parent_send(handler, 400, {"error": PARENT_MISS})
+            profile = self.parent_profile(conn, row)
+            grant = self.issue_parent_grant(row["id"])
+        finally:
+            conn.close()
+        return self.parent_send(handler, 200, profile, grant)
+
+    def public_parent_grant(self, handler):
+        sid = self.parent_grant_student(handler)
+        if not sid:
+            return self.parent_send(handler, 401, {"error": PARENT_MISS})
+        conn = self.db()
+        try:
+            row = conn.execute("SELECT * FROM students WHERE id = ?", (sid,)).fetchone()
+            if not row:
+                return self.parent_send(handler, 401, {"error": PARENT_MISS})
+            return self.parent_send(handler, 200, self.parent_profile(conn, row))
+        finally:
+            conn.close()
+
+    def public_parent_waiver(self, handler):
+        sid = self.parent_grant_student(handler)
+        if not sid:
+            return self.parent_send(handler, 401, {"error": PARENT_MISS})
+        conn = self.db()
+        try:
+            row = conn.execute(
+                """
+                SELECT participant_name, signer_name, signed_on, signature_png, parent_signature_png, kind
+                FROM waivers
+                WHERE roster_student_id = ? AND added_to_roster = 1
+                ORDER BY submitted_at DESC LIMIT 1
+                """,
+                (sid,),
+            ).fetchone()
+            if not row:
+                return self.parent_send(handler, 404, {"error": "No signed enrollment form is on file."})
+            body = {
+                "participantName": row["participant_name"],
+                "signerName": row["signer_name"],
+                "signedOn": row["signed_on"],
+                "signature": row["signature_png"],
+                "kind": row["kind"],
+            }
+            parent_sig = row["parent_signature_png"] or ""
+            if parent_sig:
+                body["parentSignature"] = parent_sig
+            return self.parent_send(handler, 200, body)
+        finally:
+            conn.close()
+
+    def public_demo_examples(self, handler):
+        conn = self.db()
+        try:
+            marker = conn.execute("SELECT value FROM settings WHERE key = 'demo_seed'").fetchone()
+            if not marker or marker["value"] != "1":
+                return self.send(handler, 404, {"error": "Not found."})
+            wanted = (
+                ("demo-milo", "EXAMPLE signed waiver"),
+                ("demo-tess", "EXAMPLE waiver not signed"),
+            )
+            examples = []
+            for sid, label in wanted:
+                row = conn.execute(
+                    "SELECT dob, parent_token FROM students WHERE id = ?",
+                    (sid,),
+                ).fetchone()
+                born = self.dob_month_day(row["dob"] if row else "")
+                token = (row["parent_token"] if row else "") or ""
+                if not born or not re.fullmatch(r"[A-Za-z0-9_-]{20,80}", token):
+                    continue
+                examples.append({
+                    "label": label,
+                    "token": token,
+                    "month": born[0],
+                    "day": born[1],
+                })
+            return self.send(handler, 200, {"examples": examples}, robots=True)
+        finally:
+            conn.close()
+
+    def rotate_parent_token(self, handler, conn, sid):
+        row = conn.execute("SELECT id FROM students WHERE id = ?", (sid,)).fetchone()
+        if not row:
+            return self.send(handler, 404, {"error": "That student is not on the roster."})
+        body = self.read_json(handler)
+        self.drop_parent_grants(sid)
+        if body.get("revoke") is True:
+            conn.execute("UPDATE students SET parent_token = '' WHERE id = ?", (sid,))
+            conn.commit()
+            return self.send(handler, 200, {"parentToken": ""})
+        token = self.new_parent_token(conn)
+        conn.execute("UPDATE students SET parent_token = ? WHERE id = ?", (token, sid))
+        conn.commit()
+        return self.send(handler, 200, {"parentToken": token})
+
+    def match_adult(self, conn, name, dob):
+        if not dob:
+            return None
+        target = self.norm_name(name)
+        for row in conn.execute("SELECT * FROM students"):
+            try:
+                age = int(row["age"])
+            except (TypeError, ValueError):
+                continue
+            if age < 11:
+                continue
+            if (row["dob"] or "") == dob and self.norm_name(row["name"]) == target:
+                return row
+        return None
+
+    def create_adult_from_waiver(self, conn, name, dob, age):
+        if age < 11 or age > 120:
+            raise ValueError("This enrollment is for ages 11 and up.")
+        sid = new_id("s-")
+        now = iso(utcnow())
+        token = self.new_parent_token(conn)
+        # White belt with no stripes is the empty rank the roster column requires.
+        conn.execute(
+            """
+            INSERT INTO students (id, name, age, belt, stripes, created_at, dob, parent_token)
+            VALUES (?, ?, ?, 'white', 0, ?, ?, ?)
+            """,
+            (sid, clip(name, 40), age, now, dob, token),
+        )
+        code = "b-" + secrets.token_hex(16)
+        conn.execute(
+            """
+            INSERT INTO cards (code, status, student_id, created_at, claimed_at)
+            VALUES (?, 'claimed', ?, ?, ?)
+            """,
+            (code, sid, now, now),
+        )
+        return sid
+
+    def waiver_parent_match(self, conn, body):
+        token = str(body.get("parentToken") or "").strip()
+        if not token:
+            return None
+        pair = self.parent_month_day(body.get("birthMonth"), body.get("birthDay"))
+        row = self.parent_token_row(conn, token)
+        if not row or not pair:
+            return "miss"
+        born = self.dob_month_day(row["dob"] or "")
+        if not born:
+            return "incomplete"
+        if born != pair:
+            return "miss"
+        return row
+
     def submit_waiver(self, handler):
         if not self.waiver_submissions_enabled():
             return self.send(handler, 403, {"error": "Do not submit yet. Enrollment is not open."})
@@ -2329,6 +2727,13 @@ class Api:
         try:
             self.lock_kids(conn)
             before = self.kids_enrolled_count(conn) if kind == "kids" else None
+            linked = self.waiver_parent_match(conn, body)
+            if linked == "miss":
+                conn.rollback()
+                return self.send(handler, 400, {"error": PARENT_MISS})
+            if linked == "incomplete":
+                conn.rollback()
+                return self.send(handler, 400, {"error": PARENT_INCOMPLETE})
             conn.execute(
                 """
                 INSERT INTO waivers (
@@ -2351,8 +2756,15 @@ class Api:
                     parent_signature,
                 ),
             )
+            if linked:
+                self.link_waiver_row(conn, wid, linked["id"])
+            elif kind == "adult":
+                existing = self.match_adult(conn, name, dob)
+                if existing:
+                    self.link_waiver_row(conn, wid, existing["id"])
+                else:
+                    self.link_waiver_row(conn, wid, self.create_adult_from_waiver(conn, name, dob, age))
             if kind == "kids":
-                self.attach_new_waiver(conn, wid, name, dob, age)
                 blocked = self.over_cap(conn, before)
                 if blocked:
                     conn.rollback()
@@ -2472,15 +2884,20 @@ class Api:
         if handler.command != "HEAD" and not getattr(handler, "_bjj_head", False):
             handler.wfile.write(raw)
 
-    def send(self, handler, status, body, set_cookie=None, clear_cookie=False):
+    def send(self, handler, status, body, set_cookie=None, clear_cookie=False, extra_cookies=None, robots=False):
         raw = json.dumps(body).encode("utf-8")
         handler.send_response(status)
         handler.send_header("Content-Type", "application/json; charset=utf-8")
         handler.send_header("Content-Length", str(len(raw)))
         handler.send_header("Cache-Control", "no-store")
+        if robots:
+            handler.send_header("X-Robots-Tag", "noindex, nofollow, noarchive")
         self.security_headers(handler)
         if set_cookie:
             handler.send_header("Set-Cookie", self.cookie(set_cookie, SESSION_DAYS * 86400))
+        if extra_cookies:
+            for item in extra_cookies:
+                handler.send_header("Set-Cookie", item)
         if clear_cookie:
             handler.send_header("Set-Cookie", self.cookie("", 0))
         handler.end_headers()
@@ -2501,6 +2918,8 @@ class Api:
 
     def static_cache_control(self, rel):
         path = (rel or "").split("?", 1)[0]
+        if path == "/p" or path.startswith("/p/"):
+            return "no-store"
         if path in ("/app/manifest.webmanifest", "/app/offline.html", "/sw.js", "/manifest.webmanifest") or path.endswith(".webmanifest") or os.path.basename(path) == "sw.js":
             return "no-cache"
         gated = (

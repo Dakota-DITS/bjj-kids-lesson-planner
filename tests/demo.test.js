@@ -42,12 +42,12 @@ assert.ok(html.length >= 12);
 html.forEach((full) => {
   const text = fs.readFileSync(full, "utf8");
   assert.ok(text.includes('name="bjj-base" content=""'), full);
-  assert.ok(text.includes('src="/bjj-base.js?v=20261022-34"'), full);
+  assert.ok(text.includes('src="/bjj-base.js?v=20261022-36"'), full);
   assert.equal(text.includes("DEMO PREVIEW, not live"), false, full);
 });
 
 const config = JSON.parse(read("waiver-config.json"));
-assert.equal(config.waiverSubmissionsEnabled, false);
+assert.equal(config.waiverSubmissionsEnabled, true);
 assert.equal(config.waitlistEnabled, false);
 
 const unit = read("deploy/bjj-planner-demo.service");

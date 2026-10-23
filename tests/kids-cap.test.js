@@ -17,7 +17,8 @@ const api = read("server/httpapp.py");
 const config = JSON.parse(read("waiver-config.json"));
 const full = "Kids class is full right now. Email dits+bjj@mail.grokbot.com to ask about the next opening.";
 
-assert.equal(config.waiverSubmissionsEnabled, false);
+assert.equal(config.waiverSubmissionsEnabled, true);
+assert.equal(config.waitlistEnabled, false);
 assert.ok(kids.includes('id="spotsLine"'));
 assert.ok(kids.includes("spots open"));
 assert.ok(kids.includes("/api/public/kids-enrollment"));

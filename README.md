@@ -16,13 +16,15 @@ The live site is served from the Debian host described in [DEPLOY.md](DEPLOY.md)
 
 ## Home and kids pages
 
-`/` is the Grace BJJ home page. Adult class facts (schedule, instructor, who can come, and the giving ask) live in `adult-class.json`. Leave a field empty instead of guessing. The instructor line is Pastor Pierre Rosa, brown belt, 4 stripes. `/kids/` is the kids welcome page: logo, values, class calendar, age groups, potty notice, gi, and practice video. A large button goes to the coloring sheets. Teacher login is a small link.
+`/` is the Grace BJJ home page. Adult class facts (schedule, instructor, who can come, and the giving ask) live in `adult-class.json`. Leave a field empty instead of guessing. The instructor line is Pastor Pierre Rosa, brown belt, 4 stripes. The co-instructor line is Rick Herrman, purple belt. That rank lives in `coInstructor.rank`. Do not draw a belt graphic. `/kids/` is the kids welcome page: logo, values, class calendar, age groups, potty notice, gi, and practice video. A large button goes to the coloring sheets. Teacher login is a small link.
 
 The kids page shows the church address and an email for questions. Phone and a sign-up link are not on the page yet. Add those in the `PUBLIC_INFO` object in `kids/index.html`. A value left as `""` stays hidden.
 
 ## Enrollment and waiver
 
-`/waiver/` is the adult enrollment form (ages 11 and up). `/kids/waiver/` is the parent form for the kids class. Both can be printed. Saving a submission is off until `waiverSubmissionsEnabled` in `waiver-config.json` is `true`. Admins review saved forms at `/app/waivers/`. Teachers do not. Turning the flag on does not by itself publish a new legal clause; Pastor Pierre still needs to review the kids parent-consent wording before that flag changes.
+`/waiver/` is the adult enrollment form (ages 11 and up). `/kids/waiver/` is the parent form for the kids class. Both can be printed. Saving a submission is on (`waiverSubmissionsEnabled` in `waiver-config.json`). The paragraphs families agree to are in that same file under `copy`, and the HTML pages show those words. Dakota approved this wording for release. Later wording edits belong in `copy`. Admins review saved forms at `/app/waivers/`. A logged-in teacher can open one signed form from the roster, including the signature and medical notes. The full list and the spreadsheet stay with admins.
+
+A student's class card opens `/p/#` plus a long random code. The code is not a sequential id. A parent enters the child's birth month and day before the page shows the first name, age group, belt, stripes, progress, and waiver status. It does not show medical notes, the birthday, other students, the roster, the waitlist, or staff notes. Staff can replace or turn off the code. Logged-in staff who scan the same code in the app still get check-in. The kids waitlist flag stays off.
 
 The kids class holds 12 students ages 3–10 across both groups. That count is the roster plus kids forms that are not yet on the roster. The same child is not counted twice. An admin can change the number in the staff app. Teachers cannot. The kids page shows spots left only while submissions are on. When the class is full, the kids form stops taking another submission. The adult class has no cap.
 

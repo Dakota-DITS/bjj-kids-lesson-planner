@@ -4,7 +4,7 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <meta name="bjj-base" content="">
-  <script src="/bjj-base.js?v=20261022-34"></script>
+  <script src="/bjj-base.js?v=20261022-36"></script>
   <meta name="robots" content="noindex, nofollow, noarchive, nosnippet">
   <meta name="googlebot" content="noindex, nofollow">
   <title>Grace BJJ</title>
@@ -22,8 +22,8 @@
   <meta name="apple-mobile-web-app-title" content="Grace BJJ" />
   <link rel="icon" href="/icons/favicon-32.png" type="image/png" sizes="32x32" />
   <link rel="apple-touch-icon" href="/icons/apple-touch-icon.png" sizes="180x180" />
-  <link rel="stylesheet" href="/css/home.css?v=20261022-34" />
-  <script src="/pwa.js?v=20261022-34" defer></script>
+  <link rel="stylesheet" href="/css/home.css?v=20261022-36" />
+  <script src="/pwa.js?v=20261022-36" defer></script>
   <script>
     (function () {
       var kids = { when: 1, cost: 1, "first-class": 1, faq: 1, gi: 1, practice: 1, visit: 1, "whats-grace": 1 };
@@ -67,13 +67,8 @@
           <article class="card" id="adultCard">
             <h3>Adult class</h3>
             <p class="when" id="adultWhen">Loading class details…</p>
-            <p id="adultInstructor"></p>
-            <p class="belt-row">
-              <span class="belt" role="img" aria-label="Brown belt, 4 stripes">
-                <span class="belt-cloth" aria-hidden="true"></span>
-                <span class="belt-bar" aria-hidden="true"><span class="stripe"></span><span class="stripe"></span><span class="stripe"></span><span class="stripe"></span></span>
-              </span>
-            </p>
+            <p id="adultInstructor">Instructor: Pastor Pierre Rosa, brown belt, 4 stripes</p>
+            <p id="adultCoInstructor">Co-instructor: Rick Herrman, purple belt</p>
             <p id="adultAudience"></p>
             <p id="adultPlace"></p>
             <p><a class="button" href="/waiver/">Rules and enrollment</a></p>
@@ -106,12 +101,19 @@
       <section class="panel" id="affiliation">
         <h2>Affiliation</h2>
         <p class="affiliation">Grace BJJ is an official affiliate of Lebre Jiu-Jitsu Academy in San Diego. Our instructor, Pastor Pierre Rosa, is a 4-stripe brown belt under Professor Regis Lebre. <a href="https://lebrejiujitsu.com" target="_blank" rel="noopener noreferrer">Lebre Jiu-Jitsu Academy</a></p>
+        <p id="affiliationCo">Co-instructor: Rick Herrman, purple belt</p>
       </section>
 
       <section class="panel" id="grace">
         <h2>What's grace?</h2>
         <p>Grace is God's kindness to us that we could never earn. We've all sinned and fall short of His glory (Romans 3:23), and the wages of sin is death. But God showed His love for us in this: while we were still sinners, Christ died for us (Romans 5:8). Jesus, God's only Son, lived a perfect life, gave Himself on the cross as the sacrifice for our sins, and rose again on the third day. Through Him we're redeemed and forgiven (Ephesians 1:7). Salvation is a free gift, received by faith in Jesus and not by anything we do (Ephesians 2:8–9). That's why our program is named Grace.</p>
         <p>Want to know more? Ask any of our teachers.</p>
+      </section>
+
+      <section class="panel" id="demoExamples" hidden>
+        <h2>EXAMPLE parent cards</h2>
+        <p>Fake students for this preview. Open a card, then enter the birth month and day shown on that card.</p>
+        <div id="demoExampleLinks"></div>
       </section>
 
       <section class="panel" id="contact">
@@ -123,7 +125,7 @@
     </div>
   </main>
   <footer><div class="wrap">Grace BJJ · Salem, Oregon · <a href="/privacy/">Privacy Policy</a></div></footer>
-  <script src="/calendar/class-days.js?v=20261022-34"></script>
+  <script src="/calendar/class-days.js?v=20261022-36"></script>
   <script>
     const Days = window.GRACE_CLASS_DAYS;
 
@@ -131,6 +133,14 @@
       const el = document.getElementById(id);
       if (!el) return;
       el.textContent = value || "";
+    }
+
+    function coInstructorLine(co) {
+      const person = co || {};
+      const name = String(person.name || "").trim();
+      const rank = String(person.rank || "").trim();
+      if (!name) return "";
+      return rank ? "Co-instructor: " + name + ", " + rank : "Co-instructor: " + name;
     }
 
     function renderClass(data) {
@@ -142,6 +152,13 @@
       text("adultWhen", when);
       text("adultSchedule", when);
       text("adultInstructor", data.instructor ? "Instructor: " + data.instructor : "");
+      const coLine = coInstructorLine(data.coInstructor);
+      text("adultCoInstructor", coLine);
+      text("affiliationCo", coLine);
+      const coCard = document.getElementById("adultCoInstructor");
+      const coAff = document.getElementById("affiliationCo");
+      if (coCard) coCard.hidden = !coLine;
+      if (coAff) coAff.hidden = !coLine;
       const audience = document.getElementById("adultAudience");
       if (audience) {
         audience.hidden = !data.audience;
@@ -189,6 +206,26 @@
     fetch("/api/public/class-exceptions", { credentials: "same-origin" })
       .then((res) => (res.ok ? res.json() : { exceptions: [] }))
       .then((body) => paintKidsNext(Array.isArray(body.exceptions) ? body.exceptions : []))
+      .catch(() => {});
+
+    fetch("/api/public/demo-examples", { credentials: "same-origin", cache: "no-store" })
+      .then((res) => (res.ok ? res.json() : null))
+      .then((body) => {
+        const box = document.getElementById("demoExamples");
+        const list = document.getElementById("demoExampleLinks");
+        if (!box || !list || !body || !Array.isArray(body.examples) || !body.examples.length) return;
+        body.examples.forEach((item) => {
+          if (!item || !item.token) return;
+          const link = document.createElement("a");
+          link.className = "button";
+          link.href = "/p/#" + item.token;
+          link.textContent = item.label + ". Birth month " + item.month + ", day " + item.day + ".";
+          const row = document.createElement("p");
+          row.append(link);
+          list.append(row);
+        });
+        box.hidden = false;
+      })
       .catch(() => {});
   </script>
 </body>

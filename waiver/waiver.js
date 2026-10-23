@@ -39,13 +39,37 @@
     note.textContent = message || "";
   }
 
+  function parentSign() {
+    try {
+      const saved = JSON.parse(sessionStorage.getItem("bjj-parent-sign") || "null");
+      if (!saved || !saved.token) return null;
+      return saved;
+    } catch (err) {
+      return null;
+    }
+  }
+
+  function applyCopy(copy) {
+    const block = copy && copy[kind];
+    if (!block) return;
+    ["risks", "release", "hygiene"].forEach((id) => {
+      const section = document.getElementById(id);
+      if (!section) return;
+      const heading = section.querySelector("h2");
+      const paragraph = section.querySelector("p");
+      if (heading && block[id + "Title"]) heading.textContent = block[id + "Title"];
+      if (paragraph && block[id]) paragraph.textContent = block[id];
+    });
+  }
+
   function applyGate() {
-    const showWaitlist = kind === "kids" && full && waitlistOn;
-    const showEmailFull = kind === "kids" && open && full && !waitlistOn;
-    const canSubmit = open && !(kind === "kids" && full);
+    const linked = kind === "kids" && parentSign();
+    const showWaitlist = kind === "kids" && full && waitlistOn && !linked;
+    const showEmailFull = kind === "kids" && open && full && !waitlistOn && !linked;
+    const canSubmit = open && (!(kind === "kids" && full) || linked);
     if (submitBtn) {
       submitBtn.disabled = !canSubmit;
-      submitBtn.hidden = kind === "kids" && full && (open || waitlistOn);
+      submitBtn.hidden = kind === "kids" && full && (open || waitlistOn) && !linked;
     }
     if (closed) closed.hidden = open || showWaitlist;
     if (fullNote) fullNote.hidden = !showEmailFull;
@@ -271,6 +295,7 @@
     serverWaitlist = !!(enrollment && enrollment.waitlistEnabled === true);
     full = serverFull;
     waitlistOn = serverWaitlist;
+    applyCopy(data && data.copy);
     const fileOn = !!(data && data.waiverSubmissionsEnabled === true);
     const apiOn = !!(enrollment && enrollment.submissionsEnabled === true);
     setOpen(fileOn || apiOn);
@@ -291,7 +316,7 @@
   form.addEventListener("submit", (event) => {
     event.preventDefault();
     say("");
-    if (kind === "kids" && full && (open || waitlistOn)) {
+    if (kind === "kids" && full && (open || waitlistOn) && !parentSign()) {
       say(waitlistOn ? "Kids class is full right now. Join the waitlist and we'll reach out when a spot opens." : FULL_TEXT);
       return;
     }
@@ -333,6 +358,12 @@
       parentPrintName: value("parentPrintName"),
       parentSignature: parentPad && hasInk(parentPad) ? parentPad.toDataURL("image/png") : "",
     };
+    const savedSign = parentSign();
+    if (savedSign && savedSign.token) {
+      body.parentToken = savedSign.token;
+      body.birthMonth = savedSign.month;
+      body.birthDay = savedSign.day;
+    }
     submitBtn.disabled = true;
     fetch("/api/public/waivers", {
       method: "POST",
@@ -350,6 +381,7 @@
           throw new Error(payload.error || "Enrollment is not open.");
         }
         form.hidden = true;
+        try { sessionStorage.removeItem("bjj-parent-sign"); } catch (err) { /* ignore */ }
         say("Enrollment saved. The church office has your form.");
       })
       .catch((err) => {

@@ -11,8 +11,14 @@ const kidsHome = fs.readFileSync(path.join(root, "kids/index.html"), "utf8");
 const config = JSON.parse(fs.readFileSync(path.join(root, "waiver-config.json"), "utf8"));
 const staff = fs.readFileSync(path.join(root, "app/index.html"), "utf8");
 const css = fs.readFileSync(path.join(root, "css/waiver.css"), "utf8");
+const script = fs.readFileSync(path.join(root, "waiver/waiver.js"), "utf8");
+assert.ok(script.includes("applyCopy"));
+assert.ok(script.includes("bjj-parent-sign"));
 
-assert.equal(config.waiverSubmissionsEnabled, false);
+assert.equal(config.waiverSubmissionsEnabled, true);
+assert.equal(config.waitlistEnabled, false);
+assert.ok(config.copy.kids.hygiene.includes("I consent on behalf of my minor child."));
+assert.ok(config.copy.adult.release.includes("I indemnify and hold harmless"));
 assert.ok(adult.includes('src="/img/logo/grace-logo-mark-transparent.png"'));
 assert.ok(kids.includes('src="/img/logo/grace-logo-mark-transparent.png"'));
 assert.ok(adult.includes("sit in seiza"));

@@ -696,11 +696,29 @@ function qrPayload(id) {
   return `GBJJ1|${clean}|${qrChecksum(clean)}`;
 }
 
+function parentQrText(token) {
+  const clean = String(token || "").trim();
+  if (!/^[A-Za-z0-9_-]{20,80}$/.test(clean)) return "";
+  let base = "";
+  try {
+    base = (typeof globalThis !== "undefined" && globalThis.BJJ_BASE) || "";
+  } catch (err) {
+    base = "";
+  }
+  if (typeof base !== "string" || !base.startsWith("/") || base.startsWith("//")) base = "";
+  return base + "/p/#" + clean;
+}
+
 function parseQr(value) {
-  const match = /^GBJJ1\|([A-Za-z0-9_-]{1,40})\|([a-z0-9]+)$/.exec(String(value || "").trim());
-  if (!match) return "";
-  if (qrChecksum(match[1]) !== match[2]) return "";
-  return match[1];
+  const text = String(value || "").trim();
+  const match = /^GBJJ1\|([A-Za-z0-9_-]{1,40})\|([a-z0-9]+)$/.exec(text);
+  if (match) {
+    if (qrChecksum(match[1]) !== match[2]) return "";
+    return match[1];
+  }
+  const web = /\/p\/#([A-Za-z0-9_-]{20,80})$/.exec(text);
+  if (!web) return "";
+  return "parent:" + web[1];
 }
 
 const LEVELS = ["introduced", "practicing", "help", "own"];
@@ -976,12 +994,20 @@ function sanitizeProgress(raw) {
     const belt = BELT_ORDER.includes(raw.belt) ? raw.belt : "white";
     let id = cleanId(raw.id);
     if (!id) id = newId();
+    const waiver = raw.waiver && typeof raw.waiver === "object" ? raw.waiver : {};
     return {
       id,
       name,
       age: clampInt(raw.age, 3, 17, 8),
       belt,
       stripes: clampInt(raw.stripes, 0, 4, 0),
+      parentToken: /^[A-Za-z0-9_-]{20,80}$/.test(String(raw.parentToken || "")) ? String(raw.parentToken) : "",
+      waiver: {
+        signed: !!waiver.signed,
+        signedOn: sanitizeText(waiver.signedOn, 10),
+        signerName: sanitizeText(waiver.signerName, 120),
+        waiverId: cleanId(waiver.waiverId) || "",
+      },
     };
   }
 
@@ -1439,6 +1465,7 @@ function sanitizeProgress(raw) {
     CLASS_KEYS,
     qrChecksum,
     qrPayload,
+    parentQrText,
     parseQr,
     LEVELS,
     sanitizeProgress,
