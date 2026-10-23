@@ -59,7 +59,7 @@ assert.ok(html.includes('email: ""'));
   assert.equal(text.includes("mail.grokbot.com"), false, rel);
   assert.equal(text.includes("dits+bjj"), false, rel);
 });
-assert.ok(html.includes('src="/calendar/class-days.js?v=20261023-46"'));
+assert.ok(html.includes('src="/calendar/class-days.js?v=20261023-47"'));
 assert.ok(html.includes("GRACE_CLASS_DAYS"));
 assert.ok(html.includes('aria-live="polite"'));
 assert.ok(html.includes('aria-label="Previous month"'));
@@ -85,7 +85,7 @@ assert.ok(ics.includes("LOCATION:Grace Baptist Church\\, 4197 State St\\, Salem\
 assert.ok(ics.includes("X-LIC-LOCATION:America/Los_Angeles"));
 
 assert.ok(html.includes("<title>Grace BJJ Kids</title>"));
-assert.ok(html.includes('<p class="eyebrow">Grace BJJ Kids</p>'));
+assert.equal(html.includes('<p class="eyebrow">Grace BJJ Kids</p>'), false);
 assert.ok(html.includes("<h1>Strong kids, kind hearts.</h1>"));
 assert.ok(html.includes("Jiu-jitsu that grows confidence, respect, and friendship, built on God's grace."));
 assert.equal(html.includes("<h1>Kids class</h1>"), false);
