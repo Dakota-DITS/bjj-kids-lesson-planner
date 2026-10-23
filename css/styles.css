@@ -1952,3 +1952,12 @@ body.authed #mustChange { display: none !important; }
   .sidebar { transform: none !important; }
   body { overflow: visible; }
 }
+
+body:not(.program-adult) .adult-only { display: none; }
+body.program-adult .kids-only { display: none; }
+body.program-adult #viewSwitch button[data-view="plan"],
+body.program-adult #viewSwitch button[data-view="review"],
+body.program-adult #viewSwitch button[data-view="calendar"] { display: none; }
+.adult-class { margin: 0 0 14px; padding-top: 8px; border-top: 1px solid #d6d3d1; }
+.adult-tech { display: flex; align-items: center; gap: 10px; min-height: 44px; }
+.adult-count { font-weight: 700; }

@@ -18,6 +18,11 @@
     pinned: [],
     reps: {},
     roster: [],
+    rosterAdults: [],
+    program: "kids",
+    adultChecks: {},
+    adultAttendance: [],
+    adultCurriculum: { levels: [] },
     plan: null,
     libCat: "warmup",
     showItemShuffle: false,
@@ -2882,6 +2887,7 @@ function sparringSection(plan) {
     const body = await window.BJJ_API.bootstrap();
     applyBootstrap(body);
     renderRoster();
+    renderAdultRoster();
     renderStaffPickers();
     renderStaffAdmin();
     if (state.view === "review") renderReview();
@@ -2892,10 +2898,20 @@ function sparringSection(plan) {
 
   function applyBootstrap(body) {
     state.session = body.user || null;
-    state.roster = (body.students || [])
-      .filter((kid) => !(kid && Number(kid.age) > 17))
+    const incoming = Array.isArray(body.students) ? body.students : [];
+    state.rosterAdults = incoming
+      .filter((kid) => kid && kid.program === "adult")
+      .map((kid) => sanitizeAdult(kid))
+      .filter(Boolean);
+    state.roster = incoming
+      .filter((kid) => !(kid && kid.program === "adult") && !(kid && Number(kid.age) > 17))
       .map((kid) => P.sanitizeRosterKid(kid))
       .filter(Boolean);
+    state.adultChecks = body.adultChecks && typeof body.adultChecks === "object" ? body.adultChecks : {};
+    state.adultAttendance = Array.isArray(body.adultAttendance) ? body.adultAttendance : [];
+    state.adultCurriculum = body.adultCurriculum && Array.isArray(body.adultCurriculum.levels)
+      ? body.adultCurriculum
+      : { levels: [] };
     state.progress = P.sanitizeProgress({
       classes: body.classes,
       levels: body.levels,
@@ -3337,6 +3353,7 @@ function sparringSection(plan) {
   };
 
   function setView(view) {
+    if (state.program === "adult" && (view === "plan" || view === "review" || view === "calendar")) view = "progress";
     if (view !== "checkin") stopCamera();
     state.view = view;
     document.body.classList.remove("menu-open");
@@ -3710,7 +3727,127 @@ function sparringSection(plan) {
     }
   }
 
+  function sanitizeAdult(raw) {
+    if (!raw || typeof raw !== "object") return null;
+    const name = String(raw.name || "").trim().slice(0, 40);
+    if (!name) return null;
+    const belts = ["white", "blue", "purple", "brown", "black"];
+    const belt = belts.includes(raw.belt) ? raw.belt : "white";
+    const id = P.cleanId(raw.id);
+    if (!id) return null;
+    const waiver = raw.waiver && typeof raw.waiver === "object" ? raw.waiver : {};
+    return {
+      id,
+      name,
+      age: P.clampInt(raw.age, 11, 120, 18),
+      belt,
+      stripes: P.clampInt(raw.stripes, 0, 4, 0),
+      program: "adult",
+      parentToken: /^[A-Za-z0-9_-]{20,80}$/.test(String(raw.parentToken || "")) ? String(raw.parentToken) : "",
+      pinSet: !!raw.pinSet,
+      waiver: {
+        signed: !!waiver.signed,
+        signedOn: String(waiver.signedOn || "").slice(0, 10),
+        signerName: String(waiver.signerName || "").slice(0, 120),
+        waiverId: P.cleanId(waiver.waiverId) || "",
+      },
+    };
+  }
+
+  function allStudents() {
+    return state.roster.concat(state.rosterAdults || []);
+  }
+
+  function adultLevel() {
+    const levels = state.adultCurriculum && Array.isArray(state.adultCurriculum.levels) ? state.adultCurriculum.levels : [];
+    return levels[0] || null;
+  }
+
+  function adultMarks(studentId, levelId, classNumber) {
+    const student = state.adultChecks[studentId] || {};
+    const level = student[levelId] || {};
+    const marks = level[String(classNumber)] || level[classNumber] || [];
+    return new Set((Array.isArray(marks) ? marks : []).map((n) => Number(n)));
+  }
+
+  function adultClassDone(studentId, level, item) {
+    const marks = adultMarks(studentId, level.id, item.number);
+    const names = Array.isArray(item.techniques) ? item.techniques : [];
+    return names.length > 0 && names.every((_name, index) => marks.has(index));
+  }
+
+  function adultProgressLine(student) {
+    const level = adultLevel();
+    if (!level) return "No adult curriculum is loaded.";
+    const total = Array.isArray(level.classes) ? level.classes.length : 0;
+    const done = (level.classes || []).filter((item) => adultClassDone(student.id, level, item)).length;
+    return `${done}/${total} classes toward blue belt.`;
+  }
+
+  function renderAdultRoster() {
+    const list = $("adultRosterList");
+    if (!list) return;
+    const people = state.rosterAdults.slice().sort((a, b) => a.name.localeCompare(b.name));
+    list.innerHTML = people.length
+      ? people
+          .map((person) => {
+            const waiver = person.waiver && person.waiver.signed
+              ? `Waiver signed ${esc(person.waiver.signedOn)} by ${esc(person.waiver.signerName)}.`
+              : "No signed waiver.";
+            return `<article class="kid-block">
+              <h3>${esc(person.name)}</h3>
+              <p>Age ${esc(person.age)} · ${esc(P.beltLabel(person.belt))} · ${esc(person.stripes)} stripes</p>
+              <p class="adult-count">${esc(adultProgressLine(person))}</p>
+              <p>${waiver}</p>
+            </article>`;
+          })
+          .join("")
+      : "<p>No adult students yet.</p>";
+  }
+
+  function renderAdultProgress() {
+    const root = $("progressView");
+    const level = adultLevel();
+    const people = state.rosterAdults.slice().sort((a, b) => a.name.localeCompare(b.name));
+    const cards = people
+      .map((person) => {
+        const waiver = person.waiver && person.waiver.signed
+          ? `Waiver signed ${esc(person.waiver.signedOn)} by ${esc(person.waiver.signerName)}.`
+          : "No signed waiver.";
+        const src = qrDataUrl(kidQrText(person), 180);
+        const classes = !level
+          ? ""
+          : (level.classes || [])
+              .map((item) => {
+                const marks = adultMarks(person.id, level.id, item.number);
+                const names = item.techniques || [];
+                const checks = names
+                  .map((name, index) => {
+                    const on = marks.has(index) ? " checked" : "";
+                    return `<label class="check adult-tech"><input type="checkbox" data-adult-check="1" data-student="${esc(person.id)}" data-level="${esc(level.id)}" data-class-number="${esc(item.number)}" data-tech="${index}"${on} /> ${esc(name)}</label>`;
+                  })
+                  .join("");
+                const done = names.length && names.every((_name, index) => marks.has(index));
+                return `<div class="adult-class"><h4>Class ${esc(item.number)}${done ? " · complete" : ""}</h4>${checks}</div>`;
+              })
+              .join("");
+        return `<article class="kid-block">
+          <h3>${esc(person.name)}</h3>
+          <p>Age ${esc(person.age)} · ${esc(P.beltLabel(person.belt))} belt · ${esc(person.stripes)} stripes</p>
+          <p class="adult-count">${esc(adultProgressLine(person))}</p>
+          <p>${waiver}</p>
+          <img class="qr" alt="Check-in card for ${esc(person.name)}" src="${src}" />
+          ${classes}
+        </article>`;
+      })
+      .join("");
+    root.innerHTML = `<h2>Adults · white to blue</h2>
+      <p>Tuesdays and Thursdays, 6:30–8:00 PM. Ages 11 and up. The check-in card is the only QR code. Scanning it checks the student in for staff, and opens the class card for anyone else.</p>
+      ${cards || "<p>Add an adult to track progress.</p>"}`;
+  }
+
   function renderProgress() {
+    if (state.program === "adult") return renderAdultProgress();
     const root = $("progressView");
     const classKey = P.normalizeAgeKey(state.ageGroup);
     const age = curriculumAge(classKey);
@@ -3927,6 +4064,120 @@ function sparringSection(plan) {
     window.print();
   }
 
+  function adultHere(date) {
+    const entry = (state.adultAttendance || []).find((item) => item.date === date);
+    return new Set(entry && Array.isArray(entry.attended) ? entry.attended : []);
+  }
+
+  function adultScanNote(people) {
+    const lines = (people || [])
+      .filter((person) => person && person.program === "adult")
+      .map((person) => `${person.name} ${adultProgressLine(person)}`);
+    return lines.length ? ` ${lines.join(" ")}` : "";
+  }
+
+  function applyProgram(program, keepView) {
+    const next = program === "adult" ? "adult" : "kids";
+    state.program = next;
+    document.body.classList.toggle("program-adult", next === "adult");
+    document.querySelectorAll("#programSwitch button").forEach((btn) => {
+      const on = btn.dataset.program === next;
+      btn.classList.toggle("on", on);
+      btn.setAttribute("aria-pressed", on ? "true" : "false");
+    });
+    const label = next === "adult" ? "Adult class" : "Kids class";
+    if ($("phoneClassLabel")) $("phoneClassLabel").textContent = label;
+    if ($("brandTitle")) $("brandTitle").textContent = label;
+    try {
+      sessionStorage.setItem("bjj-staff-program", next);
+    } catch (err) {
+      /* the choice still applies for this visit */
+    }
+    renderAdultRoster();
+    const kidsOnly = next === "adult" && (state.view === "plan" || state.view === "review" || state.view === "calendar");
+    if (!keepView && kidsOnly) setView("progress");
+    else if (state.view === "progress") renderProgress();
+    else if (state.view === "checkin") renderCheckinList();
+  }
+
+  function restoreProgram() {
+    let saved = "kids";
+    try {
+      saved = sessionStorage.getItem("bjj-staff-program") || "kids";
+    } catch (err) {
+      saved = "kids";
+    }
+    applyProgram(saved);
+  }
+
+  async function addAdult() {
+    const name = ($("adultName") && $("adultName").value.trim().slice(0, 40)) || "";
+    if (!name) {
+      toast("Add the student's name.");
+      return;
+    }
+    if (!isAdmin()) {
+      toast("An admin adds students.");
+      return;
+    }
+    try {
+      const saved = await window.BJJ_API.send("POST", "/api/students", {
+        program: "adult",
+        name,
+        age: Number($("adultAge").value),
+        belt: $("adultBelt").value,
+        stripes: Number($("adultStripes").value),
+      });
+      const person = sanitizeAdult(saved);
+      if (person) state.rosterAdults.push(person);
+      if (saved.kidsEnrollment) state.kidsEnrollment = saved.kidsEnrollment;
+      $("adultName").value = "";
+      renderAdultRoster();
+      paintEnrollment();
+      if (state.view === "progress") renderProgress();
+      if (state.view === "checkin") renderCheckinList();
+      toast(`${saved.name} is on the adult roster.`);
+    } catch (err) {
+      toast(err.message || "Could not add that student.");
+    }
+  }
+
+  function rememberAdultMark(studentId, levelId, classNumber, index, checked) {
+    const student = state.adultChecks[studentId] || {};
+    const level = student[levelId] || {};
+    const marks = adultMarks(studentId, levelId, classNumber);
+    if (checked) marks.add(Number(index));
+    else marks.delete(Number(index));
+    level[String(classNumber)] = [...marks];
+    student[levelId] = level;
+    state.adultChecks[studentId] = student;
+  }
+
+  async function saveAdultCheck(box) {
+    const studentId = box.dataset.student;
+    const levelId = box.dataset.level;
+    const classNumber = Number(box.dataset.classNumber);
+    const techniqueIndex = Number(box.dataset.tech);
+    const checked = !!box.checked;
+    rememberAdultMark(studentId, levelId, classNumber, techniqueIndex, checked);
+    renderAdultRoster();
+    try {
+      const body = await window.BJJ_API.send("POST", "/api/adult-progress", {
+        studentId,
+        levelId,
+        classNumber,
+        techniqueIndex,
+        checked,
+      });
+      state.adultChecks = body.adultChecks || state.adultChecks;
+      renderAdultRoster();
+      if (state.view === "progress" && state.program === "adult") renderAdultProgress();
+    } catch (err) {
+      toast(err.message || "Could not save that technique.");
+      resync().catch(() => {});
+    }
+  }
+
   async function markPresent(ids, date) {
     const when = date || ($("checkinDate") && $("checkinDate").value) || $("date").value;
     const known = [];
@@ -3935,7 +4186,32 @@ function sparringSection(plan) {
     const outside = [];
     if (!when) return { known, dup, unknown, outside, date: "" };
     const age = P.normalizeAgeKey(state.ageGroup);
+    const kidIds = [];
     ids.forEach((id) => {
+      const person = allStudents().find((item) => item.id === id);
+      if (person && person.program === "adult") {
+        if (adultHere(when).has(id)) dup.push(person);
+        else kidIds.push({ adult: person });
+        return;
+      }
+      kidIds.push(id);
+    });
+    for (const item of kidIds) {
+      if (!item || !item.adult) continue;
+      const person = item.adult;
+      try {
+        const body = await window.BJJ_API.send("POST", "/api/adult-attendance", {
+          date: when,
+          studentId: person.id,
+        });
+        state.adultAttendance = body.adultAttendance || state.adultAttendance;
+        known.push(person);
+      } catch (err) {
+        toast(err.message || "Could not check that student in.");
+      }
+    }
+    kidIds.forEach((id) => {
+      if (id && id.adult) return;
       const kid = state.roster.find((item) => item.id === id);
       if (!kid) {
         unknown.push(id);
@@ -3952,15 +4228,18 @@ function sparringSection(plan) {
         known.push(kid);
       }
     });
-    if (known.length) {
+    const freshKids = known.filter((person) => person.program !== "adult");
+    if (freshKids.length) {
       const entry = ensureClass(when, age);
       try {
         await pushClass(entry, true);
       } catch (err) {
-        known.forEach((kid) => {
+        freshKids.forEach((kid) => {
           entry.attended = entry.attended.filter((id) => id !== kid.id);
         });
-        known.length = 0;
+        for (let i = known.length - 1; i >= 0; i -= 1) {
+          if (freshKids.includes(known[i])) known.splice(i, 1);
+        }
         toast(err.message || "Could not check that student in.");
       }
     }
@@ -3971,7 +4250,8 @@ function sparringSection(plan) {
       }
       if (dup.length) parts.push(`${dup.map((kid) => kid.name).join(", ")} already checked in.`);
       if (outside.length) parts.push(outsideSentence(outside));
-      $("checkinStatus").textContent = parts.join(" ");
+      const detail = waiverWarning(known.concat(dup)) + adultScanNote(known.concat(dup));
+      $("checkinStatus").textContent = parts.join(" ") + detail;
       $("checkinStatus").className = known.length ? "checkin-status ok" : "checkin-status dup";
     }
     return { known, dup, unknown, outside, date: when };
@@ -3981,17 +4261,17 @@ function sparringSection(plan) {
     const text = String(id || "");
     if (text.startsWith("parent:")) {
       const token = text.slice("parent:".length);
-      const linked = state.roster.find((item) => item.parentToken === token);
+      const linked = allStudents().find((item) => item.parentToken === token);
       if (!linked) return { type: "unknown", message: "That code is not a Grace card." };
       return { type: "student", id: linked.id };
     }
-    const kid = state.roster.find((item) => item.id === id);
+    const kid = allStudents().find((item) => item.id === id);
     if (kid) return { type: "student", id: kid.id };
     const card = state.cards.find((item) => item.code === id);
     if (!card) return { type: "unknown", message: "That code is not a Grace card." };
     if (card.status === "retired") return { type: "retired", message: "That card was retired." };
     if (card.status === "claimed") {
-      const linked = state.roster.find((item) => item.id === card.studentId);
+      const linked = allStudents().find((item) => item.id === card.studentId);
       if (!linked) return { type: "missing", message: "That card's student is no longer on the roster." };
       return { type: "student", id: linked.id };
     }
@@ -4482,7 +4762,8 @@ function sparringSection(plan) {
     const el = $("checkinStatus");
     if (!el) return;
     const leftOut = outsideSentence(result.outside);
-    const warned = waiverWarning([].concat(result.known || [], result.dup || []));
+    const seen = [].concat(result.known || [], result.dup || []);
+    const warned = waiverWarning(seen) + adultScanNote(seen);
     if (result.known.length) {
       const names = result.known.map((kid) => kid.name).join(", ");
       const extra = result.dup.length ? ` ${result.dup.map((kid) => kid.name).join(", ")} already checked in.` : "";
@@ -4511,12 +4792,31 @@ function sparringSection(plan) {
   function renderCheckinList() {
     const list = $("checkinList");
     if (!list) return;
+    const date = $("checkinDate").value;
+    if (state.program === "adult") {
+      const note = $("checkinClass");
+      if (note) note.textContent = "Adult class, Tuesdays and Thursdays, 6:30–8:00 PM. The same check-in card opens the class card.";
+      const ids = adultHere(date);
+      if (!state.rosterAdults.length) {
+        list.innerHTML = `<li>No adult students on the roster yet.</li>`;
+        return;
+      }
+      list.innerHTML = state.rosterAdults
+        .slice()
+        .sort((a, b) => a.name.localeCompare(b.name))
+        .map((person) => {
+          const here = ids.has(person.id);
+          const waiver = person.waiver && person.waiver.signed ? "waiver signed" : "no signed waiver";
+          return `<li class="${here ? "here" : ""}">${esc(person.name)} — ${here ? "here" : "not yet"} · ${esc(waiver)} · ${esc(adultProgressLine(person))}</li>`;
+        })
+        .join("");
+      return;
+    }
     const key = P.normalizeAgeKey(state.ageGroup);
     const note = $("checkinClass");
     if (note) {
       note.textContent = P.isCombo(key) ? `${P.comboLabel(key)}. Check-in accepts kids from any of these groups.` : "";
     }
-    const date = $("checkinDate").value;
     const entry = classFor(date, key);
     const ids = new Set(entry ? entry.attended : []);
     if (!state.roster.length) {
@@ -4631,11 +4931,19 @@ function sparringSection(plan) {
         /* fall through to jsQR */
       }
     }
+    const take = (parsed) => {
+      if (!parsed || ids.includes(parsed)) return;
+      if (String(parsed).startsWith("parent:")) {
+        ids.push(parsed);
+        return;
+      }
+      add(`GBJJ1|${parsed}|${P.qrChecksum(parsed)}`);
+    };
     const canvas = canvasFromSource(source);
-    payloadsFromCanvas(canvas).forEach((id) => add(`GBJJ1|${id}|${P.qrChecksum(id)}`));
+    payloadsFromCanvas(canvas).forEach(take);
     if (ids.length) return ids;
     [-8, 8, -16, 16].some((degrees) => {
-      payloadsFromCanvas(rotateCanvas(canvas, degrees)).forEach((id) => add(`GBJJ1|${id}|${P.qrChecksum(id)}`));
+      payloadsFromCanvas(rotateCanvas(canvas, degrees)).forEach(take);
       return ids.length > 0;
     });
     return ids;
@@ -5369,6 +5677,18 @@ function sparringSection(plan) {
       const btn = event.target.closest("button[data-view]");
       if (btn) setView(btn.dataset.view);
     });
+    if ($("programSwitch")) {
+      $("programSwitch").addEventListener("click", (event) => {
+        const btn = event.target.closest("button[data-program]");
+        if (btn) applyProgram(btn.dataset.program);
+      });
+    }
+    if ($("addAdultBtn")) $("addAdultBtn").addEventListener("click", () => addAdult());
+    if ($("adultName")) {
+      $("adultName").addEventListener("keydown", (event) => {
+        if (event.key === "Enter") addAdult();
+      });
+    }
     $("reviewView").addEventListener("click", (event) => {
       const attend = event.target.closest("[data-attend]");
       if (attend) {
@@ -5395,6 +5715,10 @@ function sparringSection(plan) {
       if (event.target.closest("#saveClassBtn")) saveReviewedClass();
     });
     $("progressView").addEventListener("change", (event) => {
+      if (event.target.dataset.adultCheck) {
+        saveAdultCheck(event.target);
+        return;
+      }
       if (event.target.name === "pastAge") {
         refreshPastClassFields();
         return;
@@ -6014,9 +6338,30 @@ function sparringSection(plan) {
     if (isAdmin()) refreshUsers().catch((err) => reportPanel("Logins", err));
     refreshSavedPlans().catch((err) => reportPanel("Saved plans", err));
     refreshClassExceptions().catch((err) => reportPanel("Calendar", err));
+    restoreProgram();
+    await openStaffCardFromHash();
     document.body.classList.add("authed");
     const gate = $("gate");
     if (gate) gate.hidden = true;
+  }
+
+  async function openStaffCardFromHash() {
+    const token = String(location.hash || "").replace(/^#/, "");
+    if (!/^[A-Za-z0-9_-]{20,80}$/.test(token)) return;
+    const person = allStudents().find((item) => item.parentToken === token);
+    if (!person) return;
+    applyProgram(person.program === "adult" ? "adult" : "kids", true);
+    if ($("checkinDate") && !$("checkinDate").value) {
+      $("checkinDate").value = ($("date") && $("date").value) || "";
+    }
+    setView("checkin");
+    const result = await markPresent([person.id]);
+    showScanResult(result);
+    try {
+      history.replaceState(null, "", location.pathname + location.search);
+    } catch (err) {
+      /* the check-in already happened */
+    }
   }
 
   let mustChangeBound = false;

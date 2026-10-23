@@ -218,7 +218,8 @@
           const link = document.createElement("a");
           link.className = "button";
           link.href = "/p/#" + item.token;
-          link.textContent = item.label + ". Birth month " + item.month + ", day " + item.day + ".";
+          var extra = item.pin ? " PIN " + item.pin + "." : "";
+          link.textContent = item.label + ". Birth month " + item.month + ", day " + item.day + "." + extra;
           const row = document.createElement("p");
           row.append(link);
           list.append(row);

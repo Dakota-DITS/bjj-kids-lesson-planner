@@ -272,6 +272,15 @@
           ? "This enrollment is for ages 11 and up. Younger students use the kids form."
           : "";
       }
+      const pinLabel = document.getElementById("pinLabel");
+      const pinHint = document.getElementById("pinHint");
+      const under18 = age !== null && age < 18;
+      if (pinLabel) pinLabel.textContent = under18 ? "PIN set by the parent or guardian" : "PIN";
+      if (pinHint) {
+        pinHint.textContent = under18
+          ? "The parent who signs chooses this 4-digit PIN. It opens this student's class card."
+          : "Choose a 4-digit PIN. It opens your class card.";
+      }
     }
     if (kind === "kids" && potty) {
       const show = age !== null && age >= 3 && age <= 6;
@@ -334,6 +343,10 @@
       say("A parent or guardian signature is required for students under 18.");
       return;
     }
+    if (kind === "adult" && !/^[0-9]{4}$/.test(value("cardPin"))) {
+      say(age !== null && age < 18 ? "The parent or guardian sets a 4-digit PIN." : "Enter a 4-digit PIN.");
+      return;
+    }
     if (!hasInk(studentPad)) {
       say("Draw a signature before submitting.");
       return;
@@ -357,6 +370,7 @@
       parentTypedName: value("parentTypedName"),
       parentPrintName: value("parentPrintName"),
       parentSignature: parentPad && hasInk(parentPad) ? parentPad.toDataURL("image/png") : "",
+      cardPin: kind === "adult" ? value("cardPin") : "",
     };
     const savedSign = parentSign();
     if (savedSign && savedSign.token) {

@@ -260,6 +260,7 @@ class Api:
             if conn is not None
             else {"signed": False, "signedOn": "", "signerName": "", "waiverId": ""}
         )
+        pin_hash = self.cell(row, "card_pin_hash", "") or ""
         return {
             "id": row["id"],
             "name": row["name"],
@@ -267,7 +268,9 @@ class Api:
             "belt": row["belt"],
             "stripes": row["stripes"],
             "dob": self.cell(row, "dob", "") or "",
+            "program": self.cell(row, "program", "") or "kids",
             "parentToken": self.cell(row, "parent_token", "") or "",
+            "pinSet": bool(pin_hash),
             "waiver": waiver,
         }
 
@@ -317,6 +320,24 @@ class Api:
         stripes = max(0, min(4, stripes))
         sid = clean_id(existing_id or raw.get("id")) or new_id("s-")
         return {"id": sid, "name": name, "age": age, "belt": belt, "stripes": stripes}
+
+    def sanitize_adult(self, raw, existing_id=None):
+        name = clip(raw.get("name"), 40)
+        if not name:
+            raise ValueError("Add the student's name.")
+        try:
+            age = int(raw.get("age"))
+        except (TypeError, ValueError):
+            age = 18
+        age = max(11, min(120, age))
+        belt = raw.get("belt") if raw.get("belt") in ADULT_BELTS else "white"
+        try:
+            stripes = int(raw.get("stripes"))
+        except (TypeError, ValueError):
+            stripes = 0
+        stripes = max(0, min(4, stripes))
+        sid = clean_id(existing_id or raw.get("id")) or new_id("s-")
+        return {"id": sid, "name": name, "age": age, "belt": belt, "stripes": stripes, "program": "adult"}
 
     def sanitize_techniques(self, raw):
         out = []
@@ -417,6 +438,9 @@ class Api:
             "cards": [self.card_json(row) for row in conn.execute("SELECT * FROM cards ORDER BY created_at, code")],
             "staff": staff,
             "kidsEnrollment": self.enrollment_snapshot(conn, staff=True),
+            "adultCurriculum": self.adult_curriculum_public(),
+            "adultChecks": self.adult_checks_map(conn),
+            "adultAttendance": self.adult_attendance_list(conn),
         }
 
     def staff_json(self, row):
@@ -774,6 +798,10 @@ class Api:
             if not admin:
                 return self.send(handler, 403, {"error": "An admin removes saved plans."})
             return self.delete_plan(handler, conn, plan_match.group(1))
+        if path == "/api/adult-progress" and method == "POST":
+            return self.set_adult_progress(handler, conn)
+        if path == "/api/adult-attendance" and method == "POST":
+            return self.mark_adult_attendance(handler, conn)
         if path == "/api/students" and method == "POST":
             if not admin:
                 return self.send(handler, 403, {"error": "An admin adds students."})
@@ -1829,11 +1857,13 @@ class Api:
         return age
 
     def kids_enrolled_count(self, conn):
-        students = list(conn.execute("SELECT id, name, age, dob FROM students"))
+        students = list(conn.execute("SELECT id, name, age, dob, program FROM students"))
         roster_ids = {row["id"] for row in students}
         kid_keys = set()
         kid_count = 0
         for row in students:
+            if (self.cell(row, "program", "kids") or "kids") == "adult":
+                continue
             if not self.counts_as_kid(row["age"]):
                 continue
             kid_count += 1
@@ -1924,6 +1954,22 @@ class Api:
             (student_id or "", wid),
         )
 
+    def apply_waiver_pin(self, conn, wid, student_id):
+        row = conn.execute(
+            "SELECT kind, card_pin_hash FROM waivers WHERE id = ?",
+            (wid,),
+        ).fetchone()
+        if not row or row["kind"] != "adult":
+            return
+        pin_hash = self.cell(row, "card_pin_hash", "") or ""
+        if not pin_hash or not student_id:
+            return
+        conn.execute(
+            "UPDATE students SET card_pin_hash = ? WHERE id = ?",
+            (pin_hash, student_id),
+        )
+        self.drop_parent_grants(student_id)
+
     def match_kid(self, conn, name, dob):
         if not dob:
             return None
@@ -1964,19 +2010,20 @@ class Api:
 
     def add_student(self, handler, conn):
         body = self.read_json(handler)
-        raw = self.sanitize_student(body)
+        adult = body.get("program") == "adult"
+        raw = self.sanitize_adult(body) if adult else self.sanitize_student(body)
         dob = self.clean_dob(body.get("dob"))
         confirm = body.get("confirmOverCap") is True
         waiver_id = clean_id(body.get("waiverId")) or ""
-        adding = self.counts_as_kid(raw["age"])
+        adding = (not adult) and self.counts_as_kid(raw["age"])
         before = None
         if adding:
             self.lock_kids(conn)
             before = self.kids_enrolled_count(conn)
         conn.execute(
             """
-            INSERT INTO students (id, name, age, belt, stripes, created_at, dob, parent_token)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            INSERT INTO students (id, name, age, belt, stripes, created_at, dob, parent_token, program)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 raw["id"],
@@ -1987,6 +2034,7 @@ class Api:
                 iso(utcnow()),
                 dob,
                 self.new_parent_token(conn),
+                "adult" if adult else "kids",
             ),
         )
         self.link_student_forms(conn, raw["id"], raw["name"], raw["age"], dob, waiver_id)
@@ -2004,7 +2052,8 @@ class Api:
         if not old:
             return self.send(handler, 404, {"error": "That student is not on the roster."})
         body = self.read_json(handler)
-        raw = self.sanitize_student(body, sid)
+        adult = (self.cell(old, "program", "kids") or "kids") == "adult" or body.get("program") == "adult"
+        raw = self.sanitize_adult(body, sid) if adult else self.sanitize_student(body, sid)
         dob = old["dob"] or ""
         if "dob" in body:
             dob = self.clean_dob(body.get("dob"))
@@ -2015,8 +2064,8 @@ class Api:
             self.lock_kids(conn)
             before = self.kids_enrolled_count(conn)
         conn.execute(
-            "UPDATE students SET name = ?, age = ?, belt = ?, stripes = ?, dob = ? WHERE id = ?",
-            (raw["name"], raw["age"], raw["belt"], raw["stripes"], dob, sid),
+            "UPDATE students SET name = ?, age = ?, belt = ?, stripes = ?, dob = ?, program = ? WHERE id = ?",
+            (raw["name"], raw["age"], raw["belt"], raw["stripes"], dob, "adult" if adult else "kids", sid),
         )
         self.link_student_forms(conn, sid, raw["name"], raw["age"], dob, "")
         if growing:
@@ -2034,6 +2083,7 @@ class Api:
         conn.execute("DELETE FROM students WHERE id = ?", (sid,))
         conn.execute("DELETE FROM levels WHERE student_id = ?", (sid,))
         conn.execute("DELETE FROM notes WHERE student_id = ?", (sid,))
+        conn.execute("DELETE FROM adult_progress WHERE student_id = ?", (sid,))
         conn.execute(
             "UPDATE cards SET status = 'retired', retired_at = ? WHERE student_id = ? AND status != 'retired'",
             (iso(utcnow()), sid),
@@ -2326,6 +2376,7 @@ class Api:
             raise ValueError("That student is in the other program.")
         self.remember_dob(conn, sid, row["dob"])
         self.link_waiver_row(conn, wid, sid)
+        self.apply_waiver_pin(conn, wid, sid)
         conn.commit()
         return self.send(
             handler,
@@ -2384,8 +2435,8 @@ class Api:
             """
             INSERT INTO students (
               id, name, age, belt, stripes, created_at, dob, parent_token,
-              parent_name, parent_email, parent_phone
-            ) VALUES (?, ?, ?, 'white', 0, ?, ?, ?, ?, ?, ?)
+              parent_name, parent_email, parent_phone, program
+            ) VALUES (?, ?, ?, 'white', 0, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 sid,
@@ -2397,6 +2448,7 @@ class Api:
                 parent_name,
                 clip(row["email"], 160),
                 clip(row["phone"], 40),
+                "adult" if row["kind"] == "adult" else "kids",
             ),
         )
         if injuries:
@@ -2405,6 +2457,7 @@ class Api:
                 (sid, clip("Enrollment medical notes: " + injuries, 800)),
             )
         self.link_waiver_row(conn, wid, sid)
+        self.apply_waiver_pin(conn, wid, sid)
         if adding_kid:
             blocked = self.over_cap(conn, before)
             if blocked and not confirm:
@@ -2797,7 +2850,174 @@ class Api:
             return ""
         return row["student_id"]
 
+    def adult_curriculum(self):
+        path = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "adult-curriculum-blue.json")
+        with open(path, encoding="utf-8") as handle:
+            data = json.load(handle)
+        if not isinstance(data, dict):
+            return {"levels": []}
+        return data
+
+    def adult_curriculum_public(self):
+        data = self.adult_curriculum()
+        levels = []
+        for level in data.get("levels") or []:
+            if not isinstance(level, dict):
+                continue
+            classes = []
+            for item in level.get("classes") or []:
+                if not isinstance(item, dict):
+                    continue
+                techniques = [str(name) for name in (item.get("techniques") or []) if str(name).strip()]
+                try:
+                    number = int(item.get("number"))
+                except (TypeError, ValueError):
+                    continue
+                classes.append({"number": number, "techniques": techniques})
+            levels.append({
+                "id": str(level.get("id") or ""),
+                "fromBelt": str(level.get("fromBelt") or ""),
+                "toBelt": str(level.get("toBelt") or ""),
+                "label": str(level.get("label") or ""),
+                "classes": classes,
+            })
+        return {"levels": levels}
+
+    def adult_level_class(self, level_id, number):
+        for level in self.adult_curriculum_public()["levels"]:
+            if level["id"] != level_id:
+                continue
+            for item in level["classes"]:
+                if item["number"] == number:
+                    return level, item
+        return None, None
+
+    def adult_checks_map(self, conn):
+        grouped = {}
+        rows = conn.execute(
+            "SELECT student_id, level_id, class_number, technique_index FROM adult_progress"
+        ).fetchall()
+        for row in rows:
+            student = grouped.setdefault(row["student_id"], {})
+            level = student.setdefault(row["level_id"], {})
+            bucket = level.setdefault(str(row["class_number"]), [])
+            bucket.append(int(row["technique_index"]))
+        return grouped
+
+    def adult_attendance_list(self, conn):
+        rows = conn.execute("SELECT id, date, attended FROM adult_classes ORDER BY date").fetchall()
+        return [
+            {"id": row["id"], "date": row["date"], "attended": self.json_list(row["attended"])}
+            for row in rows
+        ]
+
+    def set_adult_progress(self, handler, conn):
+        body = self.read_json(handler)
+        sid = clean_id(body.get("studentId"))
+        level_id = clip(body.get("levelId"), 40)
+        try:
+            number = int(body.get("classNumber"))
+            index = int(body.get("techniqueIndex"))
+        except (TypeError, ValueError):
+            raise ValueError("Choose a class and a technique.")
+        student = conn.execute("SELECT id, program FROM students WHERE id = ?", (sid,)).fetchone()
+        if not student or (student["program"] or "kids") != "adult":
+            return self.send(handler, 404, {"error": "That adult student is not on the roster."})
+        _level, item = self.adult_level_class(level_id, number)
+        if not item or index < 0 or index >= len(item["techniques"]):
+            raise ValueError("That technique is not on this curriculum.")
+        if body.get("checked") is True:
+            conn.execute(
+                """
+                INSERT INTO adult_progress (student_id, level_id, class_number, technique_index, checked_at)
+                VALUES (?, ?, ?, ?, ?)
+                ON CONFLICT(student_id, level_id, class_number, technique_index) DO NOTHING
+                """,
+                (sid, level_id, number, index, iso(utcnow())),
+            )
+        else:
+            conn.execute(
+                """
+                DELETE FROM adult_progress
+                WHERE student_id = ? AND level_id = ? AND class_number = ? AND technique_index = ?
+                """,
+                (sid, level_id, number, index),
+            )
+        conn.commit()
+        return self.send(handler, 200, {"adultChecks": self.adult_checks_map(conn)})
+
+    def mark_adult_attendance(self, handler, conn):
+        body = self.read_json(handler)
+        sid = clean_id(body.get("studentId"))
+        date = self.clean_dob(body.get("date"))
+        if not date:
+            raise ValueError("Choose a class date.")
+        student = conn.execute("SELECT id, program FROM students WHERE id = ?", (sid,)).fetchone()
+        if not student or (student["program"] or "kids") != "adult":
+            return self.send(handler, 404, {"error": "That adult student is not on the roster."})
+        row = conn.execute("SELECT id, attended FROM adult_classes WHERE date = ?", (date,)).fetchone()
+        if row:
+            attended = self.json_list(row["attended"])
+            if sid not in attended:
+                attended.append(sid)
+            conn.execute(
+                "UPDATE adult_classes SET attended = ? WHERE id = ?",
+                (json.dumps(attended), row["id"]),
+            )
+        else:
+            conn.execute(
+                "INSERT INTO adult_classes (id, date, attended) VALUES (?, ?, ?)",
+                (new_id("ac-"), date, json.dumps([sid])),
+            )
+        conn.commit()
+        return self.send(handler, 200, {"adultAttendance": self.adult_attendance_list(conn)})
+
+    def adult_curriculum_counts(self, conn, sid):
+        curriculum = self.adult_curriculum_public()
+        level = curriculum["levels"][0] if curriculum["levels"] else None
+        if not level:
+            return 0, 0, 0, ""
+        checked = {}
+        rows = conn.execute(
+            """
+            SELECT class_number, technique_index FROM adult_progress
+            WHERE student_id = ? AND level_id = ?
+            """,
+            (sid, level["id"]),
+        ).fetchall()
+        for row in rows:
+            checked.setdefault(int(row["class_number"]), set()).add(int(row["technique_index"]))
+        done = 0
+        techniques = 0
+        for item in level["classes"]:
+            marks = checked.get(item["number"], set())
+            techniques += len(marks)
+            names = item["techniques"]
+            if names and all(index in marks for index in range(len(names))):
+                done += 1
+        return done, len(level["classes"]), techniques, level.get("label") or ""
+
     def parent_progress(self, conn, sid):
+        row = conn.execute("SELECT program FROM students WHERE id = ?", (sid,)).fetchone()
+        if row and (row["program"] or "") == "adult":
+            done, total, techniques, label = self.adult_curriculum_counts(conn, sid)
+            recent = []
+            classes = 0
+            for entry in self.adult_attendance_list(conn):
+                if sid not in entry["attended"]:
+                    continue
+                classes += 1
+                if entry["date"]:
+                    recent.append(entry["date"])
+            recent = list(reversed(recent))[:6]
+            return {
+                "techniques": techniques,
+                "classes": classes,
+                "recentAttendance": recent,
+                "classesDone": done,
+                "classesTotal": total,
+                "levelLabel": label,
+            }
         techniques = conn.execute(
             "SELECT COUNT(*) AS n FROM levels WHERE student_id = ?",
             (sid,),
@@ -2850,18 +3070,28 @@ class Api:
         if not self.parent_attempt_open(ip, token):
             return self.parent_send(handler, 429, {"error": PARENT_LIMIT})
         pair = self.parent_month_day(body.get("month"), body.get("day"))
+        pin = clip(body.get("pin"), 8)
         conn = self.db()
         try:
             row = self.parent_token_row(conn, token)
-            if not row or not pair:
+            if not row:
                 self.note_parent_failure(ip, token)
                 return self.parent_send(handler, 400, {"error": PARENT_MISS})
-            born = self.dob_month_day(row["dob"] or "")
-            if not born:
-                return self.parent_send(handler, 400, {"error": PARENT_INCOMPLETE})
-            if born != pair:
-                self.note_parent_failure(ip, token)
-                return self.parent_send(handler, 400, {"error": PARENT_MISS})
+            pin_hash = self.cell(row, "card_pin_hash", "") or ""
+            if pin_hash:
+                if not re.fullmatch(r"[0-9]{4}", pin) or not check_password(pin, pin_hash):
+                    self.note_parent_failure(ip, token)
+                    return self.parent_send(handler, 400, {"error": PARENT_MISS})
+            else:
+                if not pair:
+                    self.note_parent_failure(ip, token)
+                    return self.parent_send(handler, 400, {"error": PARENT_MISS})
+                born = self.dob_month_day(row["dob"] or "")
+                if not born:
+                    return self.parent_send(handler, 400, {"error": PARENT_INCOMPLETE})
+                if born != pair:
+                    self.note_parent_failure(ip, token)
+                    return self.parent_send(handler, 400, {"error": PARENT_MISS})
             profile = self.parent_profile(conn, row)
             grant = self.issue_parent_grant(row["id"])
         finally:
@@ -2919,11 +3149,13 @@ class Api:
             if not marker or marker["value"] != "1":
                 return self.send(handler, 404, {"error": "Not found."})
             wanted = (
-                ("demo-milo", "EXAMPLE signed waiver"),
-                ("demo-tess", "EXAMPLE waiver not signed"),
+                ("demo-milo", "EXAMPLE signed waiver", ""),
+                ("demo-tess", "EXAMPLE waiver not signed", ""),
+                ("demo-quinn", "EXAMPLE adult signed", "2468"),
+                ("demo-uma", "EXAMPLE adult not signed", ""),
             )
             examples = []
-            for sid, label in wanted:
+            for sid, label, pin in wanted:
                 row = conn.execute(
                     "SELECT dob, parent_token FROM students WHERE id = ?",
                     (sid,),
@@ -2932,12 +3164,15 @@ class Api:
                 token = (row["parent_token"] if row else "") or ""
                 if not born or not re.fullmatch(r"[A-Za-z0-9_-]{20,80}", token):
                     continue
-                examples.append({
+                item = {
                     "label": label,
                     "token": token,
                     "month": born[0],
                     "day": born[1],
-                })
+                }
+                if pin:
+                    item["pin"] = pin
+                examples.append(item)
             return self.send(handler, 200, {"examples": examples}, robots=True)
         finally:
             conn.close()
@@ -3015,6 +3250,11 @@ class Api:
         parent_printed = clip(body.get("parentPrintName"), 120)
         if minor and (len(parent_typed) < 2 or len(parent_printed) < 2):
             raise ValueError("A parent or guardian must sign and print their name.")
+        pin = clip(body.get("cardPin") or body.get("pin"), 8)
+        if kind == "adult" and not re.fullmatch(r"[0-9]{4}", pin):
+            if minor:
+                raise ValueError("The parent or guardian sets a 4-digit PIN.")
+            raise ValueError("Enter a 4-digit PIN.")
         signature = self.waiver_png(body.get("signature"), True)
         parent_signature = self.waiver_png(body.get("parentSignature"), minor)
         injuries = clip(body.get("injuries"), 2000) if kind == "kids" else ""
@@ -3066,12 +3306,27 @@ class Api:
                     parent_signature,
                 ),
             )
+            pin_hash = hash_password(pin) if kind == "adult" else ""
+            if pin_hash:
+                conn.execute(
+                    "UPDATE waivers SET card_pin_hash = ? WHERE id = ?",
+                    (pin_hash, wid),
+                )
             # A parent card already names one student. Every other form waits
             # for staff to confirm a match or add the person. An exact name and
-            # birth date is only a suggestion.
+            # birth date is only a suggestion. A card from the other program
+            # is not that student.
+            if linked and kind == "adult" and (self.cell(linked, "program", "kids") or "kids") != "adult":
+                linked = "miss"
+            if linked and kind == "kids" and (self.cell(linked, "program", "kids") or "kids") == "adult":
+                linked = "miss"
+            if linked == "miss":
+                conn.rollback()
+                return self.send(handler, 400, {"error": PARENT_MISS})
             if linked:
                 self.link_waiver_row(conn, wid, linked["id"])
                 self.remember_dob(conn, linked["id"], dob)
+                self.apply_waiver_pin(conn, wid, linked["id"])
             if kind == "kids":
                 blocked = self.over_cap(conn, before)
                 if blocked:

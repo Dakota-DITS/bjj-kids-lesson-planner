@@ -1324,6 +1324,7 @@ class ApiTest(unittest.TestCase):
             "parentTypedName": "",
             "parentPrintName": "",
             "parentSignature": "",
+            "pin": "2468",
         }
         body.update(overrides)
         return body
@@ -1581,7 +1582,7 @@ class ApiTest(unittest.TestCase):
             status, adult_parent = self.client().call(
                 "POST",
                 "/api/public/parent",
-                {"token": adult["parentToken"], "month": 8, "day": 8},
+                {"token": adult["parentToken"], "month": 8, "day": 8, "pin": "2468"},
             )
             self.assertEqual(status, 200, adult_parent)
             self.assertEqual(adult_parent["signForm"], "adult")
@@ -2526,6 +2527,320 @@ class ApiTest(unittest.TestCase):
             conn.close()
 
 
+    def test_adult_tracker_reuses_one_checkin_card(self):
+        self.api.cfg["waiver_submissions_enabled"] = True
+        admin = self.client()
+        admin.login("dakota", "correct-horse")
+        teacher = self.client()
+        teacher.login("alex", "correct-horse")
+        guest = self.client()
+        created = []
+
+        def students():
+            status, body = admin.call("GET", "/api/bootstrap")
+            self.assertEqual(status, 200, body)
+            return body
+
+        def named(name):
+            return [row for row in students()["students"] if row["name"] == name]
+
+        try:
+            status, hidden = guest.call("GET", "/api/bootstrap")
+            self.assertEqual(status, 401, hidden)
+            status, blocked = guest.call("POST", "/api/adult-progress", {"studentId": "s-nope"})
+            self.assertIn(blocked.get("error") if isinstance(blocked, dict) else "", ("Log in first.", "The page needs to be reloaded before saving."))
+            self.assertNotEqual(status, 200)
+            status, blocked_attend = guest.call("POST", "/api/adult-attendance", {"studentId": "s-nope"})
+            self.assertNotEqual(status, 200, blocked_attend)
+
+            before = students()["kidsEnrollment"]["enrolled"]
+            status, kid = admin.call(
+                "POST",
+                "/api/students",
+                {"name": "Kid Card One", "age": 7, "belt": "white", "stripes": 0, "dob": "2019-04-04"},
+            )
+            self.assertEqual(status, 201, kid)
+            created.append(kid["id"])
+            self.assertEqual(kid["program"], "kids")
+            self.assertRegex(kid["id"], r"^s-[0-9a-f]{8}$")
+            self.assertGreaterEqual(len(kid["parentToken"]), 20)
+            self.assertNotEqual(kid["parentToken"], kid["id"])
+            self.assertFalse(kid["pinSet"])
+            self.assertNotIn("card_pin_hash", kid)
+
+            status, lookalike = admin.call(
+                "POST",
+                "/api/students",
+                {"name": "Same Person", "age": 12, "belt": "white", "stripes": 0, "dob": "2014-08-08"},
+            )
+            self.assertEqual(status, 201, lookalike)
+            created.append(lookalike["id"])
+            self.assertEqual(lookalike["program"], "kids")
+
+            status, adult = admin.call(
+                "POST",
+                "/api/students",
+                {
+                    "program": "adult",
+                    "name": "Adult Pat",
+                    "age": 30,
+                    "belt": "white",
+                    "stripes": 0,
+                    "dob": "1996-03-03",
+                },
+            )
+            self.assertEqual(status, 201, adult)
+            created.append(adult["id"])
+            self.assertEqual(adult["program"], "adult")
+            self.assertGreaterEqual(len(adult["parentToken"]), 20)
+            self.assertRegex(adult["id"], r"^s-[0-9a-f]{8}$")
+            self.assertFalse(adult["pinSet"])
+            after = students()
+            self.assertEqual(after["kidsEnrollment"]["enrolled"], before + 1)
+            self.assertEqual(len(after["adultCurriculum"]["levels"][0]["classes"]), 23)
+            self.assertIn("levels", after["adultCurriculum"])
+
+            status, wrong = teacher.call(
+                "POST",
+                "/api/adult-progress",
+                {
+                    "studentId": kid["id"],
+                    "levelId": "white-to-blue",
+                    "classNumber": 1,
+                    "techniqueIndex": 0,
+                    "checked": True,
+                },
+            )
+            self.assertEqual(status, 404, wrong)
+            level = after["adultCurriculum"]["levels"][0]
+            class_one = level["classes"][0]
+            for index, _name in enumerate(class_one["techniques"]):
+                status, saved = teacher.call(
+                    "POST",
+                    "/api/adult-progress",
+                    {
+                        "studentId": adult["id"],
+                        "levelId": level["id"],
+                        "classNumber": 1,
+                        "techniqueIndex": index,
+                        "checked": True,
+                    },
+                )
+                self.assertEqual(status, 200, saved)
+            status, here = teacher.call(
+                "POST",
+                "/api/adult-attendance",
+                {"date": "2026-10-27", "studentId": adult["id"]},
+            )
+            self.assertEqual(status, 200, here)
+            status, again = teacher.call(
+                "POST",
+                "/api/adult-attendance",
+                {"date": "2026-10-27", "studentId": adult["id"]},
+            )
+            self.assertEqual(status, 200, again)
+            attended = next(row["attended"] for row in again["adultAttendance"] if row["date"] == "2026-10-27")
+            self.assertEqual(attended.count(adult["id"]), 1)
+
+            status, opened = guest.call(
+                "POST",
+                "/api/public/parent",
+                {"token": adult["parentToken"], "month": 3, "day": 3},
+            )
+            self.assertEqual(status, 200, opened)
+            self.assertEqual(opened["progress"]["classesDone"], 1)
+            self.assertEqual(opened["progress"]["classesTotal"], 23)
+            self.assertNotIn("card_pin_hash", opened)
+            self.assertNotIn("2468", json.dumps(opened))
+            status, kid_card = self.client().call(
+                "POST",
+                "/api/public/parent",
+                {"token": kid["parentToken"], "month": 4, "day": 4},
+            )
+            self.assertEqual(status, 200, kid_card)
+            self.assertNotIn("classesTotal", kid_card["progress"])
+
+            status, kid_on_adult = guest.call(
+                "POST",
+                "/api/public/waivers",
+                self.waiver_body(
+                    participantName="Adult Pat",
+                    email="adult-card-kidtoken@example.com",
+                    dob="1996-03-03",
+                    parentToken=kid["parentToken"],
+                    birthMonth=4,
+                    birthDay=4,
+                ),
+            )
+            self.assertEqual(status, 400, kid_on_adult)
+            self.assertEqual(kid_on_adult["error"], "Those details don't match.")
+            status, adult_on_kids = guest.call(
+                "POST",
+                "/api/public/waivers",
+                self.waiver_body(
+                    kind="kids",
+                    participantName="Kid Card One",
+                    email="adult-card-adulttoken@example.com",
+                    dob="2019-04-04",
+                    parentName="Pat Parent",
+                    parentToken=adult["parentToken"],
+                    birthMonth=3,
+                    birthDay=3,
+                ),
+            )
+            self.assertEqual(status, 400, adult_on_kids)
+            self.assertFalse(named("Adult Pat")[0]["waiver"]["signed"])
+
+            status, linked = guest.call(
+                "POST",
+                "/api/public/waivers",
+                self.waiver_body(
+                    participantName="Adult Pat",
+                    email="adult-card-pat@example.com",
+                    dob="1996-03-03",
+                    pin="2468",
+                    parentToken=adult["parentToken"],
+                    birthMonth=3,
+                    birthDay=3,
+                ),
+            )
+            self.assertEqual(status, 201, linked)
+            status, detail = admin.call("GET", "/api/waivers/" + linked["id"])
+            self.assertEqual(detail["rosterStudentId"], adult["id"])
+            self.assertNotIn("pin", detail["payload"])
+            self.assertNotIn("2468", json.dumps(detail["payload"]))
+            signed = named("Adult Pat")
+            self.assertEqual(len(signed), 1)
+            self.assertTrue(signed[0]["pinSet"])
+            self.assertTrue(signed[0]["waiver"]["signed"])
+            self.assertNotIn("card_pin_hash", signed[0])
+
+            status, month_only = self.client().call(
+                "POST",
+                "/api/public/parent",
+                {"token": adult["parentToken"], "month": 3, "day": 3},
+            )
+            status, wrong_pin = self.client().call(
+                "POST",
+                "/api/public/parent",
+                {"token": adult["parentToken"], "month": 3, "day": 3, "pin": "0000"},
+            )
+            self.assertEqual(status, 400, month_only)
+            self.assertEqual(wrong_pin["error"], month_only["error"])
+            self.assertEqual(month_only["error"], "Those details don't match.")
+            status, with_pin = self.client().call(
+                "POST",
+                "/api/public/parent",
+                {"token": adult["parentToken"], "month": 1, "day": 1, "pin": "2468"},
+            )
+            self.assertEqual(status, 200, with_pin)
+            self.assertEqual(with_pin["progress"]["classesDone"], 1)
+            self.assertEqual(with_pin["progress"]["classesTotal"], 23)
+            self.assertEqual(
+                set(with_pin),
+                {
+                    "firstName",
+                    "ageGroup",
+                    "belt",
+                    "beltLabel",
+                    "stripes",
+                    "stripesLabel",
+                    "signForm",
+                    "progress",
+                    "waiver",
+                },
+            )
+            self.assertNotIn("2468", json.dumps(with_pin))
+
+            status, collided = guest.call(
+                "POST",
+                "/api/public/waivers",
+                self.waiver_body(
+                    participantName="Same Person",
+                    email="adult-card-same@example.com",
+                    dob="2014-08-08",
+                    pin="1357",
+                    parentName="Pat Parent",
+                    parentTypedName="Pat Parent",
+                    parentPrintName="Pat Parent",
+                    parentSignature=PNG,
+                ),
+            )
+            self.assertEqual(status, 201, collided)
+            waiting = named("Same Person")
+            self.assertEqual(len(waiting), 1)
+            self.assertEqual(waiting[0]["program"], "kids")
+            self.assertFalse(waiting[0]["waiver"]["signed"])
+            status, review = admin.call("GET", "/api/enrollment-review")
+            same_form = next(row for row in review["adults"] if row["id"] == collided["id"])
+            self.assertFalse(same_form["linked"])
+            status, added_same = admin.call("POST", f"/api/waivers/{collided['id']}/add", {})
+            self.assertEqual(status, 201, added_same)
+            created.append(added_same["id"])
+            rows = named("Same Person")
+            self.assertEqual(len(rows), 2)
+            kids_row = next(row for row in rows if row["program"] == "kids")
+            adult_row = next(row for row in rows if row["program"] == "adult")
+            self.assertEqual(adult_row["id"], added_same["id"])
+            self.assertFalse(kids_row["waiver"]["signed"])
+            self.assertTrue(adult_row["waiver"]["signed"])
+            self.assertTrue(adult_row["pinSet"])
+            self.assertGreaterEqual(len(adult_row["parentToken"]), 20)
+            self.assertEqual(students()["kidsEnrollment"]["enrolled"], before + 1)
+
+            status, teen = guest.call(
+                "POST",
+                "/api/public/waivers",
+                self.waiver_body(
+                    participantName="Teen Adult",
+                    email="adult-card-teen@example.com",
+                    dob="2011-07-07",
+                    pin="1357",
+                    parentName="Pat Parent",
+                    parentTypedName="Pat Parent",
+                    parentPrintName="Pat Parent",
+                    parentSignature=PNG,
+                ),
+            )
+            self.assertEqual(status, 201, teen)
+            self.assertEqual(named("Teen Adult"), [])
+            status, added_teen = admin.call("POST", f"/api/waivers/{teen['id']}/add", {})
+            self.assertEqual(status, 201, added_teen)
+            teen_row = named("Teen Adult")[0]
+            created.append(teen_row["id"])
+            self.assertEqual(teen_row["program"], "adult")
+            self.assertTrue(teen_row["pinSet"])
+            self.assertGreaterEqual(len(teen_row["parentToken"]), 20)
+            status, teen_month = self.client().call(
+                "POST",
+                "/api/public/parent",
+                {"token": teen_row["parentToken"], "month": 7, "day": 7},
+            )
+            self.assertEqual(status, 400, teen_month)
+            self.assertEqual(teen_month["error"], "Those details don't match.")
+            status, teen_pin = self.client().call(
+                "POST",
+                "/api/public/parent",
+                {"token": teen_row["parentToken"], "pin": "1357"},
+            )
+            self.assertEqual(status, 200, teen_pin)
+            self.assertEqual(teen_pin["signForm"], "adult")
+            self.assertNotIn("1357", json.dumps(teen_pin))
+            self.assertEqual(students()["kidsEnrollment"]["enrolled"], before + 1)
+        finally:
+            self.api.cfg["waiver_submissions_enabled"] = None
+            self.api._waiver_posts = []
+            self.api._parent_fails = []
+            self.api._parent_grants = {}
+            for sid in created:
+                admin.call("DELETE", f"/api/students/{sid}")
+            conn = connect(self.api.cfg["db_path"])
+            conn.execute("DELETE FROM waivers WHERE email LIKE 'adult-card-%'")
+            conn.execute("DELETE FROM adult_classes WHERE date = '2026-10-27'")
+            conn.execute("DELETE FROM students WHERE name IN ('Kid Card One', 'Same Person', 'Adult Pat', 'Teen Adult')")
+            conn.commit()
+            conn.close()
+
 class DemoIsolationTest(unittest.TestCase):
     def test_demo_cookie_is_not_the_production_cookie(self):
         obj = Api.__new__(Api)
@@ -2616,10 +2931,27 @@ class DemoIsolationTest(unittest.TestCase):
         conn = connect(path)
         try:
             names = [row["name"] for row in conn.execute("SELECT name FROM students ORDER BY name")]
-            self.assertEqual(len(names), 12)
+            self.assertEqual(len(names), 14)
             self.assertTrue(all(name.startswith("EXAMPLE ") for name in names))
             capped = conn.execute("SELECT COUNT(*) AS n FROM students WHERE age BETWEEN 3 AND 10").fetchone()["n"]
             self.assertEqual(capped, 11)
+            adults = conn.execute(
+                "SELECT id, program, card_pin_hash FROM students WHERE program = 'adult' ORDER BY id"
+            ).fetchall()
+            self.assertEqual([row["id"] for row in adults], ["demo-quinn", "demo-uma"])
+            self.assertTrue(adults[0]["card_pin_hash"])
+            self.assertNotIn("2468", adults[0]["card_pin_hash"])
+            self.assertTrue(check_password("2468", adults[0]["card_pin_hash"]))
+            self.assertEqual(adults[1]["card_pin_hash"], "")
+            quinn_form = conn.execute(
+                "SELECT payload_json FROM waivers WHERE id = 'demo-waiver-quinn'"
+            ).fetchone()
+            self.assertIn("EXAMPLE-ADULT-SECRET", quinn_form["payload_json"])
+            self.assertNotIn("2468", quinn_form["payload_json"])
+            done = conn.execute(
+                "SELECT COUNT(DISTINCT class_number) AS n FROM adult_progress WHERE student_id = 'demo-quinn'"
+            ).fetchone()["n"]
+            self.assertEqual(done, 14)
             emails = [row["email"] for row in conn.execute("SELECT email FROM waivers")]
             emails += [row["email"] for row in conn.execute("SELECT email FROM waitlist")]
             self.assertTrue(emails)
@@ -2635,8 +2967,8 @@ class DemoIsolationTest(unittest.TestCase):
             self.assertEqual(marker["value"], "1")
             self.assertEqual(conn.execute("SELECT COUNT(*) AS n FROM waitlist").fetchone()["n"], 3)
             tokens = [row["parent_token"] for row in conn.execute("SELECT id, parent_token FROM students")]
-            self.assertEqual(len(tokens), 12)
-            self.assertEqual(len(set(tokens)), 12)
+            self.assertEqual(len(tokens), 14)
+            self.assertEqual(len(set(tokens)), 14)
             self.assertTrue(all(len(token) >= 20 and token != "1" for token in tokens))
             milo = conn.execute(
                 "SELECT roster_student_id, payload_json FROM waivers WHERE id = 'demo-waiver-milo'"
@@ -2727,6 +3059,7 @@ class DemoIsolationTest(unittest.TestCase):
         self.assertIn('href="/kids/"', source_home)
         with self.assertRaises(SystemExit):
             prefix_tree.publish(root, "/srv/bjj-planner", "/demo")
+
 
 
 def _handler(api):

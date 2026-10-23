@@ -237,6 +237,89 @@ def _ensure_parent_examples(conn, now):
         )
 
 
+def _ensure_adult_examples(conn, now):
+    """EXAMPLE adults use the same kind of check-in card as kids. Safe to run again."""
+    adults = (
+        ("demo-quinn", "EXAMPLE Adult Quinn Preview", 34, "blue", 2, "1992-06-01", True),
+        ("demo-uma", "EXAMPLE Adult Uma Preview", 15, "white", 0, "2011-06-01", False),
+    )
+    for sid, name, age, belt, stripes, dob, signed in adults:
+        row = conn.execute("SELECT id FROM students WHERE id = ?", (sid,)).fetchone()
+        if row:
+            continue
+        conn.execute(
+            """
+            INSERT INTO students (
+              id, name, age, belt, stripes, created_at, dob, parent_token, program, card_pin_hash
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'adult', ?)
+            """,
+            (
+                sid,
+                name,
+                age,
+                belt,
+                stripes,
+                now,
+                dob,
+                secrets.token_urlsafe(24),
+                hash_password("2468") if signed else "",
+            ),
+        )
+        conn.execute(
+            "INSERT INTO notes (student_id, note) VALUES (?, ?)",
+            (sid, "FAKE preview data. Not a real student."),
+        )
+    quinn = conn.execute("SELECT id, dob FROM students WHERE id = 'demo-quinn'").fetchone()
+    if quinn and not conn.execute("SELECT 1 FROM waivers WHERE id = 'demo-waiver-quinn'").fetchone():
+        payload = {
+            "demo": True,
+            "address": "4197 State St",
+            "emergencyName": "EXAMPLE Emergency",
+            "emergencyPhone": "555-0199",
+            "note": "EXAMPLE-ADULT-SECRET",
+        }
+        conn.execute(
+            """
+            INSERT INTO waivers (
+              id, kind, submitted_at, signed_on, participant_name, signer_name, dob, email, phone,
+              payload_json, signature_png, parent_signature_png, added_to_roster, roster_student_id
+            ) VALUES (?, 'adult', ?, '2026-02-02', ?, ?, ?, ?, ?, ?, ?, '', 1, 'demo-quinn')
+            """,
+            (
+                "demo-waiver-quinn",
+                now,
+                "EXAMPLE Adult Quinn Preview",
+                "EXAMPLE Adult Quinn Preview",
+                quinn["dob"] or "1992-06-01",
+                "quinn.preview@example.com",
+                "555-0134",
+                json.dumps(payload),
+                PNG,
+            ),
+        )
+    if quinn and not conn.execute("SELECT 1 FROM adult_progress WHERE student_id = 'demo-quinn'").fetchone():
+        path = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "adult-curriculum-blue.json")
+        with open(path, encoding="utf-8") as handle:
+            curriculum = json.load(handle)
+        level = curriculum["levels"][0]
+        for item in level["classes"]:
+            if int(item["number"]) > 14:
+                continue
+            for index, _name in enumerate(item["techniques"]):
+                conn.execute(
+                    """
+                    INSERT INTO adult_progress (student_id, level_id, class_number, technique_index, checked_at)
+                    VALUES ('demo-quinn', ?, ?, ?, ?)
+                    """,
+                    (level["id"], int(item["number"]), index, now),
+                )
+    if quinn and not conn.execute("SELECT 1 FROM adult_classes WHERE id = 'demo-class-quinn'").fetchone():
+        conn.execute(
+            "INSERT INTO adult_classes (id, date, attended) VALUES ('demo-class-quinn', '2026-10-27', ?)",
+            (json.dumps(["demo-quinn"]),),
+        )
+
+
 def seed_demo(path, passwords, reset_password=False):
     """Write example rows and the two demo admins. reset_password is accepted and ignored.
 
@@ -267,6 +350,7 @@ def seed_demo(path, passwords, reset_password=False):
         if not students:
             _insert_examples(conn, now)
         _ensure_parent_examples(conn, now)
+        _ensure_adult_examples(conn, now)
         _drop_other_users(conn)
         for username, display_name in DEMO_ADMINS:
             _ensure_admin(conn, username, display_name, cleaned[username], now)

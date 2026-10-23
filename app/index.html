@@ -43,16 +43,20 @@
   <div class="app">
     <div class="phone-bar">
       <button type="button" class="menu-toggle" id="menuToggle" aria-expanded="false" aria-controls="sidebar">Menu</button>
-      <span>Kids class</span>
+      <span id="phoneClassLabel">Kids class</span>
     </div>
     <button type="button" class="scrim" id="menuScrim" aria-label="Close menu" tabindex="-1"></button>
     <aside class="sidebar" id="sidebar" tabindex="-1">
       <div class="brand">
         <img class="brand-logo" src="/img/logo/grace-logo-mark-reversed-transparent.png" alt="Grace Jiu-Jitsu" />
         <div class="brand-text">
-          <h1>Kids class</h1>
+          <h1 id="brandTitle">Kids class</h1>
           <small>Staff</small>
         </div>
+      </div>
+      <div class="seg views" id="programSwitch" role="group" aria-label="Class">
+        <button type="button" data-program="kids" class="on" aria-pressed="true">Kids</button>
+        <button type="button" data-program="adult" aria-pressed="false">Adults</button>
       </div>
       <div class="seg views" id="viewSwitch" role="group" aria-label="Staff views">
         <button type="button" data-view="plan" class="on">Plan</button>
@@ -70,7 +74,7 @@
         <button class="primary" id="importLocalBtn" type="button">Import it to the server</button>
       </p>
 
-      <section class="panel">
+      <section class="panel kids-only">
         <h2>Age group</h2>
         <div class="seg ages" id="ageGroup" role="group" aria-label="Age group. Choose one, or more than one for a combo class.">
           <button type="button" data-group="mite" class="on" aria-pressed="true"><span class="age-range">3–6</span><small>Mighty Mites</small></button>
@@ -81,7 +85,7 @@
         <p class="potty-note">Kids ages 3–6 must be fully potty trained to join class.</p>
       </section>
 
-      <section class="panel">
+      <section class="panel kids-only">
         <h2>Class</h2>
         <div class="grid-2">
           <div class="field grow">
@@ -137,7 +141,7 @@
         <p class="hint" id="themeReason"></p>
       </section>
 
-      <section class="panel">
+      <section class="panel kids-only">
         <h2>Timeline</h2>
         <p class="hint" id="prayerNote">Opening prayer is always the first 2 minutes.</p>
         <div class="grid-2">
@@ -181,7 +185,7 @@
         <p class="time-sum ok" id="timeSum"></p>
       </section>
 
-      <section class="panel">
+      <section class="panel kids-only">
         <h2>Randomize</h2>
         <div class="field">
           <label for="themeLock">Technique theme</label>
@@ -232,7 +236,47 @@
         <div id="savedPlans" class="saved-plans"></div>
       </section>
 
-      <section class="panel">
+      <section class="panel adult-only" id="adultRosterPanel">
+        <h2>Adult roster</h2>
+        <p class="hint">Ages 11 and up. Tuesdays and Thursdays, 6:30–8:00 PM. Each student has one check-in card. The signed adult form attaches to that same card.</p>
+        <div class="roster-admin admin-only">
+          <div class="grid-2">
+            <div class="field grow">
+              <label for="adultName">Name</label>
+              <input id="adultName" maxlength="40" />
+            </div>
+            <div class="field">
+              <label for="adultAge">Age</label>
+              <input id="adultAge" type="number" min="11" max="120" value="18" />
+            </div>
+            <div class="field">
+              <label for="adultBelt">Belt</label>
+              <select id="adultBelt">
+                <option value="white">White</option>
+                <option value="blue">Blue</option>
+                <option value="purple">Purple</option>
+                <option value="brown">Brown</option>
+                <option value="black">Black</option>
+              </select>
+            </div>
+            <div class="field">
+              <label for="adultStripes">Stripes</label>
+              <select id="adultStripes">
+                <option value="0">0</option>
+                <option value="1">1</option>
+                <option value="2">2</option>
+                <option value="3">3</option>
+                <option value="4">4</option>
+              </select>
+            </div>
+          </div>
+          <button class="primary" id="addAdultBtn" type="button">Add adult</button>
+          <p class="form-note" id="adultNote" role="alert"></p>
+        </div>
+        <div class="library-list" id="adultRosterList"></div>
+      </section>
+
+      <section class="panel kids-only">
         <h2>Roster</h2>
         <p class="enrolled-count" id="kidsEnrolled"></p>
         <p class="hint">Shared on the server. Highest rank lines up first. The count is kids ages 3–10 plus kids forms not yet added.</p>
@@ -273,7 +317,7 @@
         <p class="btn-row"><a class="ghost" href="/api/export/roster.csv">Download roster CSV</a></p>
       </section>
 
-      <section class="panel">
+      <section class="panel kids-only">
         <h2>Your library</h2>
         <p class="hint">The library stays in this browser. Saved class plans and attendance stay on the server.</p>
         <div class="tabs" id="libTabs">
@@ -291,7 +335,7 @@
         <div class="library-list" id="libraryList"></div>
       </section>
 
-      <section class="panel">
+      <section class="panel kids-only">
         <h2>Coloring sheet on the plan</h2>
         <p class="hint">This prints with the class plan. Parents use the public coloring page.</p>
         <div class="field">

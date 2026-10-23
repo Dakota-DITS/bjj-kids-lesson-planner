@@ -1,0 +1,227 @@
+{
+  "_edit": "White to blue is the first level. Add another object in levels for a later belt. Keep each technique string as it is printed on the class sheet.",
+  "levels": [
+    {
+      "id": "white-to-blue",
+      "fromBelt": "white",
+      "toBelt": "blue",
+      "label": "White to blue belt",
+      "classes": [
+        {
+          "number": 1,
+          "techniques": [
+            "Leverage Principle",
+            "RNC Defense - Standing",
+            "Rocking Chair w/technical standup",
+            "Sucker Punch Defense w/ Takedown",
+            "Achieving Mount w/controls",
+            "Take the back w/RNC"
+          ]
+        },
+        {
+          "number": 2,
+          "techniques": [
+            "Backward Roll",
+            "Hip Escape",
+            "Guard Posture and Guard Passing",
+            "Mount Choke",
+            "Americana Armlock (Mount)"
+          ]
+        },
+        {
+          "number": 3,
+          "techniques": [
+            "Forward Roll",
+            "Sprawl",
+            "Rear Bear Hug Defense (over arms)",
+            "Elbow Escape",
+            "Choke from Guard",
+            "Scissor Sweep",
+            "Double Ankle Sweep"
+          ]
+        },
+        {
+          "number": 4,
+          "techniques": [
+            "Principle of Base w/grip break",
+            "Side Control Principles",
+            "Bump and Roll (Neck Hug)",
+            "Thrusting Choke and Defense (Amassa Pao)"
+          ]
+        },
+        {
+          "number": 5,
+          "techniques": [
+            "Front Bear Hug Defense (over arms)",
+            "Recover guard from bottom Side Mount",
+            "Hip Bump Sweep",
+            "Kimura (guard)"
+          ]
+        },
+        {
+          "number": 6,
+          "techniques": [
+            "Koshi Guruma w/Self Defense",
+            "Double Leg Takedown",
+            "Torreando Pass",
+            "Kimura (Side Control)"
+          ]
+        },
+        {
+          "number": 7,
+          "techniques": [
+            "RNC Defense - Standing",
+            "Pullback Variation",
+            "Bottom Side Mount Escape to Single Leg (turtle)",
+            "American (Side Control)",
+            "Elbow Cup Armlock"
+          ]
+        },
+        {
+          "number": 8,
+          "techniques": [
+            "Side Headlock Defense w/punch",
+            "Side Headlock Defense (smart base)",
+            "Armlock from Mount (double attack)",
+            "Cross Collar Choke from Mount (Double Attack)"
+          ]
+        },
+        {
+          "number": 9,
+          "techniques": [
+            "Open Guard Setup",
+            "Tripod Sweep",
+            "Balloon Sweep",
+            "Reverse Armlock from Mount (inverted armlock)"
+          ]
+        },
+        {
+          "number": 10,
+          "techniques": [
+            "Standing Guillotine Choke",
+            "Guillotine Choke (Guard Pull)",
+            "Pendulum Sweep",
+            "Armlock from guard (opponent standing)"
+          ]
+        },
+        {
+          "number": 11,
+          "techniques": [
+            "One hand push defense (wrist lock)",
+            "Two hand push defense (hip throw)",
+            "Technical Mount w/Sliding Collar Choke (Kata Hajime)",
+            "Technical Mount w/armlock"
+          ]
+        },
+        {
+          "number": 12,
+          "techniques": [
+            "Guillotine Defense (Standing)",
+            "Knee on Belly (control)",
+            "Knee on Belly Choke",
+            "Knee on Belly Armlock"
+          ]
+        },
+        {
+          "number": 13,
+          "techniques": [
+            "Double Leg Takedown (No grips)",
+            "Passing Guard (Standing)",
+            "Half Guard Pass (Reverse half top)",
+            "Half Guard Pass to Mount"
+          ]
+        },
+        {
+          "number": 14,
+          "techniques": [
+            "Front Bear Hug Defense (under arms)",
+            "Mount Escape with hands on belt (Butterfly to Closed Guard)",
+            "Overwrap Choke",
+            "Armlock (Standing Guard)"
+          ]
+        },
+        {
+          "number": 15,
+          "techniques": [
+            "Double Leg Takedown Defense (Sprawl)",
+            "Back Mount Control (Seat Belt and Hooks)",
+            "Remount Technique w/Back Transfer",
+            "Sliding Collar Choke"
+          ]
+        },
+        {
+          "number": 16,
+          "techniques": [
+            "Headlock Escape - Frame Escape (Superlock)",
+            "Headlock Escape - No Frame (Super Base)",
+            "Back Mount Counters and Escapes",
+            "Advanced Back Mount Escapes"
+          ]
+        },
+        {
+          "number": 17,
+          "techniques": [
+            "Single Leg Takedown",
+            "Guard Recovery from Turtle",
+            "Triangle Choke (Open Guard)",
+            "Cross Sweep (Open Guard)"
+          ]
+        },
+        {
+          "number": 18,
+          "techniques": [
+            "Jab Defense to Rear Clinch",
+            "Rear Clinch to Rear Takedown",
+            "Clock Choke",
+            "Turtle Roll"
+          ]
+        },
+        {
+          "number": 19,
+          "techniques": [
+            "Knee Pick Takedown w/Sweep",
+            "Front Side Pass (long step)",
+            "Armlock from Modified Side Mount",
+            "Bread Cutter Choke"
+          ]
+        },
+        {
+          "number": 20,
+          "techniques": [
+            "Rear Bear Hug Defense - Under Arms (Lifting Variation)",
+            "Rear Bear Hug Defense - Under Arms (Knee Bar)",
+            "Side Mount Escape (Cross Body Defense)",
+            "Armlock Counters (Mount and Elbow Escape)"
+          ]
+        },
+        {
+          "number": 21,
+          "techniques": [
+            "Ippon Seio Nage",
+            "Elevator Sweep",
+            "Half Guard Tripod Pass",
+            "Ezekiel Choke (Mount)"
+          ]
+        },
+        {
+          "number": 22,
+          "techniques": [
+            "Closed Guard Retention and Maintenance",
+            "Mount Principles and Maintenance",
+            "Armlock Counter (Guard)",
+            "Triangle Choke Defense"
+          ]
+        },
+        {
+          "number": 23,
+          "techniques": [
+            "Pummeling from Standing Clinch",
+            "Pummel to Single Leg",
+            "Knee Cut Pass from HQ",
+            "Achieving Technical Mount from Side Mount (opp rolls away)"
+          ]
+        }
+      ]
+    }
+  ]
+}
