@@ -1396,8 +1396,285 @@ class ApiTest(unittest.TestCase):
             self.assertIn("Casey Lee", text)
             self.assertIn("Jordan Lee", text)
             self.assertNotIn("data:image", text)
+            self.assertEqual(detail["rosterStudentId"], "")
+            self.assertFalse(detail["addedToRoster"])
+            status, boot = admin.call("GET", "/api/bootstrap")
+            names = [row["name"] for row in boot["students"]]
+            self.assertNotIn("Jordan Lee", names)
+            self.assertNotIn("Casey Lee", names)
         finally:
             self.api.cfg["waiver_submissions_enabled"] = None
+
+    def test_enrollment_review_matches_and_adds(self):
+        from datetime import date
+
+        self.api._waiver_posts = []
+        self.api.cfg["waiver_submissions_enabled"] = True
+        guest = self.client()
+        teacher = self.client()
+        teacher.login("alex", "correct-horse")
+        admin = self.client()
+        admin.login("dakota", "correct-horse")
+        year = date.today().year
+        kid_dob = f"{year - 8}-06-06"
+        other_dob = f"{year - 7}-07-07"
+        adult_dob = f"{year - 30}-08-08"
+        created = []
+        try:
+            status, hidden = teacher.call("GET", "/api/enrollment-review")
+            self.assertEqual(status, 403, hidden)
+            status, guest_hidden = guest.call("GET", "/api/enrollment-review")
+            self.assertEqual(status, 401, guest_hidden)
+
+            status, kid = admin.call(
+                "POST",
+                "/api/students",
+                {"name": "Sam Review", "age": 8, "belt": "white", "stripes": 0, "dob": kid_dob},
+            )
+            self.assertEqual(status, 201, kid)
+            created.append(kid["id"])
+            status, other = admin.call(
+                "POST",
+                "/api/students",
+                {"name": "Alex Review", "age": 7, "belt": "white", "stripes": 0, "dob": other_dob},
+            )
+            self.assertEqual(status, 201, other)
+            created.append(other["id"])
+            status, adult = admin.call(
+                "POST",
+                "/api/students",
+                {"name": "Riley Review", "age": 30, "belt": "white", "stripes": 0, "dob": adult_dob},
+            )
+            self.assertEqual(status, 201, adult)
+            created.append(adult["id"])
+
+            before_students = admin.call("GET", "/api/bootstrap")[1]["students"]
+            before_count = len(before_students)
+            status, exact = guest.call(
+                "POST",
+                "/api/public/waivers",
+                self.waiver_body(
+                    kind="kids",
+                    participantName="Sam Review",
+                    email="review-sam@example.com",
+                    phone="503-555-0142",
+                    dob=kid_dob,
+                    parentName="Pat Review",
+                    injuries="STAFF-ONLY-KNEE",
+                ),
+            )
+            self.assertEqual(status, 201, exact)
+            status, still = admin.call("GET", "/api/bootstrap")
+            self.assertEqual(len(still["students"]), before_count)
+            sam = next(row for row in still["students"] if row["id"] == kid["id"])
+            self.assertFalse(sam["waiver"]["signed"])
+
+            status, review = admin.call("GET", "/api/enrollment-review")
+            self.assertEqual(status, 200, review)
+            self.assertFalse(review["kidsEnrollment"]["waitlistEnabled"])
+            form = next(row for row in review["kids"] if row["id"] == exact["id"])
+            self.assertFalse(form["linked"])
+            self.assertEqual(form["preselectId"], kid["id"])
+            suggestion = next(row for row in form["suggestions"] if row["studentId"] == kid["id"])
+            self.assertTrue(suggestion["exact"])
+            self.assertIn("Same name", suggestion["reasons"])
+            self.assertIn("Same birth date", suggestion["reasons"])
+            self.assertEqual(form["rosterStudentId"], "")
+            self.assertTrue(any(row["participantName"] == "Sam Review" for row in review["kids"]))
+            self.assertFalse(any(row["id"] == exact["id"] for row in review["adults"]))
+
+            status, teacher_match = teacher.call(
+                "POST", f"/api/waivers/{exact['id']}/match", {"studentId": kid["id"]}
+            )
+            self.assertEqual(status, 403, teacher_match)
+            status, teacher_add = teacher.call("POST", f"/api/waivers/{exact['id']}/add", {})
+            self.assertEqual(status, 403, teacher_add)
+
+            status, matched = admin.call(
+                "POST", f"/api/waivers/{exact['id']}/match", {"studentId": kid["id"]}
+            )
+            self.assertEqual(status, 200, matched)
+            self.assertTrue(matched["waiver"]["signed"])
+            self.assertEqual(matched["waiver"]["waiverId"], exact["id"])
+            status, signed = admin.call("GET", "/api/bootstrap")
+            sam = next(row for row in signed["students"] if row["id"] == kid["id"])
+            self.assertTrue(sam["waiver"]["signed"])
+            self.assertEqual(sam["waiver"]["waiverId"], exact["id"])
+            token = sam["parentToken"]
+            status, parent = guest.call(
+                "POST", "/api/public/parent", {"token": token, "month": 6, "day": 6}
+            )
+            self.assertEqual(status, 200, parent)
+            self.assertTrue(parent["waiver"]["signed"])
+            self.assertNotIn("STAFF-ONLY-KNEE", json.dumps(parent))
+            self.assertNotIn("review-sam@example.com", json.dumps(parent))
+
+            status, household = guest.call(
+                "POST",
+                "/api/public/waivers",
+                self.waiver_body(
+                    kind="kids",
+                    participantName="Quinn Review",
+                    email="review-sam@example.com",
+                    phone="(503) 555-0142",
+                    dob=other_dob,
+                    parentName="Pat Review",
+                    injuries="",
+                ),
+            )
+            self.assertEqual(status, 201, household)
+            status, review = admin.call("GET", "/api/enrollment-review")
+            second = next(row for row in review["kids"] if row["id"] == household["id"])
+            self.assertEqual(second["preselectId"], "")
+            hinted = next(row for row in second["suggestions"] if row["studentId"] == kid["id"])
+            self.assertFalse(hinted["exact"])
+            self.assertIn("Same email", hinted["reasons"])
+            self.assertIn("Same parent or guardian", hinted["reasons"])
+            self.assertIn("Same phone", hinted["reasons"])
+            self.assertGreater(
+                hinted["score"],
+                next(row["score"] for row in second["suggestions"] if row["studentId"] == other["id"]),
+            )
+
+            status, rematch = admin.call(
+                "POST", f"/api/waivers/{exact['id']}/match", {"studentId": other["id"]}
+            )
+            self.assertEqual(status, 200, rematch)
+            status, moved = admin.call("GET", "/api/bootstrap")
+            sam = next(row for row in moved["students"] if row["id"] == kid["id"])
+            alex = next(row for row in moved["students"] if row["id"] == other["id"])
+            self.assertFalse(sam["waiver"]["signed"])
+            self.assertTrue(alex["waiver"]["signed"])
+            self.assertEqual(alex["waiver"]["waiverId"], exact["id"])
+
+            status, cleared = admin.call("POST", f"/api/waivers/{exact['id']}/unlink", {})
+            self.assertEqual(status, 200, cleared)
+            self.assertFalse(cleared["waiver"]["signed"])
+            status, open_again = admin.call("GET", "/api/enrollment-review")
+            again = next(row for row in open_again["kids"] if row["id"] == exact["id"])
+            self.assertFalse(again["linked"])
+            self.assertEqual(again["preselectId"], kid["id"])
+
+            status, adult_form = guest.call(
+                "POST",
+                "/api/public/waivers",
+                self.waiver_body(
+                    participantName="Riley Review",
+                    email="review-riley@example.com",
+                    dob=adult_dob,
+                ),
+            )
+            self.assertEqual(status, 201, adult_form)
+            status, adults = admin.call("GET", "/api/bootstrap")
+            self.assertEqual(
+                len([row for row in adults["students"] if row["name"] == "Riley Review"]),
+                1,
+            )
+            adult_row = next(row for row in admin.call("GET", "/api/enrollment-review")[1]["adults"] if row["id"] == adult_form["id"])
+            self.assertFalse(adult_row["linked"])
+            self.assertEqual(adult_row["preselectId"], adult["id"])
+            self.assertEqual(adult_row["ageGroupLabel"], "18 and up")
+            status, adult_match = admin.call(
+                "POST", f"/api/waivers/{adult_form['id']}/match", {"studentId": adult["id"]}
+            )
+            self.assertEqual(status, 200, adult_match)
+            status, adult_parent = self.client().call(
+                "POST",
+                "/api/public/parent",
+                {"token": adult["parentToken"], "month": 8, "day": 8},
+            )
+            self.assertEqual(status, 200, adult_parent)
+            self.assertEqual(adult_parent["signForm"], "adult")
+            self.assertTrue(adult_parent["waiver"]["signed"])
+            self.assertEqual(adult_parent["waiver"]["signerName"], "Jordan Lee")
+
+            status, newbie = guest.call(
+                "POST",
+                "/api/public/waivers",
+                self.waiver_body(
+                    kind="kids",
+                    participantName="Brand New Review",
+                    email="review-new@example.com",
+                    phone="503-555-0177",
+                    dob=f"{year - 6}-09-09",
+                    parentName="Ned Review",
+                    injuries="STAFF-ONLY-ASTHMA",
+                ),
+            )
+            self.assertEqual(status, 201, newbie)
+            status, added = admin.call("POST", f"/api/waivers/{newbie['id']}/add", {})
+            self.assertEqual(status, 201, added)
+            created.append(added["id"])
+            self.assertEqual(added["name"], "Brand New Review")
+            self.assertEqual(added["dob"], f"{year - 6}-09-09")
+            self.assertEqual(added["age"], 6)
+            self.assertTrue(added["waiver"]["signed"])
+            self.assertEqual(added["waiver"]["waiverId"], newbie["id"])
+            conn = connect(self.api.cfg["db_path"])
+            stored = conn.execute("SELECT * FROM students WHERE id = ?", (added["id"],)).fetchone()
+            note = conn.execute("SELECT note FROM notes WHERE student_id = ?", (added["id"],)).fetchone()
+            conn.close()
+            self.assertEqual(stored["parent_name"], "Ned Review")
+            self.assertEqual(stored["parent_email"], "review-new@example.com")
+            self.assertEqual(stored["parent_phone"], "503-555-0177")
+            self.assertIn("STAFF-ONLY-ASTHMA", note["note"])
+            status, parent_new = self.client().call(
+                "POST",
+                "/api/public/parent",
+                {"token": added["parentToken"], "month": 9, "day": 9},
+            )
+            self.assertEqual(status, 200, parent_new)
+            self.assertTrue(parent_new["waiver"]["signed"])
+            dumped = json.dumps(parent_new)
+            self.assertNotIn("STAFF-ONLY-ASTHMA", dumped)
+            self.assertNotIn("review-new@example.com", dumped)
+            self.assertNotIn("Ned Review", dumped)
+            status, noted = admin.call("GET", "/api/bootstrap")
+            self.assertIn("STAFF-ONLY-ASTHMA", noted["notes"][added["id"]])
+
+            status, cap_now = guest.call("GET", "/api/public/kids-enrollment")
+            status, tightened = admin.call("PUT", "/api/kids-cap", {"cap": cap_now["enrolled"]})
+            self.assertEqual(status, 200, tightened)
+            self.assertTrue(tightened["full"])
+            status, duplicate = guest.call(
+                "POST",
+                "/api/public/waivers",
+                self.waiver_body(
+                    kind="kids",
+                    participantName="Sam Review",
+                    email="review-dup@example.com",
+                    dob=kid_dob,
+                    parentName="Pat Review",
+                ),
+            )
+            self.assertEqual(status, 201, duplicate)
+            status, blocked = admin.call("POST", f"/api/waivers/{duplicate['id']}/add", {})
+            self.assertEqual(status, 409, blocked)
+            self.assertTrue(blocked["needsConfirm"])
+            self.assertEqual(self._waitlist_count(), 0)
+            status, forced = admin.call(
+                "POST", f"/api/waivers/{duplicate['id']}/add", {"confirmOverCap": True}
+            )
+            self.assertEqual(status, 201, forced)
+            created.append(forced["id"])
+            self.assertGreater(forced["kidsEnrollment"]["enrolled"], forced["kidsEnrollment"]["cap"])
+            self.assertEqual(self._waitlist_count(), 0)
+            status, wrong = admin.call(
+                "POST", f"/api/waivers/{newbie['id']}/match", {"studentId": adult["id"]}
+            )
+            self.assertEqual(status, 400, wrong)
+        finally:
+            self.api.cfg["waiver_submissions_enabled"] = None
+            self.api._waiver_posts = []
+            admin.call("PUT", "/api/kids-cap", {"cap": 12})
+            for sid in created:
+                admin.call("DELETE", f"/api/students/{sid}")
+            conn = connect(self.api.cfg["db_path"])
+            conn.execute("DELETE FROM waivers WHERE email LIKE 'review-%'")
+            conn.execute("DELETE FROM students WHERE name LIKE '% Review'")
+            conn.execute("DELETE FROM settings WHERE key = 'kids_cap'")
+            conn.commit()
+            conn.close()
 
     def test_parent_card_hides_medical_notes(self):
         from datetime import date
@@ -1698,6 +1975,9 @@ class ApiTest(unittest.TestCase):
         waivers = {row[1] for row in conn.execute("PRAGMA table_info(waivers)")}
         self.assertIn("dob", students)
         self.assertIn("parent_token", students)
+        self.assertIn("parent_name", students)
+        self.assertIn("parent_email", students)
+        self.assertIn("parent_phone", students)
         self.assertIn("added_to_roster", waivers)
         self.assertIn("roster_student_id", waivers)
         row = conn.execute("SELECT added_to_roster, roster_student_id FROM waivers WHERE id = 'w-old'").fetchone()
