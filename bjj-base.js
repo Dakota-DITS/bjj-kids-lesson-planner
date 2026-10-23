@@ -102,6 +102,13 @@
     bar.setAttribute("role", "status");
     bar.textContent = "DEMO PREVIEW, not live. This preview does not email anyone and does not take payments.";
     document.body.insertBefore(bar, document.body.firstChild);
+    function syncDemoOffset() {
+      var banner = document.getElementById("bjj-demo-banner");
+      var height = banner ? Math.ceil(banner.getBoundingClientRect().height) : 0;
+      document.documentElement.style.setProperty("--demo-banner-h", height + "px");
+    }
+    syncDemoOffset();
+    window.addEventListener("resize", syncDemoOffset);
     rewriteTree(document);
     labelPayments();
   }

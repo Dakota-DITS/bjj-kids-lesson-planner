@@ -4,7 +4,7 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <meta name="bjj-base" content="">
-  <script src="/bjj-base.js?v=20261022-36"></script>
+  <script src="/bjj-base.js?v=20261023-39"></script>
   <meta name="robots" content="noindex, nofollow, noarchive, nosnippet">
   <meta name="googlebot" content="noindex, nofollow">
   <title>Grace BJJ Kids enrollment</title>
@@ -12,14 +12,34 @@
   <link rel="manifest" href="/manifest.webmanifest" />
   <meta name="theme-color" content="#9b2a12" />
   <link rel="icon" href="/icons/favicon-32.png" type="image/png" sizes="32x32" />
-  <link rel="stylesheet" href="/css/waiver.css?v=20261022-36" />
-  <script src="/pwa.js?v=20261022-36" defer></script>
+  <link rel="stylesheet" href="/css/waiver.css?v=20261023-39" />
+  <link rel="stylesheet" href="/css/site-header.css?v=20261023-39" />
+  <script src="/pwa.js?v=20261023-39" defer></script>
 </head>
 <body data-kind="kids">
   <a class="skip" href="#main">Skip to content</a>
-  <header class="top no-print"><a href="/kids/">Grace BJJ Kids</a></header>
+  <header class="top no-print" data-site-header>
+    <div class="top-bar">
+      <a class="brand" href="/kids/">
+        <img src="/img/logo/grace-logo-kids-reversed-transparent.png" alt="Grace Jiu-Jitsu Kids home" />
+      </a>
+      <button type="button" class="nav-toggle" aria-expanded="false" aria-controls="site-menu" aria-label="Menu">
+        <span class="nav-toggle-bars" aria-hidden="true"></span>
+      </button>
+      <nav class="site-nav" id="site-menu" aria-label="Site">
+        <a class="home-pill" href="/">Grace BJJ</a>
+        <a href="/">Home</a>
+        <a href="/#classes">Classes</a>
+        <a href="/kids/">Kids</a>
+        <a href="/#schedule">Schedule</a>
+        <a href="/#affiliation">Affiliation</a>
+        <a href="/#contact">Contact</a>
+        <a href="/login/">Staff login</a>
+      </nav>
+    </div>
+  </header>
   <main class="sheet" id="main">
-    <img class="logo" src="/img/logo/grace-logo-mark-transparent.png" alt="Grace Jiu Jitsu" />
+    <img class="logo" src="/img/logo/grace-logo-kids-transparent.png" alt="Grace Jiu-Jitsu Kids" />
     <h1>Grace BJJ Kids</h1>
     <p class="lede">A parent or guardian completes and signs this enrollment and waiver for their child.</p>
     <p class="closed no-print" id="closedNote">Do not submit yet. Enrollment is not open.</p>
@@ -194,6 +214,7 @@
       <p class="closed" id="waitlistDone" hidden></p>
     </section>
   </main>
-  <script src="/waiver/waiver.js?v=20261022-36"></script>
+  <script src="/site-nav.js?v=20261023-39"></script>
+  <script src="/waiver/waiver.js?v=20261023-39"></script>
 </body>
 </html>
