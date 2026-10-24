@@ -64,6 +64,7 @@
     loadedPlanAge: "",
     savedPlans: [],
     classExceptions: [],
+    adultExceptions: [],
   };
 
   let cameraStream = null;
@@ -2444,6 +2445,29 @@ function sparringSection(plan) {
     return window.GRACE_CLASS_DAYS || null;
   }
 
+  function calendarProgram() {
+    return state.program === "adult" ? "adult" : "kids";
+  }
+
+  function calendarDays() {
+    const days = classDayApi();
+    if (!days) return null;
+    return days.forProgram ? days.forProgram(calendarProgram()) : days;
+  }
+
+  function calendarExceptions() {
+    return state.program === "adult" ? state.adultExceptions || [] : state.classExceptions || [];
+  }
+
+  function syncCalendarDefaults() {
+    const adult = state.program === "adult";
+    if ($("extraStart")) $("extraStart").value = adult ? "18:30" : "17:30";
+    if ($("extraEnd")) $("extraEnd").value = adult ? "20:00" : "18:15";
+    if ($("extraReason")) {
+      $("extraReason").placeholder = adult ? "Reason, optional" : "Make-up for a skipped Tuesday";
+    }
+  }
+
   function nextMeetingIso(from) {
     const days = classDayApi();
     if (!days) return P.nextClassDate(from);
@@ -2513,16 +2537,22 @@ function sparringSection(plan) {
   function renderClassCalendar() {
     const root = $("calendarList");
     if (!root) return;
-    const days = classDayApi();
+    const days = calendarDays();
     const intro = $("calendarIntro");
-    if (intro && !isAdmin()) {
-      intro.textContent = "Regular classes stay on the 2nd and 4th Tuesday, 5:30–6:15 PM PT. Ask an admin to skip a date or add a make-up.";
+    if (intro) {
+      if (state.program === "adult") {
+        intro.textContent = "Regular classes stay on Tuesday and Thursday, 6:30–8:00 PM PT. Ages 11 and up. Any staff member can skip a date or add a make-up. Those edits are saved in the change log.";
+      } else if (isAdmin()) {
+        intro.textContent = "Regular classes stay on the 2nd and 4th Tuesday, 5:30–6:15 PM PT, starting Tuesday, October 27, 2026.";
+      } else {
+        intro.textContent = "Regular classes stay on the 2nd and 4th Tuesday, 5:30–6:15 PM PT. Ask an admin to skip a date or add a make-up.";
+      }
     }
     if (!days) {
       root.innerHTML = `<p class="hint">The class calendar did not load.</p>`;
       return;
     }
-    const rows = days.upcomingMeetings(new Date(), 184, state.classExceptions);
+    const rows = days.upcomingMeetings(new Date(), 184, calendarExceptions());
     if (!rows.length) {
       root.innerHTML = `<p class="hint">No class dates in the next six months.</p>`;
       return;
@@ -2532,7 +2562,7 @@ function sparringSection(plan) {
         const title = days.longDate(row.year, row.month, row.day);
         const when = `${clockLabel(row.start)}–${clockLabel(row.end)}`;
         if (row.skipped) {
-          const undo = isAdmin()
+          const undo = canEditCalendar()
             ? `<button class="ghost" type="button" data-cal-undo="${esc(row.iso)}">Undo skip</button>`
             : "";
           return `<article class="calendar-row is-skip">
@@ -2541,7 +2571,7 @@ function sparringSection(plan) {
           </article>`;
         }
         if (row.extra) {
-          const remove = isAdmin()
+          const remove = canEditCalendar()
             ? `<button class="ghost" type="button" data-cal-undo="${esc(row.iso)}">Remove</button>`
             : "";
           return `<article class="calendar-row">
@@ -2549,7 +2579,7 @@ function sparringSection(plan) {
             ${remove}
           </article>`;
         }
-        const skip = isAdmin()
+        const skip = canEditCalendar()
           ? `<input class="skip-reason" type="text" maxlength="120" placeholder="Reason, optional" aria-label="Reason for skipping ${esc(title)}" data-skip-reason="${esc(row.iso)}" />
              <button class="ghost" type="button" data-cal-skip="${esc(row.iso)}">Skip this class</button>`
           : "";
@@ -2562,8 +2592,10 @@ function sparringSection(plan) {
   }
 
   async function refreshClassExceptions() {
-    const body = await window.BJJ_API.send("GET", "/api/class-exceptions");
-    state.classExceptions = Array.isArray(body.exceptions) ? body.exceptions : [];
+    const kids = await window.BJJ_API.send("GET", "/api/class-exceptions?program=kids");
+    state.classExceptions = Array.isArray(kids.exceptions) ? kids.exceptions : [];
+    const adult = await window.BJJ_API.send("GET", "/api/class-exceptions?program=adult");
+    state.adultExceptions = Array.isArray(adult.exceptions) ? adult.exceptions : [];
     noteSkippedDate();
     updateScheduleHint();
     renderHome();
@@ -2872,6 +2904,10 @@ function sparringSection(plan) {
 
   function isAdmin() {
     return state.session && state.session.role === "admin";
+  }
+
+  function canEditCalendar() {
+    return state.program === "adult" || isAdmin();
   }
 
   function replaceClass(saved) {
@@ -3355,7 +3391,7 @@ function sparringSection(plan) {
   const LEVEL_LABEL = P.LEVEL_LABELS;
 
   function setView(view) {
-    if (state.program === "adult" && (view === "plan" || view === "review" || view === "calendar")) view = "progress";
+    if (state.program === "adult" && (view === "plan" || view === "review")) view = "progress";
     if (view !== "checkin") stopCamera();
     state.view = view;
     document.body.classList.remove("menu-open");
@@ -4607,10 +4643,12 @@ function sparringSection(plan) {
       /* the choice still applies for this visit */
     }
     renderAdultRoster();
-    const kidsOnly = next === "adult" && (state.view === "plan" || state.view === "review" || state.view === "calendar");
+    const kidsOnly = next === "adult" && (state.view === "plan" || state.view === "review");
+    syncCalendarDefaults();
     if (!keepView && kidsOnly) setView("progress");
     else if (state.view === "progress") renderProgress();
     else if (state.view === "checkin") renderCheckinList();
+    else if (state.view === "calendar") renderClassCalendar();
   }
 
   function restoreProgram() {
@@ -6497,9 +6535,10 @@ function sparringSection(plan) {
     if ($("extraClassForm")) {
       $("extraClassForm").addEventListener("submit", async (event) => {
         event.preventDefault();
-        if (!isAdmin()) return;
+        if (!canEditCalendar()) return;
         try {
           await window.BJJ_API.send("POST", "/api/class-exceptions", {
+            program: calendarProgram(),
             date: $("extraDate").value,
             kind: "extra",
             reason: $("extraReason").value,
@@ -6510,6 +6549,7 @@ function sparringSection(plan) {
           $("extraReason").value = "";
           setFormNote("extraNote", "Make-up class added.", true);
           await refreshClassExceptions();
+          refreshChangeLog().catch(() => {});
         } catch (err) {
           setFormNote("extraNote", err.message || "Could not add that class.");
         }
@@ -6520,19 +6560,21 @@ function sparringSection(plan) {
         const skip = event.target.closest("[data-cal-skip]");
         const undo = event.target.closest("[data-cal-undo]");
         if (!skip && !undo) return;
-        if (!isAdmin()) return;
+        if (!canEditCalendar()) return;
         try {
           if (undo) {
-            await window.BJJ_API.send("DELETE", `/api/class-exceptions/${undo.dataset.calUndo}`);
+            await window.BJJ_API.send("DELETE", `/api/class-exceptions/${undo.dataset.calUndo}?program=${calendarProgram()}`);
           } else {
             const reasonInput = document.querySelector(`[data-skip-reason="${skip.dataset.calSkip}"]`);
             await window.BJJ_API.send("POST", "/api/class-exceptions", {
+              program: calendarProgram(),
               date: skip.dataset.calSkip,
               kind: "skip",
               reason: reasonInput ? reasonInput.value : "",
             });
           }
           await refreshClassExceptions();
+          refreshChangeLog().catch(() => {});
         } catch (err) {
           toast(err.message || "Could not update the calendar.");
         }
@@ -6917,6 +6959,12 @@ function sparringSection(plan) {
 
   function changeValue(value) {
     if (!value || typeof value !== "object") return "";
+    if (value.kind === "skip" || value.kind === "extra") {
+      const label = value.kind === "skip" ? "No class" : "Make-up";
+      const why = value.reason ? `: ${value.reason}` : "";
+      const clock = value.start && value.end ? `, ${value.start}–${value.end}` : "";
+      return `${value.date || ""} ${label}${why}${clock}`.trim();
+    }
     if (Object.prototype.hasOwnProperty.call(value, "belt")) return P.beltLabel(value.belt);
     if (Object.prototype.hasOwnProperty.call(value, "stripes")) return `${value.stripes} stripes`;
     if (Object.prototype.hasOwnProperty.call(value, "present")) {
@@ -6973,7 +7021,7 @@ function sparringSection(plan) {
       })
       .join("");
     root.innerHTML = `<h3>Change log</h3>
-      <p class="hint">Manual edits, newest first. Times are Pacific. Scanning a card at class is not listed here.</p>
+      <p class="hint">Manual edits, newest first. Adult calendar changes are included. Times are Pacific. Scanning a card at class is not listed here.</p>
       <div class="change-filters">
         <label>Student <select data-log-student>${studentOptions}</select></label>
         <label>Staff <select data-log-actor>${actorOptions}</select></label>

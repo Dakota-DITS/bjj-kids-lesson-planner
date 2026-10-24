@@ -286,21 +286,34 @@ def parse_iso(value):
         return None
 
 
-def is_class_day(value):
-    """2nd or 4th Tuesday on or after October 27, 2026. Calendar date, no timezone shift."""
+def _calendar_date(value):
     text = str(value or "").strip()
     try:
         when = datetime.strptime(text, "%Y-%m-%d")
     except ValueError:
-        return False
+        return "", None
     if when.strftime("%Y-%m-%d") != text:
-        return False
-    if when.weekday() != 1:
+        return "", None
+    return text, when
+
+
+def is_class_day(value):
+    """2nd or 4th Tuesday on or after October 27, 2026. Calendar date, no timezone shift."""
+    text, when = _calendar_date(value)
+    if when is None or when.weekday() != 1:
         return False
     which = (when.day - 1) // 7 + 1
     if which not in (2, 4):
         return False
     return text >= "2026-10-27"
+
+
+def is_adult_class_day(value):
+    """Every Tuesday and Thursday. Calendar date, no timezone shift."""
+    _text, when = _calendar_date(value)
+    if when is None:
+        return False
+    return when.weekday() in (1, 3)
 
 
 def today_pacific():
@@ -446,13 +459,15 @@ def migrate(conn):
           UNIQUE(class_date, age_group)
         );
         CREATE TABLE IF NOT EXISTS class_exceptions (
-          date TEXT PRIMARY KEY,
+          program TEXT NOT NULL DEFAULT 'kids' CHECK(program IN ('kids', 'adult')),
+          date TEXT NOT NULL,
           kind TEXT NOT NULL CHECK(kind IN ('skip', 'extra')),
           reason TEXT NOT NULL DEFAULT '',
           start_time TEXT NOT NULL DEFAULT '17:30',
           end_time TEXT NOT NULL DEFAULT '18:15',
           created_by TEXT NOT NULL DEFAULT '',
-          created_at TEXT NOT NULL
+          created_at TEXT NOT NULL,
+          PRIMARY KEY (program, date)
         );
         CREATE TABLE IF NOT EXISTS waivers (
           id TEXT PRIMARY KEY,
@@ -590,7 +605,41 @@ def migrate(conn):
         """
     )
     migrate_age_groups(conn)
+    migrate_class_exceptions(conn)
     conn.commit()
+
+
+def migrate_class_exceptions(conn):
+    """Kids and adult skips share one table, keyed by program and date.
+
+    Live databases created the table with date as the only primary key.
+    SQLite cannot change that key in place, so the old table is copied
+    once. Existing rows stay on the kids calendar. A second run is a no-op.
+    """
+    columns = {row[1] for row in conn.execute("PRAGMA table_info(class_exceptions)")}
+    if "program" in columns:
+        return
+    conn.executescript(
+        """
+        CREATE TABLE class_exceptions_v2 (
+          program TEXT NOT NULL DEFAULT 'kids' CHECK(program IN ('kids', 'adult')),
+          date TEXT NOT NULL,
+          kind TEXT NOT NULL CHECK(kind IN ('skip', 'extra')),
+          reason TEXT NOT NULL DEFAULT '',
+          start_time TEXT NOT NULL DEFAULT '17:30',
+          end_time TEXT NOT NULL DEFAULT '18:15',
+          created_by TEXT NOT NULL DEFAULT '',
+          created_at TEXT NOT NULL,
+          PRIMARY KEY (program, date)
+        );
+        INSERT INTO class_exceptions_v2
+          (program, date, kind, reason, start_time, end_time, created_by, created_at)
+        SELECT 'kids', date, kind, reason, start_time, end_time, created_by, created_at
+        FROM class_exceptions;
+        DROP TABLE class_exceptions;
+        ALTER TABLE class_exceptions_v2 RENAME TO class_exceptions;
+        """
+    )
 
 
 def cleanup(conn):

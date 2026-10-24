@@ -61,11 +61,13 @@ assert.ok(html.includes('email: ""'));
   assert.equal(text.includes("mail.grokbot.com"), false, rel);
   assert.equal(text.includes("dits+bjj"), false, rel);
 });
-assert.ok(html.includes('src="/calendar/class-days.js?v=20261024-54"'));
+assert.ok(html.includes('src="/calendar/class-days.js?v=20261024-56"'));
 assert.ok(html.includes("GRACE_CLASS_DAYS"));
-assert.ok(html.includes('aria-live="polite"'));
-assert.ok(html.includes('aria-label="Previous month"'));
-assert.ok(html.includes('aria-label="Next month"'));
+assert.ok(html.includes("mountCalendar"));
+const classDays = fs.readFileSync(path.join(root, "calendar/class-days.js"), "utf8");
+assert.ok(classDays.includes('aria-live="polite"'));
+assert.ok(classDays.includes('aria-label="Previous month"'));
+assert.ok(classDays.includes('aria-label="Next month"'));
 assert.ok(html.includes("Class: 5:30–6:15 PM at Grace Baptist Church"));
 assert.equal(html.includes("which === 2"), false);
 
