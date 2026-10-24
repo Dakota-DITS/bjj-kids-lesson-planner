@@ -489,6 +489,8 @@ def migrate(conn):
         conn.execute("ALTER TABLE waivers ADD COLUMN added_to_roster INTEGER NOT NULL DEFAULT 0")
     if "roster_student_id" not in waiver_columns:
         conn.execute("ALTER TABLE waivers ADD COLUMN roster_student_id TEXT NOT NULL DEFAULT ''")
+    if "card_pin_hash" not in waiver_columns:
+        conn.execute("ALTER TABLE waivers ADD COLUMN card_pin_hash TEXT NOT NULL DEFAULT ''")
     student_columns = {row[1] for row in conn.execute("PRAGMA table_info(students)")}
     if "parent_token" not in student_columns:
         conn.execute("ALTER TABLE students ADD COLUMN parent_token TEXT NOT NULL DEFAULT ''")
@@ -517,6 +519,32 @@ def migrate(conn):
                 continue
             conn.execute("UPDATE students SET parent_token = ? WHERE id = ?", (token, row["id"]))
             break
+    student_columns = {row[1] for row in conn.execute("PRAGMA table_info(students)")}
+    if "program" not in student_columns:
+        conn.execute("ALTER TABLE students ADD COLUMN program TEXT NOT NULL DEFAULT 'kids'")
+    if "card_pin_hash" not in student_columns:
+        conn.execute("ALTER TABLE students ADD COLUMN card_pin_hash TEXT NOT NULL DEFAULT ''")
+    conn.execute(
+        """
+        CREATE TABLE IF NOT EXISTS adult_progress (
+          student_id TEXT NOT NULL,
+          level_id TEXT NOT NULL,
+          class_number INTEGER NOT NULL,
+          technique_index INTEGER NOT NULL,
+          checked_at TEXT NOT NULL,
+          PRIMARY KEY (student_id, level_id, class_number, technique_index)
+        )
+        """
+    )
+    conn.execute(
+        """
+        CREATE TABLE IF NOT EXISTS adult_classes (
+          id TEXT PRIMARY KEY,
+          date TEXT NOT NULL UNIQUE,
+          attended TEXT NOT NULL DEFAULT '[]'
+        )
+        """
+    )
     migrate_age_groups(conn)
     conn.commit()
 

@@ -99,6 +99,11 @@
         <label for="dob">DOB</label>
         <input id="dob" name="dob" type="date" required />
       </div>
+      <div class="field" id="pinField">
+        <label for="cardPin" id="pinLabel">PIN</label>
+        <input id="cardPin" name="cardPin" type="password" inputmode="numeric" autocomplete="off" minlength="4" maxlength="4" pattern="[0-9]{4}" required />
+        <p class="hint" id="pinHint">Choose a 4-digit PIN. It opens your class card.</p>
+      </div>
       <p class="error" id="ageNote" hidden></p>
 
       <fieldset>

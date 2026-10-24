@@ -27,7 +27,7 @@
   <main class="sheet" id="main">
     <img class="logo" src="/img/logo/grace-logo-mark-transparent.png" alt="Grace Jiu-Jitsu" />
     <h1>Class card</h1>
-    <p id="lead">Enter the birth month and day from the enrollment form. The year stays off this page.</p>
+    <p id="lead">Enter the birth month and day from the enrollment form, or the PIN set when the form was signed. The year stays off this page.</p>
     <p class="error" id="gateNote" role="alert"></p>
     <form id="gate" hidden>
       <div class="field">
@@ -37,6 +37,10 @@
       <div class="field">
         <label for="day">Birth day</label>
         <input id="day" name="day" type="number" inputmode="numeric" min="1" max="31" required autocomplete="off" />
+      </div>
+      <div class="field">
+        <label for="pin">PIN</label>
+        <input id="pin" name="pin" type="password" inputmode="numeric" minlength="4" maxlength="4" autocomplete="off" />
       </div>
       <p class="row no-print"><button type="submit">Show this card</button></p>
     </form>
@@ -90,12 +94,13 @@
         say("");
         var month = Number(document.getElementById("month").value);
         var day = Number(document.getElementById("day").value);
+        var pin = document.getElementById("pin").value.trim();
         fetch("/api/public/parent", {
           method: "POST",
           credentials: "same-origin",
           cache: "no-store",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ token: token, month: month, day: day })
+          body: JSON.stringify({ token: token, month: month, day: day, pin: pin })
         })
           .then(function (res) {
             return res.json().then(function (body) {
@@ -119,9 +124,10 @@
         document.getElementById("rank").textContent =
           (profile.beltLabel || "White") + " belt, " + (profile.stripesLabel || "no stripes");
         var progress = profile.progress || {};
-        document.getElementById("progress").textContent =
-          (progress.techniques || 0) + " techniques checked off. " +
-          (progress.classes || 0) + " classes checked off.";
+        document.getElementById("progress").textContent = progress.classesTotal
+          ? (progress.classesDone || 0) + " of " + progress.classesTotal + " classes toward blue belt."
+          : (progress.techniques || 0) + " techniques checked off. " +
+            (progress.classes || 0) + " classes checked off.";
         var recent = Array.isArray(progress.recentAttendance) ? progress.recentAttendance : [];
         document.getElementById("recent").textContent = recent.length
           ? "Recent attendance: " + recent.join(", ")
