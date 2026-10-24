@@ -262,7 +262,7 @@ class Api:
             else {"signed": False, "signedOn": "", "signerName": "", "waiverId": ""}
         )
         pin_hash = self.cell(row, "card_pin_hash", "") or ""
-        return {
+        body = {
             "id": row["id"],
             "name": row["name"],
             "age": row["age"],
@@ -274,6 +274,9 @@ class Api:
             "pinSet": bool(pin_hash),
             "waiver": waiver,
         }
+        if conn is not None:
+            body["staffLink"] = self.staff_link_for_student(conn, row["id"])
+        return body
 
     def cell(self, row, key, default=""):
         try:
@@ -331,14 +334,141 @@ class Api:
         except (TypeError, ValueError):
             age = 18
         age = max(11, min(120, age))
-        belt = raw.get("belt") if raw.get("belt") in ADULT_BELTS else "white"
-        try:
-            stripes = int(raw.get("stripes"))
-        except (TypeError, ValueError):
-            stripes = 0
-        stripes = max(0, min(4, stripes))
+        belt = self.adult_belt_value(raw)
+        stripes = self.stripe_value(raw.get("stripes")) if "stripes" in raw and raw.get("stripes") not in (None, "") else 0
         sid = clean_id(existing_id or raw.get("id")) or new_id("s-")
         return {"id": sid, "name": name, "age": age, "belt": belt, "stripes": stripes, "program": "adult"}
+
+    def adult_belt_value(self, raw):
+        if "belt" not in raw or raw.get("belt") in (None, ""):
+            return "white"
+        belt = raw.get("belt")
+        if belt not in ADULT_BELTS:
+            raise ValueError("Adult belts are white, blue, purple, brown, or black.")
+        return belt
+
+    def stripe_value(self, value):
+        if isinstance(value, bool) or isinstance(value, float):
+            raise ValueError("Stripes are 0 through 4.")
+        if isinstance(value, str):
+            if not re.fullmatch(r"[0-4]", value.strip()):
+                raise ValueError("Stripes are 0 through 4.")
+            return int(value.strip())
+        if isinstance(value, int) and 0 <= value <= 4:
+            return value
+        raise ValueError("Stripes are 0 through 4.")
+
+    def staff_link_for_student(self, conn, student_id):
+        row = conn.execute(
+            """
+            SELECT users.id AS user_id, users.username AS username, staff.name AS staff_name
+            FROM staff_member_links
+            JOIN users ON users.id = staff_member_links.user_id
+            LEFT JOIN staff ON staff.user_id = users.id
+            WHERE staff_member_links.student_id = ?
+            """,
+            (student_id,),
+        ).fetchone()
+        if not row:
+            return None
+        return {
+            "userId": row["user_id"],
+            "username": row["username"],
+            "displayName": self.display_staff_name(row["staff_name"], row["username"]),
+        }
+
+    def member_for_user(self, conn, user_id):
+        row = conn.execute(
+            """
+            SELECT students.id AS student_id, students.name AS student_name
+            FROM staff_member_links
+            JOIN students ON students.id = staff_member_links.student_id
+            WHERE staff_member_links.user_id = ?
+            """,
+            (user_id,),
+        ).fetchone()
+        if not row:
+            return "", ""
+        return row["student_id"], row["student_name"]
+
+    def linked_student_id(self, conn, user_id):
+        row = conn.execute(
+            "SELECT student_id FROM staff_member_links WHERE user_id = ?",
+            (user_id,),
+        ).fetchone()
+        return row["student_id"] if row else ""
+
+    def block_self_edit(self, handler, conn, user, student_id):
+        if student_id and self.linked_student_id(conn, user["id"]) == student_id:
+            self.send(handler, 403, {"error": "Ask another staff member to update your record."})
+            return True
+        return False
+
+    def sole_admin(self, conn, user):
+        if not user or user.get("role") != "admin":
+            return False
+        count = conn.execute("SELECT COUNT(*) AS n FROM users WHERE role = 'admin'").fetchone()["n"]
+        return count == 1
+
+    def block_own_link(self, handler, conn, actor, target_user_id):
+        if actor["id"] != target_user_id:
+            return False
+        if self.sole_admin(conn, actor):
+            return False
+        self.send(handler, 403, {"error": "Another admin has to link your own login."})
+        return True
+
+    def append_change(self, conn, user, student_id, student_name, action, before, after):
+        conn.execute(
+            """
+            INSERT INTO change_log (at, actor_id, actor_name, student_id, student_name, action, before_json, after_json)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                iso(utcnow()),
+                user["id"],
+                self.display_name_for_user(conn, user),
+                student_id or "",
+                student_name or "",
+                action,
+                json.dumps(before, ensure_ascii=False, separators=(",", ":")),
+                json.dumps(after, ensure_ascii=False, separators=(",", ":")),
+            ),
+        )
+
+    def format_pacific(self, value):
+        when = parse_iso(value)
+        if not when:
+            return ""
+        try:
+            from zoneinfo import ZoneInfo
+
+            local = when.astimezone(ZoneInfo("America/Los_Angeles"))
+        except Exception:
+            local = when
+        hour = local.strftime("%I").lstrip("0") or "12"
+        return f"{local.strftime('%b')} {local.day}, {local.year}, {hour}:{local.strftime('%M %p')} PT"
+
+    def change_json(self, row):
+        def parsed(text):
+            try:
+                value = json.loads(text or "null")
+            except json.JSONDecodeError:
+                return None
+            return value
+
+        return {
+            "id": row["id"],
+            "at": row["at"],
+            "atPt": self.format_pacific(row["at"]),
+            "actorId": row["actor_id"],
+            "actorName": row["actor_name"],
+            "studentId": row["student_id"],
+            "studentName": row["student_name"],
+            "action": row["action"],
+            "before": parsed(row["before_json"]),
+            "after": parsed(row["after_json"]),
+        }
 
     def sanitize_techniques(self, raw):
         out = []
@@ -706,6 +836,8 @@ class Api:
                 conn.close()
         except ValueError as err:
             return self.send(handler, 400, {"error": str(err)})
+        except (BrokenPipeError, ConnectionResetError):
+            return None
         except Exception:
             return self.send(handler, 500, {"error": "Something went wrong on the server."})
 
@@ -725,22 +857,21 @@ class Api:
                 ORDER BY users.username
                 """
             ).fetchall()
-            return self.send(
-                handler,
-                200,
-                {
-                    "users": [
-                        {
-                            "id": row["id"],
-                            "username": row["username"],
-                            "role": row["role"],
-                            "mustChangePassword": bool(row["must_change_password"]),
-                            "displayName": self.display_staff_name(row["staff_name"], row["username"]),
-                        }
-                        for row in rows
-                    ]
-                },
-            )
+            users = []
+            for row in rows:
+                member_id, member_name = self.member_for_user(conn, row["id"])
+                users.append(
+                    {
+                        "id": row["id"],
+                        "username": row["username"],
+                        "role": row["role"],
+                        "mustChangePassword": bool(row["must_change_password"]),
+                        "displayName": self.display_staff_name(row["staff_name"], row["username"]),
+                        "memberStudentId": member_id,
+                        "memberName": member_name,
+                    }
+                )
+            return self.send(handler, 200, {"users": users, "soleAdmin": self.sole_admin(conn, user)})
         if path == "/api/users" and method == "POST":
             if not admin:
                 return self.send(handler, 403, {"error": "An admin manages logins."})
@@ -768,6 +899,19 @@ class Api:
             if not admin:
                 return self.send(handler, 403, {"error": "Only an admin can reset a password."})
             return self.reset_password(handler, conn, user, reset_match.group(1))
+        member_match = re.match(r"^/api/users/([A-Za-z0-9_-]{1,40})/member$", path)
+        if member_match and method == "PUT":
+            if not admin:
+                return self.send(handler, 403, {"error": "An admin links staff to members."})
+            return self.link_staff_member(handler, conn, user, member_match.group(1))
+        if member_match and method == "DELETE":
+            if not admin:
+                return self.send(handler, 403, {"error": "An admin links staff to members."})
+            return self.unlink_staff_member(handler, conn, user, member_match.group(1))
+        if path == "/api/change-log" and method == "GET":
+            if not admin:
+                return self.send(handler, 403, {"error": "An admin reads the change log."})
+            return self.list_change_log(handler, conn)
         user_match = re.match(r"^/api/users/([A-Za-z0-9_-]{1,40})$", path)
         if user_match and method == "PATCH":
             if not admin:
@@ -800,13 +944,19 @@ class Api:
                 return self.send(handler, 403, {"error": "An admin removes saved plans."})
             return self.delete_plan(handler, conn, plan_match.group(1))
         if path == "/api/adult-progress" and method == "POST":
-            return self.set_adult_progress(handler, conn)
+            return self.set_adult_progress(handler, conn, user)
         if path == "/api/adult-attendance" and method == "POST":
             return self.mark_adult_attendance(handler, conn)
         if path == "/api/students" and method == "POST":
             if not admin:
                 return self.send(handler, 403, {"error": "An admin adds students."})
             return self.add_student(handler, conn)
+        rank_match = re.match(r"^/api/students/([A-Za-z0-9_-]{1,40})/rank$", path)
+        if rank_match and method == "POST":
+            return self.set_student_rank(handler, conn, user, rank_match.group(1))
+        attend_match = re.match(r"^/api/students/([A-Za-z0-9_-]{1,40})/attendance$", path)
+        if attend_match and method == "POST":
+            return self.set_student_attendance(handler, conn, user, attend_match.group(1))
         student_match = re.match(r"^/api/students/([A-Za-z0-9_-]{1,40})$", path)
         if student_match and method == "PATCH":
             if not admin:
@@ -815,7 +965,7 @@ class Api:
         if student_match and method == "DELETE":
             if not admin:
                 return self.send(handler, 403, {"error": "An admin removes students."})
-            return self.delete_student(handler, conn, student_match.group(1))
+            return self.delete_student(handler, conn, user, student_match.group(1))
         if path == "/api/cards" and method == "GET":
             rows = conn.execute("SELECT * FROM cards ORDER BY created_at, code").fetchall()
             return self.send(handler, 200, {"cards": [self.card_json(row) for row in rows]})
@@ -854,30 +1004,9 @@ class Api:
             conn.commit()
             return self.send(handler, 200, saved)
         if path == "/api/levels" and method == "PUT":
-            body = self.read_json(handler)
-            sid = clean_id(body.get("studentId"))
-            tid = clean_id(body.get("techId"))
-            level = canonical_level(body.get("level"))
-            if not sid or not tid or not level:
-                raise ValueError("That progress update is missing a student, a technique, or a level.")
-            conn.execute(
-                """
-                INSERT INTO levels (student_id, tech_id, level) VALUES (?, ?, ?)
-                ON CONFLICT(student_id, tech_id) DO UPDATE SET level = excluded.level
-                """,
-                (sid, tid, level),
-            )
-            conn.commit()
-            return self.send(handler, 200, {"ok": True})
+            return self.save_level(handler, conn, user)
         if path == "/api/levels" and method == "DELETE":
-            body = self.read_json(handler)
-            sid = clean_id(body.get("studentId"))
-            tid = clean_id(body.get("techId"))
-            if not sid or not tid:
-                raise ValueError("That progress update is missing a student or a technique.")
-            conn.execute("DELETE FROM levels WHERE student_id = ? AND tech_id = ?", (sid, tid))
-            conn.commit()
-            return self.send(handler, 200, {"ok": True})
+            return self.clear_level(handler, conn, user)
         if path == "/api/notes" and method == "PUT":
             body = self.read_json(handler)
             sid = clean_id(body.get("studentId"))
@@ -1296,6 +1425,26 @@ class Api:
             if admins <= 1:
                 raise ValueError("Keep at least one admin.")
         conn.execute("UPDATE staff SET user_id = NULL WHERE user_id = ?", (uid,))
+        link = conn.execute(
+            """
+            SELECT staff_member_links.student_id AS student_id, students.name AS student_name
+            FROM staff_member_links
+            LEFT JOIN students ON students.id = staff_member_links.student_id
+            WHERE staff_member_links.user_id = ?
+            """,
+            (uid,),
+        ).fetchone()
+        if link:
+            self.append_change(
+                conn,
+                user,
+                link["student_id"] or "",
+                link["student_name"] or "",
+                "staff_unlink",
+                {"userId": uid, "studentId": link["student_id"] or ""},
+                {"userId": "", "studentId": ""},
+            )
+            conn.execute("DELETE FROM staff_member_links WHERE user_id = ?", (uid,))
         conn.execute("DELETE FROM users WHERE id = ?", (uid,))
         conn.commit()
         return self.send(handler, 200, {"ok": True})
@@ -2079,8 +2228,25 @@ class Api:
         conn.commit()
         return self.send(handler, 200, self.student_payload(conn, sid))
 
-    def delete_student(self, handler, conn, sid):
+    def delete_student(self, handler, conn, user, sid):
         self.lock_kids(conn)
+        existing = conn.execute("SELECT name FROM students WHERE id = ?", (sid,)).fetchone()
+        student_name = existing["name"] if existing else ""
+        link = conn.execute(
+            "SELECT user_id FROM staff_member_links WHERE student_id = ?",
+            (sid,),
+        ).fetchone()
+        if link:
+            self.append_change(
+                conn,
+                user,
+                sid,
+                student_name,
+                "staff_unlink",
+                {"userId": link["user_id"], "studentId": sid},
+                {"userId": "", "studentId": ""},
+            )
+            conn.execute("DELETE FROM staff_member_links WHERE student_id = ?", (sid,))
         self.unlink_student_forms(conn, sid)
         conn.execute("DELETE FROM students WHERE id = ?", (sid,))
         conn.execute("DELETE FROM levels WHERE student_id = ?", (sid,))
@@ -2915,7 +3081,389 @@ class Api:
             for row in rows
         ]
 
-    def set_adult_progress(self, handler, conn):
+    def save_level(self, handler, conn, user):
+        body = self.read_json(handler)
+        sid = clean_id(body.get("studentId"))
+        tid = clean_id(body.get("techId"))
+        level = canonical_level(body.get("level"))
+        if not sid or not tid or not level:
+            raise ValueError("That progress update is missing a student, a technique, or a level.")
+        blocked = self.block_self_edit(handler, conn, user, sid)
+        if blocked:
+            return blocked
+        student = conn.execute("SELECT name FROM students WHERE id = ?", (sid,)).fetchone()
+        previous = conn.execute(
+            "SELECT level FROM levels WHERE student_id = ? AND tech_id = ?",
+            (sid, tid),
+        ).fetchone()
+        before = canonical_level(previous["level"]) if previous else ""
+        conn.execute(
+            """
+            INSERT INTO levels (student_id, tech_id, level) VALUES (?, ?, ?)
+            ON CONFLICT(student_id, tech_id) DO UPDATE SET level = excluded.level
+            """,
+            (sid, tid, level),
+        )
+        if before != level and student:
+            self.append_change(
+                conn,
+                user,
+                sid,
+                student["name"],
+                "stage",
+                {"techId": tid, "stage": before},
+                {"techId": tid, "stage": level},
+            )
+        conn.commit()
+        return self.send(handler, 200, {"ok": True})
+
+    def clear_level(self, handler, conn, user):
+        body = self.read_json(handler)
+        sid = clean_id(body.get("studentId"))
+        tid = clean_id(body.get("techId"))
+        if not sid or not tid:
+            raise ValueError("That progress update is missing a student or a technique.")
+        blocked = self.block_self_edit(handler, conn, user, sid)
+        if blocked:
+            return blocked
+        student = conn.execute("SELECT name FROM students WHERE id = ?", (sid,)).fetchone()
+        previous = conn.execute(
+            "SELECT level FROM levels WHERE student_id = ? AND tech_id = ?",
+            (sid, tid),
+        ).fetchone()
+        before = canonical_level(previous["level"]) if previous else ""
+        conn.execute("DELETE FROM levels WHERE student_id = ? AND tech_id = ?", (sid, tid))
+        if before and student:
+            self.append_change(
+                conn,
+                user,
+                sid,
+                student["name"],
+                "stage",
+                {"techId": tid, "stage": before},
+                {"techId": tid, "stage": ""},
+            )
+        conn.commit()
+        return self.send(handler, 200, {"ok": True})
+
+    def set_student_rank(self, handler, conn, user, sid):
+        body = self.read_json(handler)
+        row = conn.execute("SELECT * FROM students WHERE id = ?", (sid,)).fetchone()
+        if not row:
+            return self.send(handler, 404, {"error": "That student is not on the roster."})
+        blocked = self.block_self_edit(handler, conn, user, sid)
+        if blocked:
+            return blocked
+        adult = (self.cell(row, "program", "kids") or "kids") == "adult"
+        if "belt" in body and body.get("belt") not in (None, ""):
+            belt = body.get("belt")
+            allowed = ADULT_BELTS if adult else BELTS
+            if belt not in allowed:
+                if adult:
+                    raise ValueError("Adult belts are white, blue, purple, brown, or black.")
+                raise ValueError("That belt is not on the kids list.")
+        else:
+            belt = row["belt"]
+        if "stripes" in body and body.get("stripes") not in (None, ""):
+            stripes = self.stripe_value(body.get("stripes"))
+        else:
+            stripes = int(row["stripes"])
+        before_belt = row["belt"]
+        before_stripes = int(row["stripes"])
+        conn.execute("UPDATE students SET belt = ?, stripes = ? WHERE id = ?", (belt, stripes, sid))
+        if belt != before_belt:
+            self.append_change(
+                conn,
+                user,
+                sid,
+                row["name"],
+                "belt",
+                {"belt": before_belt},
+                {"belt": belt},
+            )
+        if stripes != before_stripes:
+            self.append_change(
+                conn,
+                user,
+                sid,
+                row["name"],
+                "stripes",
+                {"stripes": before_stripes},
+                {"stripes": stripes},
+            )
+        conn.commit()
+        fresh = conn.execute("SELECT * FROM students WHERE id = ?", (sid,)).fetchone()
+        return self.send(handler, 200, self.student_json(fresh, conn))
+
+    def student_attendance_dates(self, conn, sid, program):
+        if program == "adult":
+            dates = []
+            for entry in self.adult_attendance_list(conn):
+                if sid in entry["attended"] and entry["date"] and entry["date"] not in dates:
+                    dates.append(entry["date"])
+            dates.sort(reverse=True)
+            return dates
+        dates = []
+        rows = conn.execute("SELECT date, attended FROM classes ORDER BY date DESC").fetchall()
+        for row in rows:
+            if sid in self.json_list(row["attended"]) and row["date"] and row["date"] not in dates:
+                dates.append(row["date"])
+        return dates
+
+    def set_adult_present(self, conn, sid, date, present):
+        row = conn.execute("SELECT id, attended FROM adult_classes WHERE date = ?", (date,)).fetchone()
+        if present:
+            if row:
+                attended = self.json_list(row["attended"])
+                if sid in attended:
+                    return False
+                attended.append(sid)
+                conn.execute(
+                    "UPDATE adult_classes SET attended = ? WHERE id = ?",
+                    (json.dumps(attended), row["id"]),
+                )
+                return True
+            conn.execute(
+                "INSERT INTO adult_classes (id, date, attended) VALUES (?, ?, ?)",
+                (new_id("ac-"), date, json.dumps([sid])),
+            )
+            return True
+        if not row:
+            return False
+        attended = self.json_list(row["attended"])
+        if sid not in attended:
+            return False
+        attended = [item for item in attended if item != sid]
+        conn.execute(
+            "UPDATE adult_classes SET attended = ? WHERE id = ?",
+            (json.dumps(attended), row["id"]),
+        )
+        return True
+
+    def kid_class_targets(self, conn, date, age_group):
+        rows = conn.execute("SELECT * FROM classes WHERE date = ?", (date,)).fetchall()
+        exact = [row for row in rows if (row["age_group"] or "") == age_group]
+        if exact:
+            return exact
+        return [row for row in rows if age_group and age_group in (row["age_group"] or "").split("+")]
+
+    def set_kid_present(self, conn, student, date, present):
+        sid = student["id"]
+        age_group = age_group_for_age(student["age"])
+        if not age_group:
+            raise ValueError("That student is not in a kids class.")
+        updated = []
+        if present:
+            rows = self.kid_class_targets(conn, date, age_group)
+            if rows:
+                changed = False
+                for row in rows:
+                    attended = self.json_list(row["attended"])
+                    if sid not in attended:
+                        attended.append(sid)
+                        changed = True
+                    conn.execute(
+                        "UPDATE classes SET attended = ? WHERE id = ?",
+                        (json.dumps(attended), row["id"]),
+                    )
+                    fresh = conn.execute("SELECT * FROM classes WHERE id = ?", (row["id"],)).fetchone()
+                    updated.append(self.class_json(fresh))
+                return changed, updated
+            cid = new_id("k-")
+            conn.execute(
+                """
+                INSERT INTO classes (id, date, age_group, theme, theme_label, techniques, game, attended, taught)
+                VALUES (?, ?, ?, '', '', '[]', '', ?, 1)
+                """,
+                (cid, date, age_group, json.dumps([sid])),
+            )
+            fresh = conn.execute("SELECT * FROM classes WHERE id = ?", (cid,)).fetchone()
+            return True, [self.class_json(fresh)]
+        changed = False
+        for row in conn.execute("SELECT * FROM classes WHERE date = ?", (date,)).fetchall():
+            attended = self.json_list(row["attended"])
+            if sid not in attended:
+                continue
+            attended = [item for item in attended if item != sid]
+            conn.execute(
+                "UPDATE classes SET attended = ? WHERE id = ?",
+                (json.dumps(attended), row["id"]),
+            )
+            fresh = conn.execute("SELECT * FROM classes WHERE id = ?", (row["id"],)).fetchone()
+            updated.append(self.class_json(fresh))
+            changed = True
+        return changed, updated
+
+    def set_student_attendance(self, handler, conn, user, sid):
+        body = self.read_json(handler)
+        date = self.clean_dob(body.get("date"))
+        if not date:
+            raise ValueError("Choose a class date.")
+        if date > today_pacific():
+            raise ValueError("Choose a class date that is today or earlier.")
+        present = body.get("present")
+        if present is not True and present is not False:
+            raise ValueError("Say whether the student was here.")
+        student = conn.execute("SELECT * FROM students WHERE id = ?", (sid,)).fetchone()
+        if not student:
+            return self.send(handler, 404, {"error": "That student is not on the roster."})
+        blocked = self.block_self_edit(handler, conn, user, sid)
+        if blocked:
+            return blocked
+        program = self.cell(student, "program", "kids") or "kids"
+        if program == "adult":
+            changed = self.set_adult_present(conn, sid, date, present)
+            classes = []
+        else:
+            changed, classes = self.set_kid_present(conn, student, date, present)
+        if changed:
+            self.append_change(
+                conn,
+                user,
+                sid,
+                student["name"],
+                "attendance_add" if present else "attendance_remove",
+                {"date": date, "present": not present},
+                {"date": date, "present": present},
+            )
+        conn.commit()
+        payload = {
+            "dates": self.student_attendance_dates(conn, sid, program),
+            "present": present,
+            "date": date,
+        }
+        if program == "adult":
+            payload["adultAttendance"] = self.adult_attendance_list(conn)
+        else:
+            payload["classes"] = classes
+        return self.send(handler, 200, payload)
+
+    def link_staff_member(self, handler, conn, actor, uid):
+        blocked = self.block_own_link(handler, conn, actor, uid)
+        if blocked:
+            return blocked
+        body = self.read_json(handler)
+        sid = clean_id(body.get("studentId")) or ""
+        target = conn.execute(
+            "SELECT id, username, password_hash, role FROM users WHERE id = ?",
+            (uid,),
+        ).fetchone()
+        if not target:
+            return self.send(handler, 404, {"error": "That login is already gone."})
+        before_hash = target["password_hash"]
+        before_role = target["role"]
+        before_username = target["username"]
+        student = conn.execute(
+            "SELECT id, name, program FROM students WHERE id = ?",
+            (sid,),
+        ).fetchone()
+        if not student:
+            return self.send(handler, 404, {"error": "That student is not on the roster."})
+        if (student["program"] or "kids") != "adult":
+            raise ValueError("Link a staff login to an adult roster student.")
+        current = conn.execute(
+            "SELECT student_id FROM staff_member_links WHERE user_id = ?",
+            (uid,),
+        ).fetchone()
+        if current and current["student_id"] != sid:
+            raise ValueError("That login is already linked to a member. Unlink it first.")
+        other = conn.execute(
+            "SELECT user_id FROM staff_member_links WHERE student_id = ?",
+            (sid,),
+        ).fetchone()
+        if other and other["user_id"] != uid:
+            raise ValueError("That member is already linked to a staff login. Unlink it first.")
+        if not current:
+            self.append_change(
+                conn,
+                actor,
+                sid,
+                student["name"],
+                "staff_link",
+                {"userId": "", "username": target["username"], "studentId": ""},
+                {
+                    "userId": uid,
+                    "username": target["username"],
+                    "studentId": sid,
+                    "studentName": student["name"],
+                    "soleAdmin": self.sole_admin(conn, actor) and actor["id"] == uid,
+                },
+            )
+            conn.execute(
+                "INSERT INTO staff_member_links (user_id, student_id) VALUES (?, ?)",
+                (uid, sid),
+            )
+        conn.commit()
+        after = conn.execute(
+            "SELECT username, password_hash, role FROM users WHERE id = ?",
+            (uid,),
+        ).fetchone()
+        if (
+            after["password_hash"] != before_hash
+            or after["role"] != before_role
+            or after["username"] != before_username
+        ):
+            raise ValueError("That link could not be saved.")
+        member_id, member_name = self.member_for_user(conn, uid)
+        public = self.user_public(conn, uid)
+        public["memberStudentId"] = member_id
+        public["memberName"] = member_name
+        return self.send(handler, 200, public)
+
+    def unlink_staff_member(self, handler, conn, actor, uid):
+        blocked = self.block_own_link(handler, conn, actor, uid)
+        if blocked:
+            return blocked
+        target = conn.execute("SELECT id, username FROM users WHERE id = ?", (uid,)).fetchone()
+        if not target:
+            return self.send(handler, 404, {"error": "That login is already gone."})
+        current = conn.execute(
+            """
+            SELECT staff_member_links.student_id AS student_id, students.name AS student_name
+            FROM staff_member_links
+            LEFT JOIN students ON students.id = staff_member_links.student_id
+            WHERE staff_member_links.user_id = ?
+            """,
+            (uid,),
+        ).fetchone()
+        if current:
+            self.append_change(
+                conn,
+                actor,
+                current["student_id"] or "",
+                current["student_name"] or "",
+                "staff_unlink",
+                {"userId": uid, "username": target["username"], "studentId": current["student_id"] or ""},
+                {"userId": "", "username": target["username"], "studentId": ""},
+            )
+            conn.execute("DELETE FROM staff_member_links WHERE user_id = ?", (uid,))
+            conn.commit()
+        public = self.user_public(conn, uid)
+        public["memberStudentId"] = ""
+        public["memberName"] = ""
+        return self.send(handler, 200, public)
+
+    def list_change_log(self, handler, conn):
+        parsed = urlparse(handler.path)
+        query = parse_qs(parsed.query)
+        student_id = clean_id((query.get("studentId") or [""])[0]) or ""
+        actor_id = clean_id((query.get("actorId") or [""])[0]) or ""
+        clauses = []
+        params = []
+        if student_id:
+            clauses.append("student_id = ?")
+            params.append(student_id)
+        if actor_id:
+            clauses.append("actor_id = ?")
+            params.append(actor_id)
+        sql = "SELECT * FROM change_log"
+        if clauses:
+            sql += " WHERE " + " AND ".join(clauses)
+        sql += " ORDER BY id DESC LIMIT 200"
+        rows = conn.execute(sql, params).fetchall()
+        return self.send(handler, 200, {"entries": [self.change_json(row) for row in rows]})
+
+    def set_adult_progress(self, handler, conn, user):
         body = self.read_json(handler)
         sid = clean_id(body.get("studentId"))
         level_id = clip(body.get("levelId"), 40)
@@ -2924,15 +3472,27 @@ class Api:
             index = int(body.get("techniqueIndex"))
         except (TypeError, ValueError):
             raise ValueError("Choose a class and a technique.")
-        student = conn.execute("SELECT id, program FROM students WHERE id = ?", (sid,)).fetchone()
+        student = conn.execute("SELECT id, name, program FROM students WHERE id = ?", (sid,)).fetchone()
         if not student or (student["program"] or "kids") != "adult":
             return self.send(handler, 404, {"error": "That adult student is not on the roster."})
+        blocked = self.block_self_edit(handler, conn, user, sid)
+        if blocked:
+            return blocked
         _level, item = self.adult_level_class(level_id, number)
         if not item or index < 0 or index >= len(item["techniques"]):
             raise ValueError("That technique is not on this curriculum.")
         stage = canonical_level(body.get("stage"))
         if not stage and body.get("checked") is True:
             stage = LEVELS[-1]
+        previous = conn.execute(
+            """
+            SELECT stage FROM adult_progress
+            WHERE student_id = ? AND level_id = ? AND class_number = ? AND technique_index = ?
+            """,
+            (sid, level_id, number, index),
+        ).fetchone()
+        before = canonical_level(previous["stage"]) if previous else ""
+        after = stage or ""
         if stage:
             conn.execute(
                 """
@@ -2950,6 +3510,17 @@ class Api:
                 WHERE student_id = ? AND level_id = ? AND class_number = ? AND technique_index = ?
                 """,
                 (sid, level_id, number, index),
+            )
+        if before != after:
+            tech = item["techniques"][index]
+            self.append_change(
+                conn,
+                user,
+                sid,
+                student["name"],
+                "stage",
+                {"levelId": level_id, "classNumber": number, "techniqueIndex": index, "technique": tech, "stage": before},
+                {"levelId": level_id, "classNumber": number, "techniqueIndex": index, "technique": tech, "stage": after},
             )
         conn.commit()
         return self.send(handler, 200, {"adultChecks": self.adult_checks_map(conn)})
@@ -3475,7 +4046,10 @@ class Api:
             handler.send_header("Set-Cookie", self.cookie("", 0))
         handler.end_headers()
         if not getattr(handler, "_bjj_head", False):
-            handler.wfile.write(raw)
+            try:
+                handler.wfile.write(raw)
+            except (BrokenPipeError, ConnectionResetError):
+                return None
 
     def cookie(self, token, max_age):
         parts = [

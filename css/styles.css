@@ -1718,6 +1718,87 @@ body:not(.role-admin) .admin-only { display: none !important; }
 .form-note.ok { color: #bbf7d0; }
 #userList p { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
 #userList button { min-height: 44px; }
+.rank-edit,
+.attendance-add,
+.stripe-stepper,
+.member-picker,
+.change-filters {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+}
+.rank-edit select,
+.rank-edit button,
+.stripe-stepper button,
+.attendance-edit input,
+.attendance-edit button,
+.member-picker input,
+.member-picker button,
+.change-filters select {
+  min-height: 44px;
+}
+.stripe-stepper button { min-width: 44px; }
+.stripe-stepper button:disabled { opacity: 0.45; }
+.rank-edit {
+  flex-direction: column;
+  align-items: stretch;
+  width: 100%;
+}
+.rank-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  max-width: 100%;
+}
+.rank-name {
+  min-width: 4.75rem;
+  font-weight: 700;
+}
+.rank-row select { min-width: 8rem; max-width: 100%; }
+.stripe-stepper span {
+  min-width: 1.5rem;
+  text-align: center;
+  font-weight: 700;
+}
+.attendance-edit { margin: 12px 0; }
+.attendance-edit ul {
+  list-style: none;
+  margin: 8px 0;
+  padding: 0;
+  display: grid;
+  gap: 8px;
+}
+.attendance-edit li {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+  justify-content: space-between;
+}
+.own-record-note,
+.staff-member-line {
+  margin: 8px 0;
+  padding: 8px 10px;
+  border-radius: 8px;
+  background: #fff7ed;
+  color: #1c1917;
+  border: 1px solid #d6d3d1;
+}
+.member-picker { width: 100%; }
+.member-picker input,
+.member-results { width: 100%; }
+.member-results { display: grid; gap: 6px; }
+#changeLog { margin-top: 18px; }
+.change-log-list { display: grid; gap: 10px; margin-top: 10px; }
+.change-log-row {
+  padding-bottom: 8px;
+  border-bottom: 1px solid #44403c;
+}
+.change-log-row p { margin: 0; }
+.stage-hit:disabled { opacity: 0.45; }
 .potty-note {
   margin: 10px 0 0;
   padding: 10px 12px;
@@ -1845,7 +1926,8 @@ body.authed #mustChange { display: none !important; }
 .phone-bar, .scrim { display: none; }
 
 @media screen and (max-width: 860px) {
-  .stage button, .stage input, .stage select, .stage textarea, .claim-form, .blank-card {
+  .stage button, .stage input, .stage select, .stage textarea, .claim-form, .blank-card,
+  #progressView h2, #progressView .own-record-note, #progressView .rank-edit, #progressView .attendance-edit {
     scroll-margin-top: 72px;
     scroll-margin-bottom: 24px;
   }

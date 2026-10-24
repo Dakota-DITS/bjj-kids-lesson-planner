@@ -7,6 +7,7 @@ import threading
 import unittest
 import urllib.error
 import urllib.request
+from datetime import date, timedelta
 from http.server import ThreadingHTTPServer
 
 from server.httpapp import KIDS_FULL, Api, check_password, config_from_env, hash_password
@@ -2930,6 +2931,513 @@ class ApiTest(unittest.TestCase):
         conn.close()
         folder.cleanup()
 
+    def test_staff_member_link_migration_does_not_guess(self):
+        path = os.path.join(self.tmp.name, "pre-link.db")
+        conn = connect(path)
+        conn.execute(
+            """
+            CREATE TABLE users (
+              id TEXT PRIMARY KEY,
+              username TEXT NOT NULL UNIQUE,
+              password_hash TEXT NOT NULL,
+              role TEXT NOT NULL,
+              created_at TEXT NOT NULL
+            )
+            """
+        )
+        conn.execute(
+            """
+            CREATE TABLE students (
+              id TEXT PRIMARY KEY,
+              name TEXT NOT NULL,
+              age INTEGER NOT NULL,
+              belt TEXT NOT NULL,
+              stripes INTEGER NOT NULL,
+              created_at TEXT NOT NULL
+            )
+            """
+        )
+        conn.execute(
+            "INSERT INTO users (id, username, password_hash, role, created_at) VALUES (?, ?, ?, ?, ?)",
+            ("u-dakota", "dakota", "hash-dakota", "admin", "2026-01-01T00:00:00Z"),
+        )
+        conn.execute(
+            "INSERT INTO users (id, username, password_hash, role, created_at) VALUES (?, ?, ?, ?, ?)",
+            ("u-alex", "alex", "hash-alex", "teacher", "2026-01-01T00:00:00Z"),
+        )
+        conn.execute(
+            "INSERT INTO students (id, name, age, belt, stripes, created_at) VALUES (?, ?, ?, ?, ?, ?)",
+            ("s-named", "Dakota", 30, "blue", 2, "2026-01-01T00:00:00Z"),
+        )
+        conn.commit()
+        migrate(conn)
+        roles = {row["username"]: row["role"] for row in conn.execute("SELECT username, role, password_hash FROM users")}
+        hashes = {row["username"]: row["password_hash"] for row in conn.execute("SELECT username, password_hash FROM users")}
+        self.assertEqual(roles["dakota"], "admin")
+        self.assertEqual(roles["alex"], "teacher")
+        self.assertEqual(hashes["dakota"], "hash-dakota")
+        self.assertEqual(conn.execute("SELECT name FROM students WHERE id = 's-named'").fetchone()["name"], "Dakota")
+        self.assertEqual(conn.execute("SELECT COUNT(*) AS n FROM staff_member_links").fetchone()["n"], 0)
+        self.assertEqual(conn.execute("SELECT COUNT(*) AS n FROM change_log").fetchone()["n"], 0)
+        migrate(conn)
+        self.assertEqual(conn.execute("SELECT role FROM users WHERE username = 'dakota'").fetchone()["role"], "admin")
+        self.assertEqual(conn.execute("SELECT role FROM users WHERE username = 'alex'").fetchone()["role"], "teacher")
+        self.assertEqual(conn.execute("SELECT name, belt, stripes FROM students WHERE id = 's-named'").fetchone()["name"], "Dakota")
+        self.assertEqual(conn.execute("SELECT COUNT(*) AS n FROM staff_member_links").fetchone()["n"], 0)
+        self.assertEqual(conn.execute("SELECT COUNT(*) AS n FROM change_log").fetchone()["n"], 0)
+        conn.close()
+
+    def test_rank_attendance_self_edit_and_change_log(self):
+        admin = self.client()
+        status, me = admin.login("dakota", "correct-horse")
+        self.assertEqual(status, 200, me)
+        dakota_id = me["user"]["id"]
+        teacher = self.client()
+        status, alex = teacher.login("alex", "correct-horse")
+        self.assertEqual(status, 200, alex)
+        alex_id = alex["user"]["id"]
+        guest = self.client()
+        second = self.client()
+        created = []
+        second_id = ""
+        held_admins = []
+        today = date.fromisoformat(today_pacific())
+        past = (today - timedelta(days=20)).isoformat()
+        qr_day = (today - timedelta(days=6)).isoformat()
+        future = (today + timedelta(days=4)).isoformat()
+
+        def user_secrets(username):
+            conn = connect(self.api.cfg["db_path"])
+            try:
+                row = conn.execute(
+                    "SELECT id, username, password_hash, role FROM users WHERE username = ?",
+                    (username,),
+                ).fetchone()
+                return dict(row) if row else None
+            finally:
+                conn.close()
+
+        def log_count(action="", student_id=""):
+            conn = connect(self.api.cfg["db_path"])
+            try:
+                clauses = []
+                params = []
+                if action:
+                    clauses.append("action = ?")
+                    params.append(action)
+                if student_id:
+                    clauses.append("student_id = ?")
+                    params.append(student_id)
+                sql = "SELECT COUNT(*) AS n FROM change_log"
+                if clauses:
+                    sql += " WHERE " + " AND ".join(clauses)
+                return conn.execute(sql, params).fetchone()["n"]
+            finally:
+                conn.close()
+
+        try:
+            status, hidden = guest.call("POST", "/api/students/s-missing/rank", {"belt": "blue", "stripes": 1})
+            self.assertIn(status, (401, 403), hidden)
+            self.assertNotEqual(status, 200)
+
+            status, adult = admin.call(
+                "POST",
+                "/api/students",
+                {"program": "adult", "name": "Rank Adult", "age": 30, "belt": "white", "stripes": 0, "dob": "1990-01-15"},
+            )
+            self.assertEqual(status, 201, adult)
+            created.append(adult["id"])
+            self.assertIsNone(adult.get("staffLink"))
+            status, mate = admin.call(
+                "POST",
+                "/api/students",
+                {"program": "adult", "name": "Rank Mate", "age": 28, "belt": "white", "stripes": 1, "dob": "1998-04-04"},
+            )
+            self.assertEqual(status, 201, mate)
+            created.append(mate["id"])
+            status, kid = admin.call(
+                "POST",
+                "/api/students",
+                {
+                    "name": "Rank Kid",
+                    "age": 8,
+                    "belt": "white",
+                    "stripes": 0,
+                    "dob": "2018-02-02",
+                    "confirmOverCap": True,
+                },
+            )
+            self.assertEqual(status, 201, kid)
+            created.append(kid["id"])
+
+            status, ranked = teacher.call("POST", f"/api/students/{adult['id']}/rank", {"belt": "blue", "stripes": 3})
+            self.assertEqual(status, 200, ranked)
+            self.assertEqual(ranked["belt"], "blue")
+            self.assertEqual(ranked["stripes"], 3)
+            status, grey = teacher.call("POST", f"/api/students/{adult['id']}/rank", {"belt": "grey"})
+            self.assertEqual(status, 400, grey)
+            self.assertEqual(grey["error"], "Adult belts are white, blue, purple, brown, or black.")
+            status, too_many = teacher.call("POST", f"/api/students/{adult['id']}/rank", {"stripes": 9})
+            self.assertEqual(status, 400, too_many)
+            self.assertEqual(too_many["error"], "Stripes are 0 through 4.")
+            status, kid_belt = teacher.call("POST", f"/api/students/{kid['id']}/rank", {"belt": "blue", "stripes": 1})
+            self.assertEqual(status, 400, kid_belt)
+            self.assertEqual(kid_belt["error"], "That belt is not on the kids list.")
+            status, kid_stripes = teacher.call("POST", f"/api/students/{kid['id']}/rank", {"stripes": 2})
+            self.assertEqual(status, 200, kid_stripes)
+            self.assertEqual(kid_stripes["belt"], "white")
+            self.assertEqual(kid_stripes["stripes"], 2)
+            status, boot = admin.call("GET", "/api/bootstrap")
+            self.assertEqual(status, 200, boot)
+            fresh = next(row for row in boot["students"] if row["id"] == adult["id"])
+            self.assertEqual(fresh["belt"], "blue")
+            self.assertEqual(fresh["stripes"], 3)
+            level = boot["adultCurriculum"]["levels"][0]
+
+            status, denied = teacher.call("PUT", f"/api/users/{alex_id}/member", {"studentId": mate["id"]})
+            self.assertEqual(status, 403, denied)
+            self.assertEqual(denied["error"], "An admin links staff to members.")
+            status, guest_link = guest.call("PUT", f"/api/users/{alex_id}/member", {"studentId": mate["id"]})
+            self.assertIn(status, (401, 403), guest_link)
+
+            before_alex = user_secrets("alex")
+            status, linked_alex = admin.call("PUT", f"/api/users/{alex_id}/member", {"studentId": mate["id"]})
+            self.assertEqual(status, 200, linked_alex)
+            self.assertEqual(linked_alex["memberStudentId"], mate["id"])
+            self.assertEqual(linked_alex["memberName"], "Rank Mate")
+            self.assertEqual(linked_alex["role"], "teacher")
+            self.assertEqual(linked_alex["username"], "alex")
+            after_alex = user_secrets("alex")
+            self.assertEqual(after_alex["password_hash"], before_alex["password_hash"])
+            self.assertEqual(after_alex["role"], "teacher")
+            self.assertEqual(after_alex["username"], "alex")
+
+            status, made = admin.call(
+                "POST",
+                "/api/users",
+                {"username": "linkadmin", "password": "long-enough-2", "role": "admin"},
+            )
+            self.assertEqual(status, 201, made)
+            second_id = made["id"]
+            status, second_login = second.login("linkadmin", "long-enough-2")
+            self.assertEqual(status, 200, second_login)
+            status, users = admin.call("GET", "/api/users")
+            self.assertEqual(status, 200, users)
+            self.assertFalse(users["soleAdmin"])
+
+            before_dakota = user_secrets("dakota")
+            status, own = admin.call("PUT", f"/api/users/{dakota_id}/member", {"studentId": adult["id"]})
+            self.assertEqual(status, 403, own)
+            self.assertEqual(own["error"], "Another admin has to link your own login.")
+            status, own_unlink = admin.call("DELETE", f"/api/users/{dakota_id}/member")
+            self.assertEqual(status, 403, own_unlink)
+            self.assertEqual(own_unlink["error"], "Another admin has to link your own login.")
+            status, linked = second.call("PUT", f"/api/users/{dakota_id}/member", {"studentId": adult["id"]})
+            self.assertEqual(status, 200, linked)
+            self.assertEqual(linked["memberStudentId"], adult["id"])
+            self.assertEqual(linked["username"], "dakota")
+            self.assertEqual(linked["role"], "admin")
+            after_dakota = user_secrets("dakota")
+            self.assertEqual(after_dakota["password_hash"], before_dakota["password_hash"])
+            self.assertEqual(after_dakota["role"], "admin")
+            link_logs = log_count("staff_link", adult["id"])
+            status, again_link = second.call("PUT", f"/api/users/{dakota_id}/member", {"studentId": adult["id"]})
+            self.assertEqual(status, 200, again_link)
+            self.assertEqual(log_count("staff_link", adult["id"]), link_logs)
+
+            status, extra = admin.call(
+                "POST",
+                "/api/users",
+                {"username": "linkmate", "password": "long-enough-3", "role": "teacher"},
+            )
+            self.assertEqual(status, 201, extra)
+            status, clash_member = second.call("PUT", f"/api/users/{extra['id']}/member", {"studentId": adult["id"]})
+            self.assertEqual(status, 400, clash_member)
+            self.assertEqual(clash_member["error"], "That member is already linked to a staff login. Unlink it first.")
+            status, clash_login = second.call("PUT", f"/api/users/{dakota_id}/member", {"studentId": mate["id"]})
+            self.assertEqual(status, 400, clash_login)
+            self.assertEqual(clash_login["error"], "That login is already linked to a member. Unlink it first.")
+            status, kid_link = second.call("PUT", f"/api/users/{extra['id']}/member", {"studentId": kid["id"]})
+            self.assertEqual(status, 400, kid_link)
+            self.assertEqual(kid_link["error"], "Link a staff login to an adult roster student.")
+
+            status, self_rank = admin.call("POST", f"/api/students/{adult['id']}/rank", {"belt": "purple", "stripes": 1})
+            self.assertEqual(status, 403, self_rank)
+            self.assertEqual(self_rank["error"], "Ask another staff member to update your record.")
+            status, self_attend = admin.call(
+                "POST",
+                f"/api/students/{adult['id']}/attendance",
+                {"date": past, "present": True},
+            )
+            self.assertEqual(status, 403, self_attend)
+            self.assertEqual(self_attend["error"], "Ask another staff member to update your record.")
+            status, self_stage = admin.call(
+                "POST",
+                "/api/adult-progress",
+                {
+                    "studentId": adult["id"],
+                    "levelId": level["id"],
+                    "classNumber": 1,
+                    "techniqueIndex": 0,
+                    "stage": "drilled",
+                },
+            )
+            self.assertEqual(status, 403, self_stage)
+            self.assertEqual(self_stage["error"], "Ask another staff member to update your record.")
+            status, teacher_self = teacher.call("POST", f"/api/students/{mate['id']}/rank", {"stripes": 4})
+            self.assertEqual(status, 403, teacher_self)
+            self.assertEqual(teacher_self["error"], "Ask another staff member to update your record.")
+
+            status, edited = teacher.call("POST", f"/api/students/{adult['id']}/rank", {"belt": "purple", "stripes": 1})
+            self.assertEqual(status, 200, edited)
+            self.assertEqual(edited["belt"], "purple")
+            self.assertEqual(edited["stripes"], 1)
+            self.assertEqual(edited["staffLink"]["userId"], dakota_id)
+            status, stage = admin.call(
+                "POST",
+                "/api/adult-progress",
+                {
+                    "studentId": mate["id"],
+                    "levelId": level["id"],
+                    "classNumber": 1,
+                    "techniqueIndex": 0,
+                    "stage": "drilled",
+                },
+            )
+            self.assertEqual(status, 200, stage)
+            stage_logs = log_count("stage", mate["id"])
+            self.assertGreaterEqual(stage_logs, 1)
+            status, stage_again = admin.call(
+                "POST",
+                "/api/adult-progress",
+                {
+                    "studentId": mate["id"],
+                    "levelId": level["id"],
+                    "classNumber": 1,
+                    "techniqueIndex": 0,
+                    "stage": "drilled",
+                },
+            )
+            self.assertEqual(status, 200, stage_again)
+            self.assertEqual(log_count("stage", mate["id"]), stage_logs)
+
+            status, card_before = guest.call(
+                "POST",
+                "/api/public/parent",
+                {"token": mate["parentToken"], "month": 4, "day": 4},
+            )
+            self.assertEqual(status, 200, card_before)
+            self.assertNotIn("staffLink", card_before)
+            self.assertNotIn("alex", json.dumps(card_before).lower())
+            before_classes = card_before["progress"]["classes"]
+            add_logs = log_count("attendance_add", mate["id"])
+            status, added = admin.call(
+                "POST",
+                f"/api/students/{mate['id']}/attendance",
+                {"date": past, "present": True},
+            )
+            self.assertEqual(status, 200, added)
+            self.assertIn(past, added["dates"])
+            self.assertEqual(log_count("attendance_add", mate["id"]), add_logs + 1)
+            status, added_again = admin.call(
+                "POST",
+                f"/api/students/{mate['id']}/attendance",
+                {"date": past, "present": True},
+            )
+            self.assertEqual(status, 200, added_again)
+            self.assertEqual(log_count("attendance_add", mate["id"]), add_logs + 1)
+            status, card_after = guest.call(
+                "POST",
+                "/api/public/parent",
+                {"token": mate["parentToken"], "month": 4, "day": 4},
+            )
+            self.assertEqual(card_after["progress"]["classes"], before_classes + 1)
+            self.assertIn(past, card_after["progress"]["recentAttendance"])
+            status, not_yet = admin.call(
+                "POST",
+                f"/api/students/{mate['id']}/attendance",
+                {"date": future, "present": True},
+            )
+            self.assertEqual(status, 400, not_yet)
+            self.assertEqual(not_yet["error"], "Choose a class date that is today or earlier.")
+            status, removed = admin.call(
+                "POST",
+                f"/api/students/{mate['id']}/attendance",
+                {"date": past, "present": False},
+            )
+            self.assertEqual(status, 200, removed)
+            self.assertNotIn(past, removed["dates"])
+            self.assertGreaterEqual(log_count("attendance_remove", mate["id"]), 1)
+            status, card_back = guest.call(
+                "POST",
+                "/api/public/parent",
+                {"token": mate["parentToken"], "month": 4, "day": 4},
+            )
+            self.assertEqual(card_back["progress"]["classes"], before_classes)
+
+            qr_logs = log_count("attendance_add", mate["id"])
+            status, scanned = teacher.call(
+                "POST",
+                "/api/adult-attendance",
+                {"date": qr_day, "studentId": mate["id"]},
+            )
+            self.assertEqual(status, 200, scanned)
+            attended = next(row["attended"] for row in scanned["adultAttendance"] if row["date"] == qr_day)
+            self.assertIn(mate["id"], attended)
+            self.assertEqual(log_count("attendance_add", mate["id"]), qr_logs)
+
+            status, kid_added = teacher.call(
+                "POST",
+                f"/api/students/{kid['id']}/attendance",
+                {"date": past, "present": True},
+            )
+            self.assertEqual(status, 200, kid_added)
+            self.assertIn(past, kid_added["dates"])
+            saved_class = next(row for row in kid_added["classes"] if row["date"] == past and kid["id"] in row["attended"])
+            self.assertTrue(saved_class["taught"])
+            self.assertEqual(saved_class["ageGroup"], "upper")
+            status, kid_card = guest.call(
+                "POST",
+                "/api/public/parent",
+                {"token": kid["parentToken"], "month": 2, "day": 2},
+            )
+            self.assertEqual(status, 200, kid_card)
+            self.assertGreaterEqual(kid_card["progress"]["classes"], 1)
+            status, kid_removed = teacher.call(
+                "POST",
+                f"/api/students/{kid['id']}/attendance",
+                {"date": past, "present": False},
+            )
+            self.assertEqual(status, 200, kid_removed)
+            self.assertNotIn(past, kid_removed["dates"])
+            self.assertTrue(all(kid["id"] not in row["attended"] for row in kid_removed["classes"]))
+
+            status, adult_card = guest.call(
+                "POST",
+                "/api/public/parent",
+                {"token": adult["parentToken"], "month": 1, "day": 15},
+            )
+            self.assertEqual(status, 200, adult_card)
+            dumped = json.dumps(adult_card)
+            self.assertNotIn("staffLink", adult_card)
+            self.assertNotIn("dakota", dumped.lower())
+            self.assertNotIn("staff", dumped.lower())
+
+            status, teacher_log = teacher.call("GET", "/api/change-log")
+            self.assertEqual(status, 403, teacher_log)
+            self.assertEqual(teacher_log["error"], "An admin reads the change log.")
+            status, guest_log = guest.call("GET", "/api/change-log")
+            self.assertEqual(status, 401, guest_log)
+            self.assertEqual(guest_log["error"], "Log in first.")
+            rows_before = log_count()
+            status, blocked_write = admin.call("POST", "/api/change-log", {"action": "belt"})
+            self.assertEqual(status, 404, blocked_write)
+            status, blocked_delete = admin.call("DELETE", "/api/change-log")
+            self.assertEqual(status, 404, blocked_delete)
+            self.assertEqual(log_count(), rows_before)
+
+            status, log = admin.call("GET", "/api/change-log")
+            self.assertEqual(status, 200, log)
+            entries = log["entries"]
+            self.assertGreaterEqual(len(entries), 4)
+            ids = [entry["id"] for entry in entries]
+            self.assertEqual(ids, sorted(ids, reverse=True))
+            self.assertTrue(entries[0]["at"].endswith("Z"))
+            self.assertIn("PT", entries[0]["atPt"])
+            actions = {entry["action"] for entry in entries if entry["studentId"] in (adult["id"], mate["id"], kid["id"])}
+            self.assertTrue({"belt", "stripes", "attendance_add", "attendance_remove", "stage", "staff_link"} <= actions)
+            belt_row = next(entry for entry in entries if entry["action"] == "belt" and entry["studentId"] == adult["id"] and entry["after"]["belt"] == "purple")
+            self.assertEqual(belt_row["before"]["belt"], "blue")
+            self.assertEqual(belt_row["actorId"], alex_id)
+            status, filtered = admin.call("GET", f"/api/change-log?studentId={adult['id']}")
+            self.assertEqual(status, 200, filtered)
+            self.assertTrue(filtered["entries"])
+            self.assertTrue(all(entry["studentId"] == adult["id"] for entry in filtered["entries"]))
+            status, by_actor = admin.call("GET", f"/api/change-log?actorId={alex_id}")
+            self.assertEqual(status, 200, by_actor)
+            self.assertTrue(by_actor["entries"])
+            self.assertTrue(all(entry["actorId"] == alex_id for entry in by_actor["entries"]))
+
+            status, unlinked_mate = admin.call("DELETE", f"/api/users/{alex_id}/member")
+            self.assertEqual(status, 200, unlinked_mate)
+            self.assertEqual(unlinked_mate["memberStudentId"], "")
+            status, unlinked_dakota = second.call("DELETE", f"/api/users/{dakota_id}/member")
+            self.assertEqual(status, 200, unlinked_dakota)
+            self.assertEqual(unlinked_dakota["memberStudentId"], "")
+            status, gone = admin.call("DELETE", f"/api/users/{second_id}")
+            self.assertEqual(status, 200, gone)
+            second_id = ""
+
+            conn = connect(self.api.cfg["db_path"])
+            try:
+                extra = conn.execute(
+                    "SELECT id, role FROM users WHERE role = 'admin' AND username != 'dakota'"
+                ).fetchall()
+                held_admins.extend((row["id"], row["role"]) for row in extra)
+                if extra:
+                    conn.execute("UPDATE users SET role = 'teacher' WHERE role = 'admin' AND username != 'dakota'")
+                    conn.commit()
+            finally:
+                conn.close()
+            status, users = admin.call("GET", "/api/users")
+            self.assertEqual(status, 200, users)
+            self.assertTrue(users["soleAdmin"])
+            status, sole = admin.call("PUT", f"/api/users/{dakota_id}/member", {"studentId": adult["id"]})
+            self.assertEqual(status, 200, sole)
+            self.assertEqual(sole["memberStudentId"], adult["id"])
+            status, sole_log = admin.call("GET", f"/api/change-log?studentId={adult['id']}&actorId={dakota_id}")
+            self.assertEqual(status, 200, sole_log)
+            sole_row = next(entry for entry in sole_log["entries"] if entry["action"] == "staff_link" and entry["after"].get("soleAdmin") is True)
+            self.assertEqual(sole_row["actorId"], dakota_id)
+            self.assertEqual(sole_row["studentName"], "Rank Adult")
+            self.assertTrue(sole_row["at"].endswith("Z"))
+            self.assertIn("PT", sole_row["atPt"])
+            status, still_blocked = admin.call("POST", f"/api/students/{adult['id']}/rank", {"stripes": 0})
+            self.assertEqual(status, 403, still_blocked)
+            self.assertEqual(still_blocked["error"], "Ask another staff member to update your record.")
+            status, sole_off = admin.call("DELETE", f"/api/users/{dakota_id}/member")
+            self.assertEqual(status, 200, sole_off)
+            self.assertEqual(sole_off["memberStudentId"], "")
+        finally:
+            for sid in created:
+                admin.call("DELETE", f"/api/students/{sid}")
+            if second_id:
+                admin.call("DELETE", f"/api/users/{second_id}")
+            conn = connect(self.api.cfg["db_path"])
+            try:
+                if dakota_id:
+                    conn.execute("DELETE FROM staff_member_links WHERE user_id = ?", (dakota_id,))
+                if alex_id:
+                    conn.execute("DELETE FROM staff_member_links WHERE user_id = ?", (alex_id,))
+                if created:
+                    marks = ",".join("?" for _ in created)
+                    conn.execute(f"DELETE FROM staff_member_links WHERE student_id IN ({marks})", created)
+                    conn.execute(f"DELETE FROM students WHERE id IN ({marks})", created)
+                    conn.execute(f"DELETE FROM levels WHERE student_id IN ({marks})", created)
+                    conn.execute(f"DELETE FROM notes WHERE student_id IN ({marks})", created)
+                    conn.execute(f"DELETE FROM adult_progress WHERE student_id IN ({marks})", created)
+                conn.execute("DELETE FROM users WHERE username IN ('linkadmin', 'linkmate')")
+                conn.execute("DELETE FROM staff WHERE name IN ('linkadmin', 'linkmate')")
+                conn.execute(
+                    "DELETE FROM sessions WHERE user_id NOT IN (SELECT id FROM users)"
+                )
+                for uid, role in held_admins:
+                    conn.execute("UPDATE users SET role = ? WHERE id = ?", (role, uid))
+                for table, column in (("classes", "attended"), ("adult_classes", "attended")):
+                    rows = conn.execute(f"SELECT id, {column} FROM {table} WHERE date IN (?, ?)", (past, qr_day)).fetchall()
+                    for row in rows:
+                        attended = json.loads(row[column] or "[]")
+                        kept = [item for item in attended if item not in created]
+                        if kept != attended:
+                            conn.execute(
+                                f"UPDATE {table} SET {column} = ? WHERE id = ?",
+                                (json.dumps(kept), row["id"]),
+                            )
+                conn.commit()
+            finally:
+                conn.close()
+
+
 class DemoIsolationTest(unittest.TestCase):
     def test_demo_cookie_is_not_the_production_cookie(self):
         obj = Api.__new__(Api)
@@ -3148,7 +3656,6 @@ class DemoIsolationTest(unittest.TestCase):
         self.assertIn('href="/kids/"', source_home)
         with self.assertRaises(SystemExit):
             prefix_tree.publish(root, "/srv/bjj-planner", "/demo")
-
 
 
 def _handler(api):

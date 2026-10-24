@@ -4,7 +4,7 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <meta name="bjj-base" content="">
-  <script src="/bjj-base.js?v=20261023-52"></script>
+  <script src="/bjj-base.js?v=20261024-54"></script>
   <meta name="robots" content="noindex, nofollow, noarchive, nosnippet">
   <meta name="googlebot" content="noindex, nofollow">
   <meta http-equiv="Cache-Control" content="no-store" />
@@ -12,8 +12,8 @@
   <title>Class card · Grace BJJ</title>
   <meta name="description" content="A parent checks one child's class card at Grace BJJ." />
   <link rel="icon" href="/icons/favicon-32.png" type="image/png" sizes="32x32" />
-  <link rel="stylesheet" href="/css/waiver.css?v=20261023-52" />
-  <link rel="stylesheet" href="/css/site-header.css?v=20261023-52" />
+  <link rel="stylesheet" href="/css/waiver.css?v=20261024-54" />
+  <link rel="stylesheet" href="/css/site-header.css?v=20261024-54" />
 </head>
 <body>
   <a class="skip" href="#main">Skip to content</a>
@@ -124,10 +124,17 @@
         document.getElementById("rank").textContent =
           (profile.beltLabel || "White") + " belt, " + (profile.stripesLabel || "no stripes");
         var progress = profile.progress || {};
-        document.getElementById("progress").textContent = progress.classesTotal
-          ? (progress.classesDone || 0) + " of " + progress.classesTotal + " classes toward blue belt."
-          : (progress.techniques || 0) + " techniques checked off. " +
-            (progress.classes || 0) + " classes checked off.";
+        var attended = progress.classes || 0;
+        var attendedLine = attended + (attended === 1 ? " class attended." : " classes attended.");
+        var progressLine;
+        if (progress.classesTotal && (profile.belt || "white") === "white") {
+          progressLine = (progress.classesDone || 0) + " of " + progress.classesTotal + " curriculum classes mastered toward blue belt.";
+        } else if (progress.classesTotal) {
+          progressLine = attendedLine;
+        } else {
+          progressLine = (progress.techniques || 0) + " techniques checked off. " + attendedLine;
+        }
+        document.getElementById("progress").textContent = progressLine;
         var recent = Array.isArray(progress.recentAttendance) ? progress.recentAttendance : [];
         document.getElementById("recent").textContent = recent.length
           ? "Recent attendance: " + recent.join(", ")
@@ -187,6 +194,6 @@
       }
     })();
   </script>
-  <script src="/site-nav.js?v=20261023-52"></script>
+  <script src="/site-nav.js?v=20261024-54"></script>
 </body>
 </html>
