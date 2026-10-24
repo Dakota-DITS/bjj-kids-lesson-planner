@@ -4,14 +4,14 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <meta name="bjj-base" content="">
-  <script src="/bjj-base.js?v=20261023-52"></script>
+  <script src="/bjj-base.js?v=20261024-53"></script>
   <meta name="robots" content="noindex, nofollow, noarchive, nosnippet">
   <meta name="googlebot" content="noindex, nofollow">
   <title>Privacy Policy · Grace BJJ</title>
   <meta name="description" content="How Grace BJJ and Grace BJJ Kids handle information at Grace Baptist Church in Salem." />
   <link rel="icon" href="/icons/favicon-32.png" type="image/png" sizes="32x32" />
-  <link rel="stylesheet" href="/css/waiver.css?v=20261023-52" />
-  <link rel="stylesheet" href="/css/site-header.css?v=20261023-52" />
+  <link rel="stylesheet" href="/css/waiver.css?v=20261024-53" />
+  <link rel="stylesheet" href="/css/site-header.css?v=20261024-53" />
 </head>
 <body>
   <a class="skip" href="#main">Skip to content</a>
@@ -70,7 +70,7 @@
       <h3>Roster, check-in, notes, and lesson plans</h3>
       <p>For students on the roster we store a name, an age as a number, a belt, and stripes. Kids and adults are stored as separate class lists. Adult students use the adult belts (white, blue, purple, brown, and black) and stripes. For an adult we also store which white-to-blue classes and techniques are checked off, and which adult classes they attended. When a kids enrollment form is linked to a student so the same child is not counted twice, we also store that child's date of birth on the roster. We also store which classes they attended, technique progress, and an optional note of up to 800 characters.</p>
       <p>Each student has one check-in card. That same card is the link to the enrollment form and the class card page. The long code is only in the part of the address after the # sign, so the server log stores the page address and not the code. The code is not the student's name. Someone who is not logged in enters the birth month and day, or the PIN set on the adult form, before the page shows anything further. If a PIN is set, we store a one-way hash of it, not the PIN itself. Staff can replace or turn off that code. A blank card that is not linked to a student yet is an id and a checksum. It is not a web address and it is not the student's name. Older printed cards that are an id and a checksum still check in for staff. They do not open the class card page in a phone camera.</p>
-      <p>Lesson plans store the class date, age group, what is planned, and which staff names are on the plan. The staff list stores a name, belt, stripes, and whether that person has a login.</p>
+      <p>Lesson plans store the class date, age group, what is planned, and which staff names are on the plan. The staff list stores a name, belt, stripes, and whether that person has a login. An admin can link one staff login to one adult roster student. That link stores the two ids. It does not change the login, the password, or whether the person is an admin or a teacher. The class card page does not show it. Manual changes to a belt, stripes, a check-in, a progress stage, or that link are kept in a staff change log with who made the change, the time, and the old and new values. A person cannot change the record they are linked to. Scanning a check-in card at class is stored as attendance and is not a separate change-log row.</p>
       <p>An admin can mark a class day as skipped or added and can type a short reason.</p>
       <p>A staff phone or computer may still hold an older copy of the roster in the browser from before the server existed. Importing that copy sends it to the server. The browser can also keep coloring-sheet pictures a teacher uploaded on that device.</p>
 
@@ -165,6 +165,6 @@
       <p><a href="mailto:dits%2Bbjj@mail.grokbot.com?subject=Grace%20BJJ%20privacy">dits+bjj@mail.grokbot.com</a></p>
     </section>
   </main>
-  <script src="/site-nav.js?v=20261023-52"></script>
+  <script src="/site-nav.js?v=20261024-53"></script>
 </body>
 </html>

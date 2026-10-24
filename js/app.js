@@ -3716,6 +3716,11 @@ function sparringSection(plan) {
   }
 
   async function setProgressLevel(kidId, techId, level) {
+    const person = allStudents().find((item) => item.id === kidId);
+    if (person && isOwnRecord(person)) {
+      toast("Ask another staff member to update your record.");
+      return;
+    }
     const current = (state.progress.levels[kidId] || {})[techId] || "";
     const next = current === level ? stepBackStage(level) : level;
     try {
@@ -3730,6 +3735,7 @@ function sparringSection(plan) {
         state.levelDrafts[kidId] = state.levelDrafts[kidId].filter((id) => id !== techId);
       }
       renderProgress();
+      refreshChangeLog().catch(() => {});
     } catch (err) {
       toast(err.message || "Could not save that level.");
       resync().catch(() => {});
@@ -3754,6 +3760,7 @@ function sparringSection(plan) {
       program: "adult",
       parentToken: /^[A-Za-z0-9_-]{20,80}$/.test(String(raw.parentToken || "")) ? String(raw.parentToken) : "",
       pinSet: !!raw.pinSet,
+      staffLink: staffLinkOf(raw),
       waiver: {
         signed: !!waiver.signed,
         signedOn: String(waiver.signedOn || "").slice(0, 10),
@@ -3761,6 +3768,112 @@ function sparringSection(plan) {
         waiverId: P.cleanId(waiver.waiverId) || "",
       },
     };
+  }
+
+  function staffLinkOf(raw) {
+    const link = raw && raw.staffLink;
+    if (!link || typeof link !== "object") return null;
+    const userId = P.cleanId(link.userId);
+    if (!userId) return null;
+    return {
+      userId,
+      username: String(link.username || "").slice(0, 40),
+      displayName: String(link.displayName || link.username || "").slice(0, 80),
+    };
+  }
+
+  function isOwnRecord(person) {
+    return !!(person && person.staffLink && state.session && person.staffLink.userId === state.session.id);
+  }
+
+  function rememberStudent(saved) {
+    if (!saved || !saved.id) return null;
+    if (saved.program === "adult") {
+      const fresh = sanitizeAdult(saved);
+      if (!fresh) return null;
+      const index = state.rosterAdults.findIndex((item) => item.id === fresh.id);
+      if (index >= 0) state.rosterAdults[index] = fresh;
+      else state.rosterAdults.push(fresh);
+      return fresh;
+    }
+    const kid = P.sanitizeRosterKid(saved);
+    const index = state.roster.findIndex((item) => item.id === saved.id);
+    if (kid && index >= 0) state.roster[index] = Object.assign({}, state.roster[index], kid);
+    return kid;
+  }
+
+  async function saveRank(person, belt, stripes) {
+    if (!person) return;
+    if (isOwnRecord(person)) {
+      toast("Ask another staff member to update your record.");
+      renderRoster();
+      renderAdultRoster();
+      if (state.view === "progress") renderProgress();
+      return;
+    }
+    try {
+      const saved = await window.BJJ_API.send("POST", `/api/students/${person.id}/rank`, {
+        belt,
+        stripes: P.clampInt(stripes, 0, 4, person.stripes),
+      });
+      rememberStudent(saved);
+      renderRoster();
+      renderAdultRoster();
+      if (state.view === "progress") renderProgress();
+      if (state.view === "checkin") renderCheckinList();
+      if (state.view === "cards" && state.openCardId === person.id) {
+        const current = allStudents().find((item) => item.id === person.id);
+        if (current) openCheckinCard(current);
+      }
+      if (state.plan) retimePlan();
+      refreshChangeLog().catch(() => {});
+    } catch (err) {
+      toast(err.message || "Could not save that belt.");
+      resync().catch(() => {});
+    }
+  }
+
+  function attendanceDates(person) {
+    if (!person) return [];
+    if (person.program === "adult") {
+      return (state.adultAttendance || [])
+        .filter((entry) => Array.isArray(entry.attended) && entry.attended.includes(person.id) && entry.date)
+        .map((entry) => entry.date)
+        .filter((date, index, list) => list.indexOf(date) === index)
+        .sort()
+        .reverse();
+    }
+    return (state.progress.classes || [])
+      .filter((entry) => Array.isArray(entry.attended) && entry.attended.includes(person.id) && entry.date)
+      .map((entry) => entry.date)
+      .filter((date, index, list) => list.indexOf(date) === index)
+      .sort()
+      .reverse();
+  }
+
+  async function saveAttendance(person, date, present) {
+    if (!person || !date) {
+      toast("Choose a class date.");
+      return;
+    }
+    if (isOwnRecord(person)) {
+      toast("Ask another staff member to update your record.");
+      return;
+    }
+    try {
+      const saved = await window.BJJ_API.send("POST", `/api/students/${person.id}/attendance`, { date, present });
+      if (person.program === "adult") state.adultAttendance = saved.adultAttendance || state.adultAttendance;
+      else if (Array.isArray(saved.classes)) saved.classes.forEach((entry) => replaceClass(entry));
+      renderRoster();
+      renderAdultRoster();
+      if (state.view === "progress") renderProgress();
+      if (state.view === "checkin") renderCheckinList();
+      renderHome();
+      refreshChangeLog().catch(() => {});
+    } catch (err) {
+      toast(err.message || "Could not update that check-in.");
+      resync().catch(() => {});
+    }
   }
 
   function allStudents() {
@@ -3824,9 +3937,16 @@ function sparringSection(plan) {
             const waiver = person.waiver && person.waiver.signed
               ? `Waiver signed ${esc(person.waiver.signedOn)} by ${esc(person.waiver.signerName)}.`
               : "No signed waiver.";
-            return `<article class="kid-block">
+            const staffLine = person.staffLink && person.staffLink.displayName
+              ? `<p class="staff-member-line">Staff · ${esc(person.staffLink.displayName)}</p>`
+              : "";
+            const own = isOwnRecord(person)
+              ? `<p class="own-record-note">Ask another staff member to update your record.</p>`
+              : rankEditorHtml(person);
+            return `<article class="kid-block" data-id="${esc(person.id)}">
               <h3>${esc(person.name)}</h3>
-              <p>Age ${esc(person.age)} · ${esc(P.beltLabel(person.belt))} · ${esc(person.stripes)} stripes</p>
+              ${staffLine}
+              ${own}
               <p class="adult-count">${esc(adultProgressLine(person))}</p>
               <p>${waiver}</p>
             </article>`;
@@ -3987,6 +4107,8 @@ function sparringSection(plan) {
     let sub = "";
     if (state.program === "adult") {
       count = adultProgressLine(person).replace(" toward blue belt.", "");
+      const attended = attendanceDates(person).length;
+      sub = `${attended} ${attended === 1 ? "class" : "classes"} attended`;
     } else {
       const stats = kidTechniqueStats(person);
       const hint = stripeHint(person);
@@ -4072,10 +4194,11 @@ function sparringSection(plan) {
     const level = adultLevel();
     return P.LEVELS.map((id, index) => {
       const filled = current >= index;
+      const locked = isOwnRecord(person) ? " disabled" : "";
       const attrs = state.program === "adult"
         ? `data-adult-stage="${esc(id)}" data-student="${esc(person.id)}" data-level="${esc(level ? level.id : "")}" data-class-number="${esc(row.classNumber)}" data-tech="${esc(row.index)}"`
         : `data-prog-level="${esc(id)}" data-prog-kid="${esc(person.id)}" data-prog-tech="${esc(row.id)}"`;
-      return `<td><button type="button" class="stage-hit${filled ? " filled" : ""}" ${attrs} aria-pressed="${filled ? "true" : "false"}" aria-label="${esc(row.name)}, ${esc(LEVEL_LABEL[id])}"><span class="stage-box"></span></button></td>`;
+      return `<td><button type="button" class="stage-hit${filled ? " filled" : ""}"${locked} ${attrs} aria-pressed="${filled ? "true" : "false"}" aria-label="${esc(row.name)}, ${esc(LEVEL_LABEL[id])}"><span class="stage-box"></span></button></td>`;
     }).join("");
   }
 
@@ -4121,15 +4244,73 @@ function sparringSection(plan) {
       <div class="btn-row"><button type="button" class="ghost" data-print-kid="${esc(kid.id)}">Print progress sheet</button></div>`;
   }
 
+  function rankEditorHtml(person) {
+    if (isOwnRecord(person)) {
+      return `<p>Age ${esc(person.age)} · ${esc(P.beltLabel(person.belt))} · ${esc(stripeText(person))}</p>`;
+    }
+    const belts = person.program === "adult"
+      ? adultBelts()
+          .map((id) => `<option value="${esc(id)}"${id === person.belt ? " selected" : ""}>${esc(P.beltLabel(id))}</option>`)
+          .join("")
+      : DATA.belts
+          .map(([id, label]) => `<option value="${esc(id)}"${id === person.belt ? " selected" : ""}>${esc(label)}</option>`)
+          .join("");
+    return `<div class="rank-edit">
+      <label>Belt <select data-rank-belt="${esc(person.id)}" aria-label="Belt for ${esc(person.name)}">${belts}</select></label>
+      <div class="stripe-stepper" role="group" aria-label="Stripes for ${esc(person.name)}">
+        <button type="button" data-stripe-delta="-1" data-rank-student="${esc(person.id)}" aria-label="Remove a stripe">−</button>
+        <span>${esc(String(P.clampInt(person.stripes, 0, 4, 0)))}</span>
+        <button type="button" data-stripe-delta="1" data-rank-student="${esc(person.id)}" aria-label="Add a stripe">+</button>
+      </div>
+      <label>Stripes <select data-rank-stripes="${esc(person.id)}" aria-label="Stripe count for ${esc(person.name)}">${stripeOptions(person.stripes)}</select></label>
+    </div>`;
+  }
+
+  function attendanceEditorHtml(person) {
+    const dates = attendanceDates(person);
+    const own = isOwnRecord(person);
+    const items = dates.length
+      ? dates
+          .map((date) => {
+            const remove = own
+              ? ""
+              : `<button type="button" class="ghost" data-attend-remove="${esc(date)}" data-attend-student="${esc(person.id)}">Remove</button>`;
+            return `<li><span>${esc(date)}</span>${remove}</li>`;
+          })
+          .join("")
+      : "<li>No check-ins yet.</li>";
+    const form = own
+      ? ""
+      : `<div class="attendance-add">
+          <label>Class date <input type="date" data-attend-date="${esc(person.id)}" aria-label="Class date for ${esc(person.name)}" /></label>
+          <button type="button" data-attend-add="${esc(person.id)}">Add check-in</button>
+        </div>`;
+    return `<section class="attendance-edit">
+      <h3>Attendance</h3>
+      <p class="hint">${esc(String(dates.length))} ${dates.length === 1 ? "class" : "classes"} attended.</p>
+      <ul>${items}</ul>
+      ${form}
+    </section>`;
+  }
+
   function detailHtml(person) {
     const backLabel = state.progressReturn === "matrix" ? "matrix" : "overview";
+    const own = isOwnRecord(person)
+      ? `<p class="own-record-note">Ask another staff member to update your record.</p>`
+      : "";
+    const staffLine = person.staffLink && person.staffLink.displayName
+      ? `<p class="staff-member-line">Staff · ${esc(person.staffLink.displayName)}</p>`
+      : "";
     const waiver = state.program === "adult"
       ? `<p>${person.waiver && person.waiver.signed ? `Waiver signed ${esc(person.waiver.signedOn)}.` : "No signed waiver."}</p><p class="adult-count">${esc(adultProgressLine(person))}</p><button type="button" class="ghost" data-adult-card="${esc(person.id)}">Check-in card</button>`
       : kidDetailExtras(person);
     return `<h2>${esc(person.name)}</h2>
-      <p>Age ${esc(person.age)} · ${esc(P.beltLabel(person.belt))} · ${esc(stripeText(person))}</p>
+      ${own}
+      ${staffLine}
+      ${rankEditorHtml(person)}
       <button type="button" class="ghost" data-progress-back="1">Back to ${backLabel}</button>
       ${waiver}
+      ${attendanceEditorHtml(person)}
       ${stageGridHtml(person, studentGroups(person))}`;
   }
 
@@ -4357,6 +4538,7 @@ function sparringSection(plan) {
   }
 
   function openCheckinCard(person) {
+    state.openCardId = person.id;
     const src = qrDataUrl(kidQrText(person), 480);
     $("cardView").innerHTML = `<article class="card-page"><img class="qr" alt="Check-in card for ${esc(person.name)}" src="${src}" /><div><h2>${esc(person.name)}</h2><p>${esc(P.beltLabel(person.belt))} · ${esc(stripeText(person))}</p><p>This is the only check-in code.</p></div></article>`;
     setView("cards");
@@ -4467,6 +4649,11 @@ function sparringSection(plan) {
 
   async function saveAdultStage(button) {
     const studentId = button.dataset.student;
+    const owner = (state.rosterAdults || []).find((item) => item.id === studentId);
+    if (owner && isOwnRecord(owner)) {
+      toast("Ask another staff member to update your record.");
+      return;
+    }
     const levelId = button.dataset.level;
     const classNumber = Number(button.dataset.classNumber);
     const techniqueIndex = Number(button.dataset.tech);
@@ -4488,6 +4675,7 @@ function sparringSection(plan) {
       state.adultChecks = body.adultChecks || state.adultChecks;
       renderAdultRoster();
       if (state.view === "progress" && state.program === "adult") renderProgress();
+      refreshChangeLog().catch(() => {});
     } catch (err) {
       toast(err.message || "Could not save that technique.");
       resync().catch(() => {});
@@ -5123,7 +5311,8 @@ function sparringSection(plan) {
         .map((person) => {
           const here = ids.has(person.id);
           const waiver = person.waiver && person.waiver.signed ? "waiver signed" : "no signed waiver";
-          return `<li class="${here ? "here" : ""}">${esc(person.name)} — ${here ? "here" : "not yet"} · ${esc(waiver)} · ${esc(adultProgressLine(person))}</li>`;
+          const rank = `${P.beltLabel(person.belt)} · ${stripeText(person)}`;
+          return `<li class="${here ? "here" : ""}">${esc(person.name)} — ${here ? "here" : "not yet"} · ${esc(rank)} · ${esc(waiver)} · ${esc(adultProgressLine(person))}</li>`;
         })
         .join("");
       return;
@@ -5440,23 +5629,11 @@ function sparringSection(plan) {
       if (!card) return;
       const kid = state.roster.find((item) => item.id === card.dataset.id);
       if (!kid) return;
-      if (!isAdmin()) {
-        toast("An admin edits belts and stripes.");
-        renderRoster();
-        return;
-      }
-      if (event.target.dataset.roster === "belt" && P.BELT_ORDER.includes(event.target.value)) kid.belt = event.target.value;
-      if (event.target.dataset.roster === "stripes") kid.stripes = P.clampInt(event.target.value, 0, 4, 0);
-      try {
-        const saved = await window.BJJ_API.send("PATCH", `/api/students/${kid.id}`, kid);
-        Object.assign(kid, P.sanitizeRosterKid(saved));
-      } catch (err) {
-        toast(err.message || "Could not update that student.");
-        resync().catch(() => {});
-        return;
-      }
-      renderRoster();
-      if (state.plan) retimePlan();
+      let belt = kid.belt;
+      let stripes = kid.stripes;
+      if (event.target.dataset.roster === "belt" && P.BELT_ORDER.includes(event.target.value)) belt = event.target.value;
+      if (event.target.dataset.roster === "stripes") stripes = P.clampInt(event.target.value, 0, 4, 0);
+      await saveRank(kid, belt, stripes);
     });
     async function printStaffWaiver(waiverId) {
       const detail = await window.BJJ_API.send("GET", `/api/waivers/${waiverId}`);
@@ -5999,6 +6176,28 @@ function sparringSection(plan) {
         if (btn) applyProgram(btn.dataset.program);
       });
     }
+    if ($("adultRosterList")) {
+      $("adultRosterList").addEventListener("change", async (event) => {
+        const beltPick = event.target.dataset.rankBelt;
+        const stripePick = event.target.dataset.rankStripes;
+        if (!beltPick && !stripePick) return;
+        const id = beltPick || stripePick;
+        const person = (state.rosterAdults || []).find((item) => item.id === id);
+        if (!person) return;
+        const root = event.target.closest("[data-id]");
+        const beltEl = root && root.querySelector("[data-rank-belt]");
+        const stripeEl = root && root.querySelector("[data-rank-stripes]");
+        await saveRank(person, beltEl ? beltEl.value : person.belt, stripeEl ? Number(stripeEl.value) : person.stripes);
+      });
+      $("adultRosterList").addEventListener("click", async (event) => {
+        const delta = event.target.closest("[data-stripe-delta]");
+        if (!delta) return;
+        const person = (state.rosterAdults || []).find((item) => item.id === delta.dataset.rankStudent);
+        if (!person) return;
+        const next = P.clampInt(person.stripes, 0, 4, 0) + Number(delta.dataset.stripeDelta || 0);
+        await saveRank(person, person.belt, P.clampInt(next, 0, 4, person.stripes));
+      });
+    }
     if ($("addAdultBtn")) $("addAdultBtn").addEventListener("click", () => addAdult());
     if ($("adultName")) {
       $("adultName").addEventListener("keydown", (event) => {
@@ -6030,7 +6229,20 @@ function sparringSection(plan) {
       }
       if (event.target.closest("#saveClassBtn")) saveReviewedClass();
     });
-    $("progressView").addEventListener("change", (event) => {
+    $("progressView").addEventListener("change", async (event) => {
+      const beltPick = event.target.dataset.rankBelt;
+      const stripePick = event.target.dataset.rankStripes;
+      if (beltPick || stripePick) {
+        const id = beltPick || stripePick;
+        const person = allStudents().find((item) => item.id === id);
+        if (!person) return;
+        const beltEl = event.target.closest("#progressView, #adultRosterList").querySelector(`[data-rank-belt="${id}"]`);
+        const stripeEl = event.target.closest("#progressView, #adultRosterList").querySelector(`[data-rank-stripes="${id}"]`);
+        const belt = beltEl ? beltEl.value : person.belt;
+        const stripes = stripeEl ? Number(stripeEl.value) : person.stripes;
+        await saveRank(person, belt, stripes);
+        return;
+      }
       if (event.target.name === "pastAge") {
         refreshPastClassFields();
         return;
@@ -6059,7 +6271,30 @@ function sparringSection(plan) {
         });
       }, 400);
     });
-    $("progressView").addEventListener("click", (event) => {
+    $("progressView").addEventListener("click", async (event) => {
+      const delta = event.target.closest("[data-stripe-delta]");
+      if (delta) {
+        const person = allStudents().find((item) => item.id === delta.dataset.rankStudent);
+        if (!person) return;
+        const next = P.clampInt(person.stripes, 0, 4, 0) + Number(delta.dataset.stripeDelta || 0);
+        await saveRank(person, person.belt, P.clampInt(next, 0, 4, person.stripes));
+        return;
+      }
+      const addAttend = event.target.closest("[data-attend-add]");
+      if (addAttend) {
+        const person = allStudents().find((item) => item.id === addAttend.dataset.attendAdd);
+        const input = document.querySelector(`[data-attend-date="${addAttend.dataset.attendAdd}"]`);
+        if (person) await saveAttendance(person, input && input.value, true);
+        return;
+      }
+      const removeAttend = event.target.closest("[data-attend-remove]");
+      if (removeAttend) {
+        const person = allStudents().find((item) => item.id === removeAttend.dataset.attendStudent);
+        if (!person) return;
+        if (!window.confirm(`Remove the ${removeAttend.dataset.attendRemove} check-in for ${person.name}?`)) return;
+        await saveAttendance(person, removeAttend.dataset.attendRemove, false);
+        return;
+      }
       const mode = event.target.closest("[data-progress-mode]");
       if (mode) {
         state.progressMode = mode.dataset.progressMode === "matrix" ? "matrix" : "overview";
@@ -6444,7 +6679,43 @@ function sparringSection(plan) {
         toast(err.message || "Could not download the attendance backup.");
       }
     });
+    $("userList").addEventListener("input", (event) => {
+      const search = event.target.closest("[data-member-search]");
+      if (!search) return;
+      paintMemberResults(search.dataset.memberSearch, search.value);
+    });
+    if ($("changeLog")) {
+      $("changeLog").addEventListener("change", (event) => {
+        if (event.target.dataset.logStudent !== undefined && event.target.matches("[data-log-student]")) {
+          state.logStudent = event.target.value;
+          refreshChangeLog().catch(() => {});
+        }
+        if (event.target.matches("[data-log-actor]")) {
+          state.logActor = event.target.value;
+          refreshChangeLog().catch(() => {});
+        }
+      });
+    }
     $("userList").addEventListener("click", async (event) => {
+      const openMember = event.target.closest("[data-open-member]");
+      if (openMember) {
+        const picker = document.querySelector(`[data-member-picker="${openMember.dataset.openMember}"]`);
+        if (picker) {
+          picker.hidden = !picker.hidden;
+          if (!picker.hidden) paintMemberResults(openMember.dataset.openMember, "");
+        }
+        return;
+      }
+      const pickMember = event.target.closest("[data-pick-member]");
+      if (pickMember) {
+        await linkMember(pickMember.dataset.forUser, pickMember.dataset.pickMember);
+        return;
+      }
+      const unlink = event.target.closest("[data-unlink-member]");
+      if (unlink) {
+        await unlinkMember(unlink.dataset.unlinkMember);
+        return;
+      }
       const reset = event.target.closest("button[data-reset]");
       if (reset) {
         openResetPassword(reset.dataset.reset, reset.dataset.username || "");
@@ -6574,11 +6845,123 @@ function sparringSection(plan) {
     if (dialog) delete dialog.dataset.userId;
   }
 
+  function paintMemberResults(userId, query) {
+    const root = document.querySelector(`[data-member-results="${userId}"]`);
+    if (!root) return;
+    const wanted = String(query || "").trim().toLowerCase();
+    const people = (state.rosterAdults || [])
+      .filter((person) => !wanted || person.name.toLowerCase().includes(wanted))
+      .slice()
+      .sort((a, b) => a.name.localeCompare(b.name))
+      .slice(0, 8);
+    root.innerHTML = people.length
+      ? people
+          .map(
+            (person) =>
+              `<button type="button" class="ghost" data-pick-member="${esc(person.id)}" data-for-user="${esc(userId)}">${esc(person.name)} · ${esc(P.beltLabel(person.belt))}</button>`
+          )
+          .join("")
+      : `<p class="hint">No adult matches.</p>`;
+  }
+
+  async function linkMember(userId, studentId) {
+    try {
+      await window.BJJ_API.send("PUT", `/api/users/${userId}/member`, { studentId });
+      toast("Staff login linked.");
+      await refreshUsers();
+      await resync();
+      refreshChangeLog().catch(() => {});
+    } catch (err) {
+      toast(err.message || "Could not link that member.");
+    }
+  }
+
+  async function unlinkMember(userId) {
+    if (!window.confirm("Unlink this staff login from the member record?")) return;
+    try {
+      await window.BJJ_API.send("DELETE", `/api/users/${userId}/member`);
+      toast("Staff login unlinked.");
+      await refreshUsers();
+      await resync();
+      refreshChangeLog().catch(() => {});
+    } catch (err) {
+      toast(err.message || "Could not unlink that member.");
+    }
+  }
+
+  function changeValue(value) {
+    if (!value || typeof value !== "object") return "";
+    if (Object.prototype.hasOwnProperty.call(value, "belt")) return P.beltLabel(value.belt);
+    if (Object.prototype.hasOwnProperty.call(value, "stripes")) return `${value.stripes} stripes`;
+    if (Object.prototype.hasOwnProperty.call(value, "present")) {
+      return `${value.date || ""} ${value.present ? "checked in" : "not checked in"}`.trim();
+    }
+    if (Object.prototype.hasOwnProperty.call(value, "stage")) {
+      const stage = value.stage ? LEVEL_LABEL[value.stage] || value.stage : "cleared";
+      const tech = value.technique || value.techId || "";
+      return tech ? `${tech}: ${stage}` : stage;
+    }
+    if (Object.prototype.hasOwnProperty.call(value, "username") || Object.prototype.hasOwnProperty.call(value, "studentId")) {
+      if (!value.userId && !value.studentId) return "not linked";
+      return value.studentName || value.username || "linked";
+    }
+    return "";
+  }
+
+  async function refreshChangeLog() {
+    const root = $("changeLog");
+    if (!root || !isAdmin()) {
+      if (root) root.innerHTML = "";
+      return;
+    }
+    const params = new URLSearchParams();
+    if (state.logStudent) params.set("studentId", state.logStudent);
+    if (state.logActor) params.set("actorId", state.logActor);
+    const path = params.toString() ? `/api/change-log?${params}` : "/api/change-log";
+    const body = await window.BJJ_API.send("GET", path);
+    const students = allStudents()
+      .slice()
+      .sort((a, b) => a.name.localeCompare(b.name));
+    const actors = state.users || [];
+    const studentOptions = [`<option value="">All students</option>`]
+      .concat(students.map((person) => `<option value="${esc(person.id)}"${person.id === state.logStudent ? " selected" : ""}>${esc(person.name)}</option>`))
+      .join("");
+    const actorOptions = [`<option value="">All staff</option>`]
+      .concat(
+        actors.map(
+          (user) =>
+            `<option value="${esc(user.id)}"${user.id === state.logActor ? " selected" : ""}>${esc(user.displayName || user.username)}</option>`
+        )
+      )
+      .join("");
+    const rows = (body.entries || [])
+      .map((entry) => {
+        const before = changeValue(entry.before);
+        const after = changeValue(entry.after);
+        const change = before || after ? `${before || "—"} → ${after || "—"}` : entry.action;
+        return `<article class="change-log-row">
+          <p><strong>${esc(entry.atPt || entry.at)}</strong> · ${esc(entry.actorName || "Staff")}</p>
+          <p>${esc(entry.studentName || "Staff link")} · ${esc(String(entry.action || "").replace(/_/g, " "))}</p>
+          <p>${esc(change)}</p>
+        </article>`;
+      })
+      .join("");
+    root.innerHTML = `<h3>Change log</h3>
+      <p class="hint">Manual edits, newest first. Times are Pacific. Scanning a card at class is not listed here.</p>
+      <div class="change-filters">
+        <label>Student <select data-log-student>${studentOptions}</select></label>
+        <label>Staff <select data-log-actor>${actorOptions}</select></label>
+      </div>
+      <div class="change-log-list">${rows || "<p class=\"hint\">No manual edits yet.</p>"}</div>`;
+  }
+
   async function refreshUsers() {
     if (!isAdmin() || !$("userList")) return;
     const body = await window.BJJ_API.send("GET", "/api/users");
+    state.users = body.users || [];
+    state.soleAdmin = !!body.soleAdmin;
     const mine = state.session && state.session.id;
-    $("userList").innerHTML = (body.users || [])
+    $("userList").innerHTML = state.users
       .map((user) => {
         const pending = user.mustChangePassword ? " · temporary password" : "";
         const shown = user.displayName || staffLabel("", user.username);
@@ -6587,9 +6970,32 @@ function sparringSection(plan) {
           : `<button class="ghost" type="button" data-reset="${esc(user.id)}" data-username="${esc(user.username)}">Reset password</button>`;
         const makeAdmin = `<button class="ghost" type="button" data-role-user="${esc(user.id)}" data-role="admin"${user.role === "admin" ? " disabled" : ""}>Make admin</button>`;
         const makeTeacher = `<button class="ghost" type="button" data-role-user="${esc(user.id)}" data-role="teacher"${user.role === "teacher" ? " disabled" : ""}>Make teacher</button>`;
-        return `<p><span>${esc(shown)} · ${esc(user.role)}${pending} · login ${esc(user.username)}</span>${makeAdmin}${makeTeacher}${reset}<button class="ghost" type="button" data-user="${esc(user.id)}">Remove</button></p>`;
+        const linked = user.memberName
+          ? `Linked member: ${user.memberName}`
+          : "Not linked to a member";
+        const ownLocked = user.id === mine && !state.soleAdmin;
+        let memberControls = "";
+        if (ownLocked) {
+          memberControls = `<span class="hint">Another admin links this login.</span>`;
+        } else if (user.memberStudentId) {
+          memberControls = `<button class="ghost admin-only" type="button" data-unlink-member="${esc(user.id)}">Unlink</button>`;
+        } else {
+          memberControls = `<button class="ghost admin-only" type="button" data-open-member="${esc(user.id)}">Link member</button>
+            <div class="member-picker admin-only" data-member-picker="${esc(user.id)}" hidden>
+              <label>Search the adult roster
+                <input type="search" data-member-search="${esc(user.id)}" autocomplete="off" placeholder="Name" />
+              </label>
+              <div class="member-results" data-member-results="${esc(user.id)}"></div>
+            </div>`;
+        }
+        return `<div class="staff-row">
+          <p><span>${esc(shown)} · ${esc(user.role)}${pending} · login ${esc(user.username)}</span>${makeAdmin}${makeTeacher}${reset}<button class="ghost" type="button" data-user="${esc(user.id)}">Remove</button></p>
+          <p class="staff-member-line">${esc(linked)}</p>
+          ${memberControls}
+        </div>`;
       })
       .join("");
+    refreshChangeLog().catch(() => {});
   }
 
   function onClassField(id) {

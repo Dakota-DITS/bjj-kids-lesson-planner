@@ -564,6 +564,31 @@ def migrate(conn):
         )
         """
     )
+    # An admin links a login to one adult student. Nothing is filled in by name.
+    conn.execute(
+        """
+        CREATE TABLE IF NOT EXISTS staff_member_links (
+          user_id TEXT PRIMARY KEY,
+          student_id TEXT NOT NULL UNIQUE
+        )
+        """
+    )
+    # Manual roster edits. Rows are inserted only. There is no update or delete path.
+    conn.execute(
+        """
+        CREATE TABLE IF NOT EXISTS change_log (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          at TEXT NOT NULL,
+          actor_id TEXT NOT NULL,
+          actor_name TEXT NOT NULL,
+          student_id TEXT NOT NULL DEFAULT '',
+          student_name TEXT NOT NULL DEFAULT '',
+          action TEXT NOT NULL,
+          before_json TEXT NOT NULL DEFAULT '',
+          after_json TEXT NOT NULL DEFAULT ''
+        )
+        """
+    )
     migrate_age_groups(conn)
     conn.commit()
 
