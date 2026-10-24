@@ -1320,22 +1320,35 @@ class ApiTest(unittest.TestCase):
         status, guest = public.call(
             "POST",
             "/api/class-exceptions",
-            {"program": "adult", "date": "2026-10-29", "kind": "skip", "reason": "Thanksgiving"},
+            {"program": "adult", "date": "2026-10-29", "kind": "skip", "reason": "church event"},
         )
-        self.assertEqual(status, 403, guest)
-        self.assertIn("reloaded", guest["error"].lower())
+        self.assertEqual(status, 401, guest)
+        self.assertEqual(guest["error"], "Log in first.")
+        status, guest_delete = public.call("DELETE", "/api/class-exceptions/2026-10-29?program=adult")
+        self.assertEqual(status, 401, guest_delete)
+        status, guest_kids = public.call(
+            "POST",
+            "/api/class-exceptions",
+            {"date": "2026-11-10", "kind": "skip", "reason": "Kids only"},
+        )
+        self.assertEqual(status, 403, guest_kids)
+        self.assertIn("reloaded", guest_kids["error"].lower())
         status, guest_list = public.call("GET", "/api/class-exceptions?program=adult")
         self.assertEqual(status, 401, guest_list)
 
         teacher = self.client()
-        teacher.login("alex", "correct-horse")
+        status, alex = teacher.login("alex", "correct-horse")
+        self.assertEqual(status, 200, alex)
         status, denied = teacher.call(
             "POST",
             "/api/class-exceptions",
-            {"program": "adult", "date": "2026-10-29", "kind": "skip", "reason": "Thanksgiving"},
+            {"date": "2026-11-10", "kind": "skip", "reason": "Kids only"},
         )
         self.assertEqual(status, 403, denied)
         self.assertEqual(denied["error"], "An admin edits the class calendar.")
+        status, denied_delete = teacher.call("DELETE", "/api/class-exceptions/2026-11-10")
+        self.assertEqual(status, 403, denied_delete)
+        self.assertEqual(denied_delete["error"], "An admin edits the class calendar.")
         status, readable = teacher.call("GET", "/api/class-exceptions?program=adult")
         self.assertEqual(status, 200, readable)
         self.assertEqual(readable["exceptions"], [])
@@ -1386,16 +1399,17 @@ class ApiTest(unittest.TestCase):
         conn = self.api.db()
         before_log = conn.execute("SELECT COUNT(*) AS n FROM change_log").fetchone()["n"]
         conn.close()
-        status, skipped = admin.call(
+        status, skipped = teacher.call(
             "POST",
             "/api/class-exceptions",
-            {"program": "adult", "date": "2026-10-29", "kind": "skip", "reason": "Thanksgiving"},
+            {"program": "adult", "date": "2026-10-29", "kind": "skip", "reason": "church event"},
         )
         self.assertEqual(status, 200, skipped)
         self.assertEqual(skipped["exception"]["program"], "adult")
         self.assertEqual(skipped["exception"]["start"], "18:30")
         self.assertEqual(skipped["exception"]["end"], "20:00")
-        status, extra = admin.call(
+        self.assertEqual(skipped["exception"]["reason"], "church event")
+        status, extra = teacher.call(
             "POST",
             "/api/class-exceptions",
             {
@@ -1409,6 +1423,21 @@ class ApiTest(unittest.TestCase):
         )
         self.assertEqual(status, 200, extra)
         self.assertEqual(extra["exception"]["kind"], "extra")
+        status, edited = teacher.call(
+            "POST",
+            "/api/class-exceptions",
+            {
+                "program": "adult",
+                "date": "2026-10-28",
+                "kind": "extra",
+                "reason": "Seminar",
+                "start": "18:30",
+                "end": "19:30",
+            },
+        )
+        self.assertEqual(status, 200, edited)
+        self.assertEqual(edited["exception"]["reason"], "Seminar")
+        self.assertEqual(edited["exception"]["end"], "19:30")
         status, kids_same_day = admin.call(
             "POST",
             "/api/class-exceptions",
@@ -1420,9 +1449,9 @@ class ApiTest(unittest.TestCase):
         self.assertEqual(status, 200, adult_public)
         by_date = {row["date"]: row for row in adult_public["exceptions"]}
         self.assertEqual(by_date["2026-10-29"]["kind"], "skip")
-        self.assertEqual(by_date["2026-10-29"]["reason"], "Thanksgiving")
+        self.assertEqual(by_date["2026-10-29"]["reason"], "church event")
         self.assertEqual(by_date["2026-10-28"]["kind"], "extra")
-        self.assertEqual(by_date["2026-10-28"]["reason"], "Open mat")
+        self.assertEqual(by_date["2026-10-28"]["reason"], "Seminar")
         self.assertNotIn("createdBy", by_date["2026-10-29"])
         self.assertNotIn("2026-11-10", by_date)
         status, kids_public = public.call("GET", "/api/public/class-exceptions")
@@ -1441,13 +1470,14 @@ class ApiTest(unittest.TestCase):
             {"date": "2026-10-28", "ageGroup": "upper", "plan": plan},
         )
         self.assertEqual(status, 400, blocked)
-        status, teacher_delete = teacher.call("DELETE", "/api/class-exceptions/2026-10-29?program=adult")
-        self.assertEqual(status, 403, teacher_delete)
-        status, removed_adult = admin.call("DELETE", "/api/class-exceptions/2026-10-29?program=adult")
+        status, teacher_log = teacher.call("GET", "/api/change-log")
+        self.assertEqual(status, 403, teacher_log)
+        status, removed_adult = teacher.call("DELETE", "/api/class-exceptions/2026-10-29?program=adult")
         self.assertEqual(status, 200, removed_adult)
         status, kids_still = public.call("GET", "/api/public/class-exceptions")
         self.assertIn("2026-11-10", {row["date"] for row in kids_still["exceptions"]})
-        admin.call("DELETE", "/api/class-exceptions/2026-10-28?program=adult")
+        status, removed_extra = teacher.call("DELETE", "/api/class-exceptions/2026-10-28?program=adult")
+        self.assertEqual(status, 200, removed_extra)
         admin.call("DELETE", "/api/class-exceptions/2026-11-10")
         status, adult_empty = public.call("GET", "/api/public/class-exceptions?program=adult")
         self.assertEqual(adult_empty["exceptions"], [])
@@ -1457,7 +1487,27 @@ class ApiTest(unittest.TestCase):
         conn = self.api.db()
         try:
             after_log = conn.execute("SELECT COUNT(*) AS n FROM change_log").fetchone()["n"]
-            self.assertEqual(after_log, before_log)
+            self.assertEqual(after_log - before_log, 5)
+            recent = conn.execute(
+                "SELECT action, actor_name, student_name, before_json, after_json FROM change_log ORDER BY id DESC LIMIT 5"
+            ).fetchall()
+            self.assertTrue(all(row["action"] == "adult_calendar" for row in recent))
+            self.assertTrue(all(row["student_name"] == "Adult calendar" for row in recent))
+            self.assertTrue(all(row["actor_name"] for row in recent))
+            blobs = " ".join((row["before_json"] or "") + (row["after_json"] or "") for row in recent)
+            self.assertIn("church event", blobs)
+            self.assertIn("Open mat", blobs)
+            self.assertIn("Seminar", blobs)
+            self.assertNotIn("Kids only", blobs)
+            status, admin_log = admin.call("GET", "/api/change-log")
+            self.assertEqual(status, 200, admin_log)
+            adult_entries = [entry for entry in admin_log["entries"] if entry["action"] == "adult_calendar"]
+            self.assertGreaterEqual(len(adult_entries), 5)
+            edited_row = next(entry for entry in adult_entries if (entry["after"] or {}).get("reason") == "Seminar")
+            self.assertEqual(edited_row["before"]["reason"], "Open mat")
+            self.assertEqual(edited_row["before"]["end"], "20:00")
+            self.assertEqual(edited_row["after"]["end"], "19:30")
+            self.assertTrue(edited_row["atPt"].endswith("PT"))
         finally:
             conn.close()
 

@@ -2541,9 +2541,7 @@ function sparringSection(plan) {
     const intro = $("calendarIntro");
     if (intro) {
       if (state.program === "adult") {
-        intro.textContent = isAdmin()
-          ? "Regular classes stay on Tuesday and Thursday, 6:30–8:00 PM PT. Ages 11 and up."
-          : "Regular classes stay on Tuesday and Thursday, 6:30–8:00 PM PT. Ages 11 and up. Ask an admin to skip a date or add a make-up.";
+        intro.textContent = "Regular classes stay on Tuesday and Thursday, 6:30–8:00 PM PT. Ages 11 and up. Any staff member can skip a date or add a make-up. Those edits are saved in the change log.";
       } else if (isAdmin()) {
         intro.textContent = "Regular classes stay on the 2nd and 4th Tuesday, 5:30–6:15 PM PT, starting Tuesday, October 27, 2026.";
       } else {
@@ -2564,7 +2562,7 @@ function sparringSection(plan) {
         const title = days.longDate(row.year, row.month, row.day);
         const when = `${clockLabel(row.start)}–${clockLabel(row.end)}`;
         if (row.skipped) {
-          const undo = isAdmin()
+          const undo = canEditCalendar()
             ? `<button class="ghost" type="button" data-cal-undo="${esc(row.iso)}">Undo skip</button>`
             : "";
           return `<article class="calendar-row is-skip">
@@ -2573,7 +2571,7 @@ function sparringSection(plan) {
           </article>`;
         }
         if (row.extra) {
-          const remove = isAdmin()
+          const remove = canEditCalendar()
             ? `<button class="ghost" type="button" data-cal-undo="${esc(row.iso)}">Remove</button>`
             : "";
           return `<article class="calendar-row">
@@ -2581,7 +2579,7 @@ function sparringSection(plan) {
             ${remove}
           </article>`;
         }
-        const skip = isAdmin()
+        const skip = canEditCalendar()
           ? `<input class="skip-reason" type="text" maxlength="120" placeholder="Reason, optional" aria-label="Reason for skipping ${esc(title)}" data-skip-reason="${esc(row.iso)}" />
              <button class="ghost" type="button" data-cal-skip="${esc(row.iso)}">Skip this class</button>`
           : "";
@@ -2906,6 +2904,10 @@ function sparringSection(plan) {
 
   function isAdmin() {
     return state.session && state.session.role === "admin";
+  }
+
+  function canEditCalendar() {
+    return state.program === "adult" || isAdmin();
   }
 
   function replaceClass(saved) {
@@ -6533,7 +6535,7 @@ function sparringSection(plan) {
     if ($("extraClassForm")) {
       $("extraClassForm").addEventListener("submit", async (event) => {
         event.preventDefault();
-        if (!isAdmin()) return;
+        if (!canEditCalendar()) return;
         try {
           await window.BJJ_API.send("POST", "/api/class-exceptions", {
             program: calendarProgram(),
@@ -6547,6 +6549,7 @@ function sparringSection(plan) {
           $("extraReason").value = "";
           setFormNote("extraNote", "Make-up class added.", true);
           await refreshClassExceptions();
+          refreshChangeLog().catch(() => {});
         } catch (err) {
           setFormNote("extraNote", err.message || "Could not add that class.");
         }
@@ -6557,7 +6560,7 @@ function sparringSection(plan) {
         const skip = event.target.closest("[data-cal-skip]");
         const undo = event.target.closest("[data-cal-undo]");
         if (!skip && !undo) return;
-        if (!isAdmin()) return;
+        if (!canEditCalendar()) return;
         try {
           if (undo) {
             await window.BJJ_API.send("DELETE", `/api/class-exceptions/${undo.dataset.calUndo}?program=${calendarProgram()}`);
@@ -6571,6 +6574,7 @@ function sparringSection(plan) {
             });
           }
           await refreshClassExceptions();
+          refreshChangeLog().catch(() => {});
         } catch (err) {
           toast(err.message || "Could not update the calendar.");
         }
@@ -6955,6 +6959,12 @@ function sparringSection(plan) {
 
   function changeValue(value) {
     if (!value || typeof value !== "object") return "";
+    if (value.kind === "skip" || value.kind === "extra") {
+      const label = value.kind === "skip" ? "No class" : "Make-up";
+      const why = value.reason ? `: ${value.reason}` : "";
+      const clock = value.start && value.end ? `, ${value.start}–${value.end}` : "";
+      return `${value.date || ""} ${label}${why}${clock}`.trim();
+    }
     if (Object.prototype.hasOwnProperty.call(value, "belt")) return P.beltLabel(value.belt);
     if (Object.prototype.hasOwnProperty.call(value, "stripes")) return `${value.stripes} stripes`;
     if (Object.prototype.hasOwnProperty.call(value, "present")) {
@@ -7011,7 +7021,7 @@ function sparringSection(plan) {
       })
       .join("");
     root.innerHTML = `<h3>Change log</h3>
-      <p class="hint">Manual edits, newest first. Times are Pacific. Scanning a card at class is not listed here.</p>
+      <p class="hint">Manual edits, newest first. Adult calendar changes are included. Times are Pacific. Scanning a card at class is not listed here.</p>
       <div class="change-filters">
         <label>Student <select data-log-student>${studentOptions}</select></label>
         <label>Staff <select data-log-actor>${actorOptions}</select></label>

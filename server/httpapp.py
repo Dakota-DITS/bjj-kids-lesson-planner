@@ -825,6 +825,8 @@ class Api:
                         body["kidsEnrollment"]["waitlistNext"] = self.waitlist_next(conn)
                     body.update(self.public_user(user, csrf, conn))
                     return self.send(handler, 200, body)
+                if not user and self.anonymous_adult_calendar_write(handler, path, method):
+                    return self.send(handler, 401, {"error": "Log in first."})
                 if method in ("POST", "PUT", "PATCH", "DELETE") and not self.require_csrf(handler, csrf if user else ""):
                     if path != "/api/logout":
                         return self.send(handler, 403, {"error": "The page needs to be reloaded before saving."})
@@ -925,14 +927,10 @@ class Api:
         if path == "/api/class-exceptions" and method == "GET":
             return self.list_class_exceptions(handler, conn, public=False)
         if path == "/api/class-exceptions" and method == "POST":
-            if not admin:
-                return self.send(handler, 403, {"error": "An admin edits the class calendar."})
             return self.save_class_exception(handler, conn, user)
         exception_date = re.fullmatch(r"/api/class-exceptions/(\d{4}-\d{2}-\d{2})", path)
         if exception_date and method == "DELETE":
-            if not admin:
-                return self.send(handler, 403, {"error": "An admin edits the class calendar."})
-            return self.delete_class_exception(handler, conn, exception_date.group(1))
+            return self.delete_class_exception(handler, conn, user, exception_date.group(1))
         if path == "/api/plans" and method == "GET":
             return self.list_plans(handler, conn)
         if path == "/api/plans" and method == "PUT":
@@ -1216,6 +1214,42 @@ class Api:
             return "adult"
         raise ValueError("Choose the kids or adult calendar.")
 
+    def anonymous_adult_calendar_write(self, handler, path, method):
+        """Adult calendar edits require a login. Kids writes keep the usual check."""
+        if method == "DELETE" and re.fullmatch(r"/api/class-exceptions/\d{4}-\d{2}-\d{2}", path):
+            raw = (parse_qs(urlparse(handler.path).query).get("program") or [""])[0]
+            return str(raw or "").strip().lower() == "adult"
+        if method != "POST" or path != "/api/class-exceptions":
+            return False
+        length = int(handler.headers.get("Content-Length") or 0)
+        if length < 0 or length > 100_000:
+            return False
+        raw = handler.rfile.read(length) if length else b""
+        try:
+            data = json.loads(raw.decode("utf-8") or "{}")
+        except (UnicodeDecodeError, json.JSONDecodeError):
+            return False
+        if not isinstance(data, dict):
+            return False
+        return str(data.get("program") or "").strip().lower() == "adult"
+
+    def require_calendar_admin(self, handler, user, program):
+        if program == "adult" or (user and user.get("role") == "admin"):
+            return False
+        self.send(handler, 403, {"error": "An admin edits the class calendar."})
+        return True
+
+    def calendar_snapshot(self, row):
+        if not row:
+            return {}
+        return {
+            "date": row["date"],
+            "kind": row["kind"],
+            "reason": row["reason"] or "",
+            "start": row["start_time"],
+            "end": row["end_time"],
+        }
+
     def query_program(self, handler):
         raw = (parse_qs(urlparse(handler.path).query).get("program") or [""])[0]
         return self.calendar_program(raw)
@@ -1268,6 +1302,8 @@ class Api:
     def save_class_exception(self, handler, conn, user):
         body = self.read_json(handler)
         program = self.calendar_program(body.get("program"))
+        if self.require_calendar_admin(handler, user, program):
+            return None
         date = str(body.get("date") or "").strip()
         try:
             parsed = datetime.strptime(date, "%Y-%m-%d")
@@ -1295,6 +1331,10 @@ class Api:
         end = self.clean_clock(body.get("end") or body.get("endTime"), fallback_end)
         if end <= start:
             raise ValueError("The end time needs to be after the start.")
+        previous = conn.execute(
+            "SELECT * FROM class_exceptions WHERE program = ? AND date = ?",
+            (program, date),
+        ).fetchone()
         now = iso(utcnow())
         conn.execute(
             """
@@ -1311,17 +1351,29 @@ class Api:
             """,
             (program, date, kind, reason, start, end, user.get("username") or "", now),
         )
-        conn.commit()
         row = conn.execute(
             "SELECT * FROM class_exceptions WHERE program = ? AND date = ?",
             (program, date),
         ).fetchone()
+        if program == "adult":
+            self.append_change(
+                conn,
+                user,
+                "",
+                "Adult calendar",
+                "adult_calendar",
+                self.calendar_snapshot(previous),
+                self.calendar_snapshot(row),
+            )
+        conn.commit()
         return self.send(handler, 200, {"exception": self.exception_json(row, False)})
 
-    def delete_class_exception(self, handler, conn, date):
+    def delete_class_exception(self, handler, conn, user, date):
         program = self.query_program(handler)
+        if self.require_calendar_admin(handler, user, program):
+            return None
         row = conn.execute(
-            "SELECT date FROM class_exceptions WHERE program = ? AND date = ?",
+            "SELECT * FROM class_exceptions WHERE program = ? AND date = ?",
             (program, date),
         ).fetchone()
         if not row:
@@ -1330,6 +1382,16 @@ class Api:
             "DELETE FROM class_exceptions WHERE program = ? AND date = ?",
             (program, date),
         )
+        if program == "adult":
+            self.append_change(
+                conn,
+                user,
+                "",
+                "Adult calendar",
+                "adult_calendar",
+                self.calendar_snapshot(row),
+                {},
+            )
         conn.commit()
         return self.send(handler, 200, {"ok": True, "date": date, "program": program})
 

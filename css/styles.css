@@ -1262,6 +1262,7 @@ body:not(.authed) .app { display: none; }
 }
 body.authed .gate { display: none; }
 body:not(.role-admin) .admin-only { display: none !important; }
+body.program-adult #extraClassForm.admin-only { display: block !important; }
 .waitlist-banner {
   background: #9b2a12;
   color: #fff7ed;

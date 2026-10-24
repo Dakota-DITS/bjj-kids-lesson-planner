@@ -302,12 +302,14 @@
                 const classDay = info.meets;
                 const isNext = classDay && cell.year === next.year && cell.month === next.month && cell.day === next.day;
                 const isToday = cell.year === today.year && cell.month === today.month && cell.day === today.day;
+                const past = compare(cell, today) < 0;
                 const classes = ["day"];
                 if (classDay) classes.push("is-class");
                 if (info.extra) classes.push("is-extra");
                 if (info.skipped) classes.push("is-skip");
                 if (isNext) classes.push("is-next");
                 if (isToday) classes.push("is-today");
+                if (spec.program === "adult" && past && (classDay || info.skipped)) classes.push("is-past");
                 const label = dayLabel(cell.year, cell.month, cell.day, { classDay, next: isNext, today: isToday });
                 let tag = "";
                 if (info.skipped) {
@@ -321,7 +323,8 @@
                   if (info.reason) notes.push(`<li>${esc(longDate(cell.year, cell.month, cell.day))}: ${esc(info.reason)}</li>`);
                 }
                 const skipLabel = info.skipped ? `, no class${info.reason ? ", " + info.reason : ""}` : "";
-                return `<td class="${classes.join(" ")}" aria-label="${esc(label + skipLabel)}"><span class="day-num">${cell.day}</span>${tag}</td>`;
+                const pastLabel = classes.indexOf("is-past") >= 0 ? ", past" : "";
+                return `<td class="${classes.join(" ")}" aria-label="${esc(label + skipLabel + pastLabel)}"><span class="day-num">${cell.day}</span>${tag}</td>`;
               })
               .join("");
             return `<tr>${row}</tr>`;

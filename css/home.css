@@ -153,6 +153,14 @@ footer {
   font-weight: 700;
 }
 .month-grid .is-class.is-today .day-num { background: transparent; box-shadow: none; }
+.month-grid .is-past.is-class,
+.month-grid .is-past.is-skip {
+  background: transparent;
+  color: var(--muted);
+  font-weight: 600;
+  box-shadow: inset 0 0 0 2px #78716c;
+}
+.month-grid .is-past.is-extra { box-shadow: inset 0 0 0 2px #78716c; }
 .month-grid .is-skip {
   background: #44403c;
   color: var(--text);
