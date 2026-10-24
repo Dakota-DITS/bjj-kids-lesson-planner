@@ -48,5 +48,15 @@ assert.strictEqual(plan.parseQr("https://bjj.bettrbook.com/p/#" + token), "paren
 assert.strictEqual(plan.parseQr(plan.qrPayload("s-abcdef01")), "s-abcdef01");
 assert.strictEqual(plan.parentQrText(token), "/p/#" + token);
 assert.equal(plan.qrPayload("b-card").startsWith("GBJJ1|"), true);
+assert.deepStrictEqual(plan.LEVELS, ["introduced", "drilled", "rolling", "mastered"]);
+assert.deepStrictEqual(Object.values(plan.LEVEL_LABELS), ["Introduced", "Drilled", "Applied in rolling", "Mastered"]);
+const db = read("server/db.py");
+assert.ok(db.includes('LEVELS = ("introduced", "drilled", "rolling", "mastered")'));
+assert.ok(db.includes('"practicing": "drilled"'));
+assert.ok(db.includes('"help": "rolling"'));
+assert.ok(db.includes('"own": "mastered"'));
+assert.ok(app.includes("data-adult-stage"));
+assert.ok(app.includes("stage-vert"));
+assert.ok(app.includes("data-progress-mode"));
 
 console.log("adult tracker checks passed");

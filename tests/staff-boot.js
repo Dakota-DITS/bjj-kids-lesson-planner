@@ -163,7 +163,7 @@ async function bootCase(browser, oldMath, stale) {
       note: (document.getElementById("staffBeltNote") || {}).textContent || "",
       roster: (document.getElementById("rosterList") || {}).textContent || "",
       plan: (document.getElementById("plan") || {}).textContent || "",
-      script: [...document.scripts].some((script) => (script.src || "").includes("plan-math.js?v=20261023-50")),
+      script: [...document.scripts].some((script) => (script.src || "").includes("plan-math.js?v=20261023-52")),
     };
   });
   assert.strictEqual(state.authed, true, stale ? "stale plan-math did not authenticate" : "app did not authenticate");
@@ -180,7 +180,8 @@ async function bootCase(browser, oldMath, stale) {
   assert.ok(progress.includes("Tiny"), progress.slice(0, 200));
   await page.evaluate(() => window.BJJ_APP.showCards("wallet"));
   const cards = await page.evaluate(() => document.getElementById("cardView").textContent);
-  assert.ok(cards.includes("Age 3"), cards.slice(0, 300));
+  assert.ok((cards.match(/Tiny/g) || []).length >= 2, cards.slice(0, 400));
+  assert.ok(cards.includes("3–6 Mighty Mites"), cards.slice(0, 400));
   assert.deepStrictEqual(errors, [], errors.join("\n"));
   if (!stale) {
     const dir = "/opt/cursor/artifacts/screenshots";
@@ -205,7 +206,7 @@ async function main() {
   try {
     await waitForServer();
     const js = await header("/js/app.js");
-    const css = await header("/css/splash.css?v=20261023-50");
+    const css = await header("/css/splash.css?v=20261023-52");
     const home = await header("/");
     const app = await header("/app/");
     assert.strictEqual(js.status, 200);

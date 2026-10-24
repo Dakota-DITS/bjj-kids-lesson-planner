@@ -22,7 +22,19 @@ BELTS = [
     "green",
     "green-black",
 ]
-LEVELS = ("introduced", "practicing", "help", "own")
+LEVELS = ("introduced", "drilled", "rolling", "mastered")
+LEVEL_ALIASES = {
+    "practicing": "drilled",
+    "help": "rolling",
+    "own": "mastered",
+}
+
+
+def canonical_level(level):
+    text = str(level or "").strip()
+    if text in LEVELS:
+        return text
+    return LEVEL_ALIASES.get(text, "")
 AGE_GROUPS = ("mite", "upper", "toddler")
 GRACE_AGES = ("mite", "upper")
 LEGACY_CLASS_PARTS = ("peewee", "junior", "teen")
@@ -532,10 +544,17 @@ def migrate(conn):
           class_number INTEGER NOT NULL,
           technique_index INTEGER NOT NULL,
           checked_at TEXT NOT NULL,
+          stage TEXT NOT NULL DEFAULT 'mastered',
           PRIMARY KEY (student_id, level_id, class_number, technique_index)
         )
         """
     )
+    progress_columns = {row[1] for row in conn.execute("PRAGMA table_info(adult_progress)")}
+    if "stage" not in progress_columns:
+        conn.execute("ALTER TABLE adult_progress ADD COLUMN stage TEXT NOT NULL DEFAULT 'mastered'")
+    for old, new in LEVEL_ALIASES.items():
+        conn.execute("UPDATE levels SET level = ? WHERE level = ?", (new, old))
+        conn.execute("UPDATE adult_progress SET stage = ? WHERE stage = ?", (new, old))
     conn.execute(
         """
         CREATE TABLE IF NOT EXISTS adult_classes (

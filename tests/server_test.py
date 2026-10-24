@@ -173,7 +173,7 @@ class ApiTest(unittest.TestCase):
         self.assertEqual(status, 200)
         self.assertEqual(boot["students"][0]["name"], "Sam")
         self.assertEqual(boot["classes"][0]["attended"], [sid])
-        self.assertEqual(boot["levels"][sid]["ls-americana"], "practicing")
+        self.assertEqual(boot["levels"][sid]["ls-americana"], "drilled")
         self.assertNotIn("password_hash", json.dumps(boot))
 
         status, exported = other.call("GET", "/api/export")
@@ -454,7 +454,7 @@ class ApiTest(unittest.TestCase):
         status, level = teacher.call("PUT", "/api/levels", {"studentId": sam["id"], "techId": "ls-mount-base", "level": "own"})
         self.assertEqual(status, 200)
         status, again = admin.call("GET", "/api/bootstrap")
-        self.assertEqual(again["levels"][sam["id"]]["ls-mount-base"], "own")
+        self.assertEqual(again["levels"][sam["id"]]["ls-mount-base"], "mastered")
         past = next(entry for entry in again["classes"] if entry["date"] == "2026-09-15")
         self.assertEqual(past["attended"], [sam["id"]])
         self.assertTrue(past["taught"])
@@ -2627,6 +2627,52 @@ class ApiTest(unittest.TestCase):
                     },
                 )
                 self.assertEqual(status, 200, saved)
+            status, lowered = teacher.call(
+                "POST",
+                "/api/adult-progress",
+                {
+                    "studentId": adult["id"],
+                    "levelId": level["id"],
+                    "classNumber": 1,
+                    "techniqueIndex": 0,
+                    "stage": "rolling",
+                },
+            )
+            self.assertEqual(status, 200, lowered)
+            self.assertEqual(lowered["adultChecks"][adult["id"]][level["id"]]["1"]["0"], "rolling")
+            status, low_card = guest.call(
+                "POST",
+                "/api/public/parent",
+                {"token": adult["parentToken"], "month": 3, "day": 3},
+            )
+            self.assertEqual(status, 200, low_card)
+            self.assertEqual(low_card["progress"]["classesDone"], 0)
+            status, restored = teacher.call(
+                "POST",
+                "/api/adult-progress",
+                {
+                    "studentId": adult["id"],
+                    "levelId": level["id"],
+                    "classNumber": 1,
+                    "techniqueIndex": 0,
+                    "stage": "own",
+                },
+            )
+            self.assertEqual(status, 200, restored)
+            self.assertEqual(restored["adultChecks"][adult["id"]][level["id"]]["1"]["0"], "mastered")
+            status, partial = teacher.call(
+                "POST",
+                "/api/adult-progress",
+                {
+                    "studentId": adult["id"],
+                    "levelId": level["id"],
+                    "classNumber": 2,
+                    "techniqueIndex": 0,
+                    "stage": "drilled",
+                },
+            )
+            self.assertEqual(status, 200, partial)
+            self.assertEqual(partial["adultChecks"][adult["id"]][level["id"]]["2"]["0"], "drilled")
             status, here = teacher.call(
                 "POST",
                 "/api/adult-attendance",
@@ -2840,6 +2886,49 @@ class ApiTest(unittest.TestCase):
             conn.execute("DELETE FROM students WHERE name IN ('Kid Card One', 'Same Person', 'Adult Pat', 'Teen Adult')")
             conn.commit()
             conn.close()
+
+    def test_old_stages_map_onto_the_confirmed_ladder(self):
+        folder = tempfile.TemporaryDirectory()
+        path = os.path.join(folder.name, "old.db")
+        conn = connect(path)
+        conn.execute(
+            """
+            CREATE TABLE adult_progress (
+              student_id TEXT NOT NULL,
+              level_id TEXT NOT NULL,
+              class_number INTEGER NOT NULL,
+              technique_index INTEGER NOT NULL,
+              checked_at TEXT NOT NULL,
+              PRIMARY KEY (student_id, level_id, class_number, technique_index)
+            )
+            """
+        )
+        conn.execute(
+            """
+            INSERT INTO adult_progress (student_id, level_id, class_number, technique_index, checked_at)
+            VALUES ('s-old', 'white-to-blue', 3, 1, '2026-01-01')
+            """
+        )
+        conn.commit()
+        migrate(conn)
+        stage = conn.execute("SELECT stage FROM adult_progress WHERE student_id = 's-old'").fetchone()["stage"]
+        self.assertEqual(stage, "mastered")
+        conn.execute("INSERT INTO levels (student_id, tech_id, level) VALUES ('s-old', 'ls-a', 'introduced')")
+        conn.execute("INSERT INTO levels (student_id, tech_id, level) VALUES ('s-old', 'ls-b', 'practicing')")
+        conn.execute("INSERT INTO levels (student_id, tech_id, level) VALUES ('s-old', 'ls-c', 'help')")
+        conn.execute("INSERT INTO levels (student_id, tech_id, level) VALUES ('s-old', 'ls-d', 'own')")
+        conn.commit()
+        migrate(conn)
+        got = {
+            row["tech_id"]: row["level"]
+            for row in conn.execute("SELECT tech_id, level FROM levels WHERE student_id = 's-old'")
+        }
+        self.assertEqual(
+            got,
+            {"ls-a": "introduced", "ls-b": "drilled", "ls-c": "rolling", "ls-d": "mastered"},
+        )
+        conn.close()
+        folder.cleanup()
 
 class DemoIsolationTest(unittest.TestCase):
     def test_demo_cookie_is_not_the_production_cookie(self):

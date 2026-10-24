@@ -1961,3 +1961,205 @@ body.program-adult #viewSwitch button[data-view="calendar"] { display: none; }
 .adult-class { margin: 0 0 14px; padding-top: 8px; border-top: 1px solid #d6d3d1; }
 .adult-tech { display: flex; align-items: center; gap: 10px; min-height: 44px; }
 .adult-count { font-weight: 700; }
+
+.progress-tools { display: flex; flex-direction: column; gap: 8px; margin: 12px 0; }
+.roster-list { display: flex; flex-direction: column; gap: 4px; }
+#progressView button.roster-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1.4fr) minmax(64px, 0.8fr) auto;
+  gap: 8px;
+  align-items: center;
+  width: 100%;
+  min-height: 44px;
+  margin: 0;
+  padding: 4px 8px;
+  border: 1px solid #d6d3d1;
+  border-radius: 8px;
+  background: var(--paper);
+  color: var(--ink);
+  text-align: left;
+}
+.roster-name { display: block; font-weight: 700; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.roster-meta, .roster-sub { display: block; color: var(--muted); font-size: 12px; font-weight: 600; }
+.roster-meter { height: 10px; background: #d6d3d1; border: 1px solid #44403c; border-radius: 99px; overflow: hidden; }
+.roster-meter > span { display: block; height: 100%; background: var(--accent); }
+.roster-count { font-weight: 700; font-size: 13px; text-align: right; color: var(--ink); }
+.stage-scroll, .matrix-scroll {
+  overflow: auto;
+  max-height: 70vh;
+  max-width: 100%;
+  border: 1px solid #d6d3d1;
+  background: var(--paper);
+}
+.stage-grid, .matrix {
+  border-collapse: separate;
+  border-spacing: 0;
+  width: max-content;
+  min-width: 100%;
+  color: var(--ink);
+}
+.stage-grid th, .stage-grid td, .matrix th, .matrix td {
+  background: var(--paper);
+  color: var(--ink);
+  padding: 0;
+  border-bottom: 1px solid #e7e5e4;
+  vertical-align: middle;
+}
+.stage-name-col, .matrix-name {
+  position: sticky;
+  left: 0;
+  z-index: 2;
+  min-width: 148px;
+  max-width: 220px;
+  padding: 6px 8px;
+  text-align: left;
+  background: var(--paper);
+  box-shadow: 1px 0 0 #d6d3d1;
+  font-weight: 700;
+}
+.stage-grid thead th, .matrix thead th {
+  position: sticky;
+  top: 0;
+  z-index: 3;
+  background: var(--paper-screen);
+}
+.stage-grid thead .stage-name-col, .matrix thead .matrix-name { z-index: 4; }
+.stage-col, .matrix-col {
+  width: 44px;
+  min-width: 44px;
+  max-width: 44px;
+  text-align: center;
+  vertical-align: bottom;
+}
+.stage-grid thead th,
+.matrix thead th:has(.stage-vert) {
+  height: 168px;
+  vertical-align: bottom;
+  padding: 8px 0;
+}
+.stage-vert {
+  writing-mode: vertical-rl;
+  transform: rotate(180deg);
+  display: inline-block;
+  max-height: 152px;
+  line-height: 1.15;
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--ink);
+}
+#progressView button.stage-hit,
+#progressView button.matrix-hit {
+  width: 40px;
+  height: 40px;
+  min-width: 40px;
+  min-height: 40px;
+  max-width: 40px;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  color: var(--ink);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+.stage-box, .matrix-mark {
+  width: 14px;
+  height: 14px;
+  border: 2px solid var(--ink);
+  border-radius: 3px;
+  background: var(--paper);
+  display: block;
+}
+#progressView button.stage-hit.filled .stage-box,
+.matrix-sample.done .matrix-mark,
+#progressView button.matrix-hit.done .matrix-mark {
+  background: var(--accent);
+  border-color: var(--accent);
+}
+.matrix-sample.partial .matrix-mark,
+#progressView button.matrix-hit.partial .matrix-mark {
+  background: linear-gradient(var(--paper) 45%, var(--accent) 45%);
+  border-color: var(--accent);
+}
+#progressView button.matrix-name-btn {
+  width: 100%;
+  min-height: 40px;
+  padding: 6px 8px;
+  border: 0;
+  border-radius: 0;
+  background: var(--paper);
+  color: var(--ink);
+  text-align: left;
+  font-weight: 700;
+}
+.stage-group .stage-name-col { background: #f5f0e8; }
+.stage-group-rest { background: #f5f0e8; }
+.stage-tally { display: block; font-weight: 600; color: var(--muted); font-size: 12px; }
+.progress-next, .stage-overall { font-weight: 700; }
+.matrix-legend { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; font-size: 13px; }
+.matrix-sample { display: inline-flex; width: 22px; height: 22px; align-items: center; justify-content: center; }
+.progress-extra { margin-top: 16px; }
+.progress-extra summary { min-height: 44px; display: flex; align-items: center; font-weight: 700; cursor: pointer; }
+@media screen and (max-width: 860px) {
+  #progressView button.stage-hit,
+  #progressView button.matrix-hit {
+    width: 44px;
+    height: 44px;
+    min-width: 44px;
+    min-height: 44px;
+    max-width: 44px;
+  }
+}
+
+/* A 390px screen cannot hold a 220px name plus four 44px stages.
+   Share the row: names wrap, and each stage stays a full tap target. */
+@media screen and (max-width: 520px) {
+  .stage-scroll {
+    overflow: visible;
+    max-height: none;
+    max-width: 100%;
+  }
+  .stage-grid {
+    width: 100%;
+    min-width: 0;
+    table-layout: fixed;
+  }
+  .stage-grid .stage-name-col {
+    width: 52%;
+    min-width: 0;
+    max-width: none;
+    white-space: normal;
+    overflow-wrap: anywhere;
+  }
+  .stage-grid .stage-col {
+    width: 12%;
+    min-width: 0;
+    max-width: none;
+  }
+  .stage-grid thead th {
+    height: auto;
+    position: sticky;
+    top: 64px;
+    overflow: visible;
+    padding: 4px 0;
+  }
+  .stage-grid thead .stage-name-col { top: 64px; }
+  .stage-vert {
+    max-height: none;
+    max-width: 100%;
+    font-size: 11px;
+    line-height: 1.05;
+  }
+  #progressView .stage-grid button.stage-hit {
+    width: 100%;
+    height: 36px;
+    min-width: 0;
+    min-height: 36px;
+    max-width: none;
+  }
+  .stage-box {
+    width: 18px;
+    height: 18px;
+  }
+}

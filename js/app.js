@@ -53,6 +53,11 @@
     freeHelperNames: [],
     ratioSource: "roster",
     levelDrafts: {},
+    progressMode: "overview",
+    progressFocus: "",
+    progressReturn: "overview",
+    progressSort: "name",
+    progressFilter: "all",
     planQuery: { warmup: "", base: "", lesson: "", game: "", sparring: "" },
     planFocus: null,
     editingPlanId: "",
@@ -65,6 +70,7 @@
   let cameraTimer = 0;
   let noteTimer = 0;
   let claimOpen = false;
+  let progressScrollNext = false;
 
   const $ = (id) => document.getElementById(id);
   const esc = P.escapeHtml;
@@ -3330,7 +3336,8 @@ function sparringSection(plan) {
 
   function stripeHint(kid) {
     const levels = state.progress.levels[kid.id] || {};
-    const own = Object.values(levels).filter((level) => level === "own").length;
+    const top = P.LEVELS[P.LEVELS.length - 1];
+    const own = Object.values(levels).filter((level) => level === top).length;
     const attended = state.progress.classes.filter(
       (entry) => entry.taught && Array.isArray(entry.attended) && entry.attended.includes(kid.id)
     ).length;
@@ -3345,12 +3352,7 @@ function sparringSection(plan) {
     };
   }
 
-  const LEVEL_LABEL = {
-    introduced: "Introduced",
-    practicing: "Practicing",
-    help: "With help",
-    own: "On their own",
-  };
+  const LEVEL_LABEL = P.LEVEL_LABELS;
 
   function setView(view) {
     if (state.program === "adult" && (view === "plan" || view === "review" || view === "calendar")) view = "progress";
@@ -3707,15 +3709,22 @@ function sparringSection(plan) {
     }
   }
 
+  function stepBackStage(level) {
+    const index = P.LEVELS.indexOf(level);
+    if (index <= 0) return "";
+    return P.LEVELS[index - 1];
+  }
+
   async function setProgressLevel(kidId, techId, level) {
-    const current = (state.progress.levels[kidId] || {})[techId];
+    const current = (state.progress.levels[kidId] || {})[techId] || "";
+    const next = current === level ? stepBackStage(level) : level;
     try {
-      if (current === level) {
+      if (!next) {
         if (state.progress.levels[kidId]) delete state.progress.levels[kidId][techId];
         await window.BJJ_API.send("DELETE", "/api/levels", { studentId: kidId, techId });
       } else {
-        setLevel(kidId, techId, level);
-        await window.BJJ_API.send("PUT", "/api/levels", { studentId: kidId, techId, level });
+        setLevel(kidId, techId, next);
+        await window.BJJ_API.send("PUT", "/api/levels", { studentId: kidId, techId, level: next });
       }
       if (state.levelDrafts[kidId]) {
         state.levelDrafts[kidId] = state.levelDrafts[kidId].filter((id) => id !== techId);
@@ -3763,17 +3772,38 @@ function sparringSection(plan) {
     return levels[0] || null;
   }
 
-  function adultMarks(studentId, levelId, classNumber) {
+  function progressTopStage() {
+    return P.LEVELS[P.LEVELS.length - 1];
+  }
+
+  function adultStageMap(studentId, levelId, classNumber) {
     const student = state.adultChecks[studentId] || {};
     const level = student[levelId] || {};
-    const marks = level[String(classNumber)] || level[classNumber] || [];
-    return new Set((Array.isArray(marks) ? marks : []).map((n) => Number(n)));
+    const raw = level[String(classNumber)] || level[classNumber] || {};
+    const top = progressTopStage();
+    const map = {};
+    if (Array.isArray(raw)) {
+      raw.forEach((index) => {
+        map[String(index)] = top;
+      });
+      return map;
+    }
+    Object.entries(raw).forEach(([index, stage]) => {
+      const canonical = P.canonicalLevel(stage);
+      if (canonical) map[String(index)] = canonical;
+    });
+    return map;
+  }
+
+  function adultStage(studentId, levelId, classNumber, index) {
+    return adultStageMap(studentId, levelId, classNumber)[String(index)] || "";
   }
 
   function adultClassDone(studentId, level, item) {
-    const marks = adultMarks(studentId, level.id, item.number);
+    const map = adultStageMap(studentId, level.id, item.number);
     const names = Array.isArray(item.techniques) ? item.techniques : [];
-    return names.length > 0 && names.every((_name, index) => marks.has(index));
+    const top = progressTopStage();
+    return names.length > 0 && names.every((_name, index) => map[String(index)] === top);
   }
 
   function adultProgressLine(student) {
@@ -3805,54 +3835,310 @@ function sparringSection(plan) {
       : "<p>No adult students yet.</p>";
   }
 
-  function renderAdultProgress() {
-    const root = $("progressView");
-    const level = adultLevel();
-    const people = state.rosterAdults.slice().sort((a, b) => a.name.localeCompare(b.name));
-    const cards = people
-      .map((person) => {
-        const waiver = person.waiver && person.waiver.signed
-          ? `Waiver signed ${esc(person.waiver.signedOn)} by ${esc(person.waiver.signerName)}.`
-          : "No signed waiver.";
-        const src = qrDataUrl(kidQrText(person), 180);
-        const classes = !level
-          ? ""
-          : (level.classes || [])
-              .map((item) => {
-                const marks = adultMarks(person.id, level.id, item.number);
-                const names = item.techniques || [];
-                const checks = names
-                  .map((name, index) => {
-                    const on = marks.has(index) ? " checked" : "";
-                    return `<label class="check adult-tech"><input type="checkbox" data-adult-check="1" data-student="${esc(person.id)}" data-level="${esc(level.id)}" data-class-number="${esc(item.number)}" data-tech="${index}"${on} /> ${esc(name)}</label>`;
-                  })
-                  .join("");
-                const done = names.length && names.every((_name, index) => marks.has(index));
-                return `<div class="adult-class"><h4>Class ${esc(item.number)}${done ? " · complete" : ""}</h4>${checks}</div>`;
-              })
-              .join("");
-        return `<article class="kid-block">
-          <h3>${esc(person.name)}</h3>
-          <p>Age ${esc(person.age)} · ${esc(P.beltLabel(person.belt))} belt · ${esc(person.stripes)} stripes</p>
-          <p class="adult-count">${esc(adultProgressLine(person))}</p>
-          <p>${waiver}</p>
-          <img class="qr" alt="Check-in card for ${esc(person.name)}" src="${src}" />
-          ${classes}
-        </article>`;
-      })
-      .join("");
-    root.innerHTML = `<h2>Adults · white to blue</h2>
-      <p>Tuesdays and Thursdays, 6:30–8:00 PM. Ages 11 and up. The check-in card is the only QR code. Scanning it checks the student in for staff, and opens the class card for anyone else.</p>
-      ${cards || "<p>Add an adult to track progress.</p>"}`;
+  function lessonAgeForKid(kid) {
+    const grouped = groupForAge(kid.age);
+    if (grouped && grouped.id) return grouped.id;
+    return Number(kid.age) >= 7 ? "upper" : "mite";
   }
 
-  function renderProgress() {
-    if (state.program === "adult") return renderAdultProgress();
-    const root = $("progressView");
+  function kidMoves(kid) {
+    const age = lessonAgeForKid(kid);
+    const levels = state.progress.levels[kid.id] || {};
+    const seen = new Set();
+    const moves = [];
+    pool("lesson", age).forEach((item) => {
+      seen.add(item.id);
+      moves.push({
+        id: item.id,
+        name: item.name,
+        group: item.position || "Other",
+        stage: P.canonicalLevel(levels[item.id]) || "",
+      });
+    });
+    Object.keys(levels).forEach((id) => {
+      if (seen.has(id)) return;
+      const act = findActivity(id);
+      moves.push({
+        id,
+        name: (act && act.name) || id,
+        group: (act && act.position) || "Logged",
+        stage: P.canonicalLevel(levels[id]) || "",
+      });
+    });
+    return moves;
+  }
+
+  function kidTechniqueStats(kid) {
+    const moves = kidMoves(kid);
+    const top = progressTopStage();
+    return { mastered: moves.filter((move) => move.stage === top).length, total: moves.length };
+  }
+
+  function adultGroups(person) {
+    const level = adultLevel();
+    if (!level) return [];
+    return (level.classes || []).map((item) => ({
+      title: `Class ${item.number}`,
+      classNumber: item.number,
+      rows: (item.techniques || []).map((name, index) => ({
+        id: String(index),
+        name,
+        group: `Class ${item.number}`,
+        classNumber: item.number,
+        index,
+        stage: adultStage(person.id, level.id, item.number, index),
+      })),
+    }));
+  }
+
+  function groupMoves(moves) {
+    const groups = [];
+    const index = new Map();
+    moves.forEach((move) => {
+      const title = move.group || "Other";
+      if (!index.has(title)) {
+        const group = { title, rows: [] };
+        index.set(title, group);
+        groups.push(group);
+      }
+      index.get(title).rows.push(move);
+    });
+    return groups;
+  }
+
+  function studentGroups(person) {
+    return state.program === "adult" ? adultGroups(person) : groupMoves(kidMoves(person));
+  }
+
+  function tallyStages(stages) {
+    const counts = {};
+    P.LEVELS.forEach((id) => {
+      counts[id] = 0;
+    });
+    let none = 0;
+    stages.forEach((stage) => {
+      if (Object.prototype.hasOwnProperty.call(counts, stage)) counts[stage] += 1;
+      else none += 1;
+    });
+    return { counts, none };
+  }
+
+  function tallyText(tally) {
+    const parts = P.LEVELS.filter((id) => tally.counts[id]).map((id) => `${tally.counts[id]} ${LEVEL_LABEL[id]}`);
+    if (tally.none) parts.push(`${tally.none} not started`);
+    return parts.join(" · ") || "No moves yet";
+  }
+
+  function progressFraction(person) {
+    if (state.program === "adult") {
+      const level = adultLevel();
+      const total = level && Array.isArray(level.classes) ? level.classes.length : 0;
+      if (!total) return 0;
+      const done = (level.classes || []).filter((item) => adultClassDone(person.id, level, item)).length;
+      return done / total;
+    }
+    const stats = kidTechniqueStats(person);
+    return stats.total ? stats.mastered / stats.total : 0;
+  }
+
+  function progressPeople() {
+    const adults = state.program === "adult";
+    let people = (adults ? state.rosterAdults : state.roster).slice();
+    const filter = state.progressFilter;
+    if (!adults && filter === "mite") people = people.filter((kid) => kid.age >= 3 && kid.age <= 6);
+    if (!adults && filter === "upper") people = people.filter((kid) => kid.age >= 7 && kid.age <= 10);
+    if (adults && filter === "youth") people = people.filter((person) => person.age >= 11 && person.age <= 17);
+    if (adults && filter === "grown") people = people.filter((person) => person.age >= 18);
+    people.sort((a, b) => {
+      if (state.progressSort === "progress") {
+        const diff = progressFraction(b) - progressFraction(a);
+        if (diff) return diff;
+      }
+      return a.name.localeCompare(b.name);
+    });
+    return people;
+  }
+
+  function progressToolsHtml() {
+    const filters = state.program === "adult"
+      ? [["all", "All"], ["youth", "11–17"], ["grown", "18+"]]
+      : [["all", "All"], ["mite", "3–6 Mighty Mites"], ["upper", "7–10 Pee Wees"]];
+    const chip = (attr, id, label, on) =>
+      `<button type="button" class="chip${on ? " on" : ""}" ${attr}="${esc(id)}">${esc(label)}</button>`;
+    return `<div class="progress-tools">
+      <div class="chip-row" role="group" aria-label="Layout">
+        ${chip("data-progress-mode", "overview", "Overview", state.progressMode === "overview")}
+        ${chip("data-progress-mode", "matrix", "Matrix", state.progressMode === "matrix")}
+      </div>
+      <div class="chip-row" role="group" aria-label="Filter">
+        ${filters.map(([id, label]) => chip("data-progress-filter", id, label, state.progressFilter === id)).join("")}
+      </div>
+      <div class="chip-row" role="group" aria-label="Sort">
+        ${chip("data-progress-sort", "name", "Name", state.progressSort === "name")}
+        ${chip("data-progress-sort", "progress", "Progress", state.progressSort === "progress")}
+      </div>
+    </div>`;
+  }
+
+  function rosterRowHtml(person) {
+    const pct = Math.round(progressFraction(person) * 100);
+    const belt = `${P.beltLabel(person.belt)} · ${stripeText(person)}`;
+    let count = "";
+    let sub = "";
+    if (state.program === "adult") {
+      count = adultProgressLine(person).replace(" toward blue belt.", "");
+    } else {
+      const stats = kidTechniqueStats(person);
+      const hint = stripeHint(person);
+      count = `${stats.mastered}/${stats.total} techniques`;
+      sub = `${hint.attended} of ${hint.needAttend} classes`;
+    }
+    return `<button type="button" class="roster-row" data-open-student="${esc(person.id)}">
+      <span class="roster-main"><span class="roster-name">${esc(person.name)}</span><span class="roster-meta">${esc(belt)}</span></span>
+      <span class="roster-meter" aria-hidden="true"><span style="width:${pct}%"></span></span>
+      <span class="roster-count">${esc(count)}${sub ? `<span class="roster-sub">${esc(sub)}</span>` : ""}</span>
+    </button>`;
+  }
+
+  function matrixCell(personId, label, kind) {
+    return `<td><button type="button" class="matrix-hit ${kind}" data-open-student="${esc(personId)}" aria-label="${esc(label)}"><span class="matrix-mark"></span></button></td>`;
+  }
+
+  function kidMatrixHtml(people) {
+    const columns = [];
+    const seen = new Set();
+    people.forEach((kid) => {
+      kidMoves(kid).forEach((move) => {
+        if (seen.has(move.id)) return;
+        seen.add(move.id);
+        columns.push(move);
+      });
+    });
+    const top = progressTopStage();
+    const head = columns
+      .map((col) => `<th class="matrix-col" scope="col" title="${esc(col.name)}"><span class="stage-vert">${esc(col.name)}</span></th>`)
+      .join("");
+    const body = people
+      .map((kid) => {
+        const stages = {};
+        kidMoves(kid).forEach((move) => {
+          stages[move.id] = move.stage;
+        });
+        const cells = columns
+          .map((col) => {
+            const stage = stages[col.id] || "";
+            const kind = !stage ? "empty" : stage === top ? "done" : "partial";
+            const word = stage ? LEVEL_LABEL[stage] : "not started";
+            return matrixCell(kid.id, `${kid.name}, ${col.name}, ${word}`, kind);
+          })
+          .join("");
+        return `<tr><th class="matrix-name" scope="row"><button type="button" class="matrix-name-btn" data-open-student="${esc(kid.id)}">${esc(kid.name)}</button></th>${cells}</tr>`;
+      })
+      .join("");
+    return matrixTable(head, body);
+  }
+
+  function adultMatrixHtml(people) {
+    const level = adultLevel();
+    const classes = level ? level.classes || [] : [];
+    const top = progressTopStage();
+    const head = classes.map((item) => `<th class="matrix-col" scope="col">${esc(item.number)}</th>`).join("");
+    const body = people
+      .map((person) => {
+        const cells = classes
+          .map((item) => {
+            const names = item.techniques || [];
+            const stages = names.map((_name, index) => adultStage(person.id, level.id, item.number, index));
+            const done = names.length > 0 && stages.every((stage) => stage === top);
+            const any = stages.some(Boolean);
+            const kind = done ? "done" : any ? "partial" : "empty";
+            const word = done ? "complete" : any ? "in progress" : "not started";
+            return matrixCell(person.id, `${person.name}, class ${item.number}, ${word}`, kind);
+          })
+          .join("");
+        return `<tr><th class="matrix-name" scope="row"><button type="button" class="matrix-name-btn" data-open-student="${esc(person.id)}">${esc(person.name)}</button></th>${cells}</tr>`;
+      })
+      .join("");
+    return matrixTable(head, body);
+  }
+
+  function matrixTable(head, body) {
+    return `<p class="matrix-legend"><span class="matrix-sample empty"><span class="matrix-mark"></span></span> not started <span class="matrix-sample partial"><span class="matrix-mark"></span></span> in progress <span class="matrix-sample done"><span class="matrix-mark"></span></span> complete</p>
+      <div class="matrix-scroll"><table class="matrix"><thead><tr><th class="matrix-name" scope="col">Student</th>${head}</tr></thead><tbody>${body || ""}</tbody></table></div>`;
+  }
+
+  function stageCells(row, person) {
+    const current = P.LEVELS.indexOf(row.stage);
+    const level = adultLevel();
+    return P.LEVELS.map((id, index) => {
+      const filled = current >= index;
+      const attrs = state.program === "adult"
+        ? `data-adult-stage="${esc(id)}" data-student="${esc(person.id)}" data-level="${esc(level ? level.id : "")}" data-class-number="${esc(row.classNumber)}" data-tech="${esc(row.index)}"`
+        : `data-prog-level="${esc(id)}" data-prog-kid="${esc(person.id)}" data-prog-tech="${esc(row.id)}"`;
+      return `<td><button type="button" class="stage-hit${filled ? " filled" : ""}" ${attrs} aria-pressed="${filled ? "true" : "false"}" aria-label="${esc(row.name)}, ${esc(LEVEL_LABEL[id])}"><span class="stage-box"></span></button></td>`;
+    }).join("");
+  }
+
+  function stageGridHtml(person, groups) {
+    const top = progressTopStage();
+    const rows = groups.flatMap((group) => group.rows);
+    const next = rows.find((row) => row.stage !== top);
+    const nextTitle = next ? next.group : "";
+    const nextLine = next ? `Next up: ${next.group} · ${next.name}` : "Every move is at Mastered.";
+    const head = P.LEVELS.map((id) => `<th class="stage-col" scope="col"><span class="stage-vert">${esc(LEVEL_LABEL[id])}</span></th>`).join("");
+    const body = groups
+      .map((group) => {
+        const mark = group.title === nextTitle ? ' data-next-up="1"' : "";
+        const summary = `<tr class="stage-group"${mark}><th class="stage-name-col" scope="rowgroup">${esc(group.title)} <span class="stage-tally">${esc(tallyText(tallyStages(group.rows.map((row) => row.stage))))}</span></th><td class="stage-group-rest" colspan="${P.LEVELS.length}"></td></tr>`;
+        const lines = group.rows
+          .map((row) => `<tr><th class="stage-name-col" scope="row">${esc(row.name)}</th>${stageCells(row, person)}</tr>`)
+          .join("");
+        return summary + lines;
+      })
+      .join("");
+    return `<p class="progress-next">${esc(nextLine)}</p>
+      <p class="stage-overall">Overall: ${esc(tallyText(tallyStages(rows.map((row) => row.stage))))}</p>
+      <div class="stage-scroll">
+        <table class="stage-grid">
+          <thead><tr><th class="stage-name-col" scope="col">Move</th>${head}</tr></thead>
+          <tbody>${body}</tbody>
+        </table>
+      </div>
+      <p class="hint">Filled boxes run up to the current stage. Tap a box to set that stage. Tap the current stage again to step back one.</p>`;
+  }
+
+  function kidDetailExtras(kid) {
+    const hint = stripeHint(kid);
+    const topLabel = LEVEL_LABEL[progressTopStage()];
+    const hintText = hint.ready
+      ? `Stripe hint: meets ${hint.needOwn} ${topLabel} and ${hint.needAttend} classes. The teacher still decides.`
+      : `Stripe hint: ${hint.own} of ${hint.needOwn} ${topLabel}, ${hint.attended} of ${hint.needAttend} classes. The teacher decides.`;
+    const promo = typeof P.promotionHint === "function" ? P.promotionHint(kid) : null;
+    return `${promo ? `<p class="belt-promo${promo.ready ? " ready" : ""}">${esc(promo.text)}</p>` : ""}
+      <p>${esc(hintText)}</p>
+      <label>Teacher notes</label>
+      <textarea class="note" data-note="${esc(kid.id)}">${esc(state.progress.notes[kid.id] || "")}</textarea>
+      <div class="btn-row"><button type="button" class="ghost" data-print-kid="${esc(kid.id)}">Print progress sheet</button></div>`;
+  }
+
+  function detailHtml(person) {
+    const backLabel = state.progressReturn === "matrix" ? "matrix" : "overview";
+    const waiver = state.program === "adult"
+      ? `<p>${person.waiver && person.waiver.signed ? `Waiver signed ${esc(person.waiver.signedOn)}.` : "No signed waiver."}</p><p class="adult-count">${esc(adultProgressLine(person))}</p><button type="button" class="ghost" data-adult-card="${esc(person.id)}">Check-in card</button>`
+      : kidDetailExtras(person);
+    return `<h2>${esc(person.name)}</h2>
+      <p>Age ${esc(person.age)} · ${esc(P.beltLabel(person.belt))} · ${esc(stripeText(person))}</p>
+      <button type="button" class="ghost" data-progress-back="1">Back to ${backLabel}</button>
+      ${waiver}
+      ${stageGridHtml(person, studentGroups(person))}`;
+  }
+
+  function kidsLogHtml() {
     const classKey = P.normalizeAgeKey(state.ageGroup);
     const age = curriculumAge(classKey);
-    const group = DATA.ageGroups[age];
-    const heading = P.isCombo(classKey) ? P.comboLabel(classKey) : group ? `${group.range} ${group.label}` : "";
+    const pastIds = classKey === "toddler" ? ["toddler"] : P.parseAgeKey(classKey);
+    const themes = themesForAge(age);
+    const topLabel = LEVEL_LABEL[progressTopStage()];
     const coverage = themesForAge(age)
       .map((theme) => {
         const since = P.themeStaleness(theme.id, state.progress.classes, age);
@@ -3870,44 +4156,14 @@ function sparringSection(plan) {
         }</li>`;
       })
       .join("");
-    const kids = P.sortByRank(state.roster)
-      .map((kid) => {
-        const hint = stripeHint(kid);
-        const hintText = hint.ready
-          ? `Stripe hint: meets ${hint.needOwn} on their own and ${hint.needAttend} classes. The teacher still decides.`
-          : `Stripe hint: ${hint.own} of ${hint.needOwn} on their own, ${hint.attended} of ${hint.needAttend} classes. The teacher decides.`;
-        const dates = state.progress.classes
-          .filter((entry) => entry.taught && entry.attended.includes(kid.id))
-          .map((entry) => entry.date)
-          .filter(Boolean);
-        const promo = typeof P.promotionHint === "function" ? P.promotionHint(kid) : null;
-        const promoHtml = promo
-          ? `<p class="belt-promo${promo.ready ? " ready" : ""}">${esc(promo.text)}</p>`
-          : "";
-        return `<article class="kid-block">
-          <h3>${esc(kid.name)}</h3>
-          <p>Age ${esc(kid.age)} · ${esc(P.beltLabel(kid.belt))} · ${esc(stripeText(kid))}</p>
-          ${promoHtml}
-          <p>${esc(hintText)}</p>
-          <p>${dates.length ? `${dates.length} taught class${dates.length === 1 ? "" : "es"}: ${esc(dates.join(", "))}` : "No taught classes logged yet."}</p>
-          ${kidLevelEditor(kid)}
-          <label>Teacher notes</label>
-          <textarea class="note" data-note="${esc(kid.id)}">${esc(state.progress.notes[kid.id] || "")}</textarea>
-          <div class="btn-row"><button type="button" class="ghost" data-print-kid="${esc(kid.id)}">Print progress sheet</button></div>
-        </article>`;
-      })
-      .join("");
-    const pastIds = classKey === "toddler" ? ["toddler"] : P.parseAgeKey(classKey);
-    const themes = themesForAge(age);
     const stripeSettings = isAdmin()
       ? `<div class="grid-2">
-        <div class="field"><label for="stripeOwn">On their own before a stripe hint</label><input id="stripeOwn" type="number" min="1" max="40" value="${esc(state.progress.stripe.own)}" /></div>
+        <div class="field"><label for="stripeOwn">${esc(topLabel)} before a stripe hint</label><input id="stripeOwn" type="number" min="1" max="40" value="${esc(state.progress.stripe.own)}" /></div>
         <div class="field"><label for="stripeAttend">Classes before a stripe hint</label><input id="stripeAttend" type="number" min="1" max="40" value="${esc(state.progress.stripe.attend)}" /></div>
       </div>`
-      : `<p class="stripe-hint-readonly">Stripe hint: ${esc(state.progress.stripe.own)} techniques on their own + ${esc(state.progress.stripe.attend)} classes (set by admin)</p>`;
-    root.innerHTML = `
-      <h2>Progress · ${esc(heading)}</h2>
-      <p>Teacher ${esc(instructorName() || "the teacher")}</p>
+      : `<p class="stripe-hint-readonly">Stripe hint: ${esc(state.progress.stripe.own)} techniques at ${esc(topLabel)} + ${esc(state.progress.stripe.attend)} classes (set by admin)</p>`;
+    return `<details class="progress-extra">
+      <summary>Class log and stripe hint</summary>
       ${stripeSettings}
       <h3>Log a past class</h3>
       <div class="past-class">
@@ -3931,8 +4187,54 @@ function sparringSection(plan) {
       ${loggedClassesHtml()}
       <h3>Curriculum</h3>
       <ul>${coverage}</ul>
-      <h3>Kids</h3>
-      ${kids || "<p>Add the roster to track kids.</p>"}`;
+    </details>`;
+  }
+
+  function kidsHeading() {
+    const classKey = P.normalizeAgeKey(state.ageGroup);
+    const age = curriculumAge(classKey);
+    const group = DATA.ageGroups[age];
+    return P.isCombo(classKey) ? P.comboLabel(classKey) : group ? `${group.range} ${group.label}` : "";
+  }
+
+  function renderProgress() {
+    const root = $("progressView");
+    if (!root) return;
+    if (state.progressFocus) {
+      const poolPeople = state.program === "adult" ? state.rosterAdults : state.roster;
+      const person = poolPeople.find((item) => item.id === state.progressFocus);
+      if (person) {
+        root.innerHTML = detailHtml(person);
+        if (progressScrollNext) {
+          progressScrollNext = false;
+          const next = root.querySelector("[data-next-up]");
+          if (next && next.scrollIntoView) next.scrollIntoView({ block: "nearest" });
+        }
+        return;
+      }
+      state.progressFocus = "";
+    }
+    const people = progressPeople();
+    const empty = state.program === "adult" ? "<p>Add an adult to track progress.</p>" : "<p>Add the roster to track kids.</p>";
+    const board = people.length
+      ? state.progressMode === "matrix"
+        ? state.program === "adult"
+          ? adultMatrixHtml(people)
+          : kidMatrixHtml(people)
+        : `<div class="roster-list">${people.map(rosterRowHtml).join("")}</div>`
+      : empty;
+    if (state.program === "adult") {
+      root.innerHTML = `<h2>Adults · white to blue</h2>
+        <p>Tuesdays and Thursdays, 6:30–8:00 PM. Ages 11 and up. The check-in card is the only QR code.</p>
+        ${progressToolsHtml()}
+        ${board}`;
+      return;
+    }
+    root.innerHTML = `<h2>Progress · ${esc(kidsHeading())}</h2>
+      <p>Teacher ${esc(instructorName() || "the teacher")}</p>
+      ${progressToolsHtml()}
+      ${board}
+      ${kidsLogHtml()}`;
   }
 
   function progressSheetHtml(kid) {
@@ -3957,10 +4259,10 @@ function sparringSection(plan) {
       <h2>${esc(kid.name)}</h2>
       <p>${esc(groupText(group, kid.age))} · ${esc(P.beltLabel(kid.belt))} · ${esc(stripeText(kid))}</p>
       <p>${dates.length} classes${dates.length ? `: ${esc(dates.join(", "))}` : ""}</p>
-      <p>${esc(
+          <p>${esc(
         hint.ready
           ? "Stripe hint: the numbers you set are met. The teacher decides."
-          : `Stripe hint: ${hint.own} of ${hint.needOwn} on their own, ${hint.attended} of ${hint.needAttend} classes.`
+          : `Stripe hint: ${hint.own} of ${hint.needOwn} ${LEVEL_LABEL[P.LEVELS[P.LEVELS.length - 1]]}, ${hint.attended} of ${hint.needAttend} classes.`
       )}</p>
       ${body || "<p>No techniques logged yet.</p>"}
       ${state.progress.notes[kid.id] ? `<p><strong>Notes.</strong> ${esc(state.progress.notes[kid.id])}</p>` : ""}
@@ -4054,6 +4356,12 @@ function sparringSection(plan) {
     }</h2><div class="pick-row">${layout === "signin" ? "" : picks}</div></div>${body}`;
   }
 
+  function openCheckinCard(person) {
+    const src = qrDataUrl(kidQrText(person), 480);
+    $("cardView").innerHTML = `<article class="card-page"><img class="qr" alt="Check-in card for ${esc(person.name)}" src="${src}" /><div><h2>${esc(person.name)}</h2><p>${esc(P.beltLabel(person.belt))} · ${esc(stripeText(person))}</p><p>This is the only check-in code.</p></div></article>`;
+    setView("cards");
+  }
+
   function showCards(layout) {
     renderCardSurface(layout);
     setView("cards");
@@ -4078,6 +4386,10 @@ function sparringSection(plan) {
 
   function applyProgram(program, keepView) {
     const next = program === "adult" ? "adult" : "kids";
+    if (state.program !== next) {
+      state.progressFocus = "";
+      state.progressFilter = "all";
+    }
     state.program = next;
     document.body.classList.toggle("program-adult", next === "adult");
     document.querySelectorAll("#programSwitch button").forEach((btn) => {
@@ -4142,36 +4454,40 @@ function sparringSection(plan) {
     }
   }
 
-  function rememberAdultMark(studentId, levelId, classNumber, index, checked) {
+  function rememberAdultStage(studentId, levelId, classNumber, index, stage) {
     const student = state.adultChecks[studentId] || {};
     const level = student[levelId] || {};
-    const marks = adultMarks(studentId, levelId, classNumber);
-    if (checked) marks.add(Number(index));
-    else marks.delete(Number(index));
-    level[String(classNumber)] = [...marks];
+    const map = adultStageMap(studentId, levelId, classNumber);
+    if (stage) map[String(index)] = stage;
+    else delete map[String(index)];
+    level[String(classNumber)] = map;
     student[levelId] = level;
     state.adultChecks[studentId] = student;
   }
 
-  async function saveAdultCheck(box) {
-    const studentId = box.dataset.student;
-    const levelId = box.dataset.level;
-    const classNumber = Number(box.dataset.classNumber);
-    const techniqueIndex = Number(box.dataset.tech);
-    const checked = !!box.checked;
-    rememberAdultMark(studentId, levelId, classNumber, techniqueIndex, checked);
+  async function saveAdultStage(button) {
+    const studentId = button.dataset.student;
+    const levelId = button.dataset.level;
+    const classNumber = Number(button.dataset.classNumber);
+    const techniqueIndex = Number(button.dataset.tech);
+    const tapped = P.canonicalLevel(button.dataset.adultStage) || "";
+    const current = adultStage(studentId, levelId, classNumber, techniqueIndex);
+    const next = current === tapped ? stepBackStage(tapped) : tapped;
+    rememberAdultStage(studentId, levelId, classNumber, techniqueIndex, next);
     renderAdultRoster();
+    if (state.view === "progress") renderProgress();
     try {
       const body = await window.BJJ_API.send("POST", "/api/adult-progress", {
         studentId,
         levelId,
         classNumber,
         techniqueIndex,
-        checked,
+        stage: next,
+        checked: !!next,
       });
       state.adultChecks = body.adultChecks || state.adultChecks;
       renderAdultRoster();
-      if (state.view === "progress" && state.program === "adult") renderAdultProgress();
+      if (state.view === "progress" && state.program === "adult") renderProgress();
     } catch (err) {
       toast(err.message || "Could not save that technique.");
       resync().catch(() => {});
@@ -5715,10 +6031,6 @@ function sparringSection(plan) {
       if (event.target.closest("#saveClassBtn")) saveReviewedClass();
     });
     $("progressView").addEventListener("change", (event) => {
-      if (event.target.dataset.adultCheck) {
-        saveAdultCheck(event.target);
-        return;
-      }
       if (event.target.name === "pastAge") {
         refreshPastClassFields();
         return;
@@ -5748,6 +6060,50 @@ function sparringSection(plan) {
       }, 400);
     });
     $("progressView").addEventListener("click", (event) => {
+      const mode = event.target.closest("[data-progress-mode]");
+      if (mode) {
+        state.progressMode = mode.dataset.progressMode === "matrix" ? "matrix" : "overview";
+        state.progressFocus = "";
+        renderProgress();
+        return;
+      }
+      const sortBtn = event.target.closest("[data-progress-sort]");
+      if (sortBtn) {
+        state.progressSort = sortBtn.dataset.progressSort === "progress" ? "progress" : "name";
+        renderProgress();
+        return;
+      }
+      const filterBtn = event.target.closest("[data-progress-filter]");
+      if (filterBtn) {
+        state.progressFilter = filterBtn.dataset.progressFilter || "all";
+        renderProgress();
+        return;
+      }
+      if (event.target.closest("[data-progress-back]")) {
+        state.progressMode = state.progressReturn === "matrix" ? "matrix" : "overview";
+        state.progressFocus = "";
+        renderProgress();
+        return;
+      }
+      const adultCard = event.target.closest("[data-adult-card]");
+      if (adultCard) {
+        const person = (state.rosterAdults || []).find((item) => item.id === adultCard.dataset.adultCard);
+        if (person) openCheckinCard(person);
+        return;
+      }
+      const adultStageBtn = event.target.closest("[data-adult-stage]");
+      if (adultStageBtn) {
+        saveAdultStage(adultStageBtn);
+        return;
+      }
+      const openStudent = event.target.closest("[data-open-student]");
+      if (openStudent && !event.target.closest("[data-prog-level]")) {
+        state.progressReturn = state.progressMode === "matrix" ? "matrix" : "overview";
+        state.progressFocus = openStudent.dataset.openStudent;
+        progressScrollNext = true;
+        renderProgress();
+        return;
+      }
       const pastKid = event.target.closest("[data-past-kid]");
       if (pastKid) {
         pastKid.classList.toggle("on");

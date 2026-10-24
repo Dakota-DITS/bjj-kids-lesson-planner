@@ -16,6 +16,7 @@ from server.db import (
     AGE_GROUP_AGES,
     BELTS,
     LEVELS,
+    canonical_level,
     age_group_for_age,
     cleanup,
     connect,
@@ -856,8 +857,8 @@ class Api:
             body = self.read_json(handler)
             sid = clean_id(body.get("studentId"))
             tid = clean_id(body.get("techId"))
-            level = body.get("level")
-            if not sid or not tid or level not in LEVELS:
+            level = canonical_level(body.get("level"))
+            if not sid or not tid or not level:
                 raise ValueError("That progress update is missing a student, a technique, or a level.")
             conn.execute(
                 """
@@ -1684,7 +1685,8 @@ class Api:
                 continue
             for tid, level in tech_levels.items():
                 tech = clean_id(tid)
-                if tech and level in LEVELS:
+                level = canonical_level(level)
+                if tech and level:
                     conn.execute(
                         """
                         INSERT INTO levels (student_id, tech_id, level) VALUES (?, ?, ?)
@@ -2895,13 +2897,15 @@ class Api:
     def adult_checks_map(self, conn):
         grouped = {}
         rows = conn.execute(
-            "SELECT student_id, level_id, class_number, technique_index FROM adult_progress"
+            "SELECT student_id, level_id, class_number, technique_index, stage FROM adult_progress"
         ).fetchall()
+        top = LEVELS[-1]
         for row in rows:
             student = grouped.setdefault(row["student_id"], {})
             level = student.setdefault(row["level_id"], {})
-            bucket = level.setdefault(str(row["class_number"]), [])
-            bucket.append(int(row["technique_index"]))
+            bucket = level.setdefault(str(row["class_number"]), {})
+            stage = canonical_level(row["stage"]) or top
+            bucket[str(int(row["technique_index"]))] = stage
         return grouped
 
     def adult_attendance_list(self, conn):
@@ -2926,14 +2930,18 @@ class Api:
         _level, item = self.adult_level_class(level_id, number)
         if not item or index < 0 or index >= len(item["techniques"]):
             raise ValueError("That technique is not on this curriculum.")
-        if body.get("checked") is True:
+        stage = canonical_level(body.get("stage"))
+        if not stage and body.get("checked") is True:
+            stage = LEVELS[-1]
+        if stage:
             conn.execute(
                 """
-                INSERT INTO adult_progress (student_id, level_id, class_number, technique_index, checked_at)
-                VALUES (?, ?, ?, ?, ?)
-                ON CONFLICT(student_id, level_id, class_number, technique_index) DO NOTHING
+                INSERT INTO adult_progress (student_id, level_id, class_number, technique_index, checked_at, stage)
+                VALUES (?, ?, ?, ?, ?, ?)
+                ON CONFLICT(student_id, level_id, class_number, technique_index)
+                DO UPDATE SET stage = excluded.stage, checked_at = excluded.checked_at
                 """,
-                (sid, level_id, number, index, iso(utcnow())),
+                (sid, level_id, number, index, iso(utcnow()), stage),
             )
         else:
             conn.execute(
@@ -2980,20 +2988,22 @@ class Api:
         checked = {}
         rows = conn.execute(
             """
-            SELECT class_number, technique_index FROM adult_progress
+            SELECT class_number, technique_index, stage FROM adult_progress
             WHERE student_id = ? AND level_id = ?
             """,
             (sid, level["id"]),
         ).fetchall()
+        top = LEVELS[-1]
         for row in rows:
-            checked.setdefault(int(row["class_number"]), set()).add(int(row["technique_index"]))
+            stage = canonical_level(row["stage"]) or top
+            checked.setdefault(int(row["class_number"]), {})[int(row["technique_index"])] = stage
         done = 0
         techniques = 0
         for item in level["classes"]:
-            marks = checked.get(item["number"], set())
+            marks = checked.get(item["number"], {})
             techniques += len(marks)
             names = item["techniques"]
-            if names and all(index in marks for index in range(len(names))):
+            if names and all(marks.get(index) == top for index in range(len(names))):
                 done += 1
         return done, len(level["classes"]), techniques, level.get("label") or ""
 
