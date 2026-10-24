@@ -70,5 +70,45 @@ assert.strictEqual(flags["2026-10-27"], "skip");
 assert.strictEqual(flags["2026-10-30"], "extra");
 assert.strictEqual(flags["2026-11-10"], "class");
 assert.strictEqual(Days.meeting(2026, 11, 10, []).meets, true);
+assert.strictEqual(Days.meeting(2026, 11, 10, []).start, "17:30");
+assert.strictEqual(Days.meeting(2026, 11, 10, []).end, "18:15");
+
+const Adult = Days.forProgram("adult");
+assert.strictEqual(Adult.isClassDay(2026, 10, 1), true);
+assert.strictEqual(Adult.isClassDay(2026, 10, 6), true);
+assert.strictEqual(Adult.isClassDay(2026, 10, 13), true);
+assert.strictEqual(Adult.isClassDay(2026, 10, 27), true);
+assert.strictEqual(Adult.isClassDay(2026, 10, 29), true);
+assert.strictEqual(Adult.isClassDay(2026, 10, 28), false);
+assert.strictEqual(Adult.isClassDay(2026, 10, 24), false);
+assert.strictEqual(Adult.isClassDay(2026, 11, 3), true);
+assert.strictEqual(Adult.isClassDay(2026, 11, 5), true);
+const adultOctober = [1, 6, 8, 13, 15, 20, 22, 27, 29];
+adultOctober.forEach((day) => {
+  assert.strictEqual(Adult.isClassDay(2026, 10, day), true, "adult October " + day);
+});
+assert.strictEqual(Adult.meeting(2026, 10, 27, []).start, "18:30");
+assert.strictEqual(Adult.meeting(2026, 10, 27, []).end, "20:00");
+assert.deepStrictEqual(Adult.nextClass(new Date("2026-10-24T20:00:00Z")), { year: 2026, month: 10, day: 27 });
+assert.deepStrictEqual(Adult.nextClass(new Date("2026-10-29T18:00:00Z")), { year: 2026, month: 10, day: 29 });
+assert.deepStrictEqual(
+  Adult.nextClass(new Date("2026-10-24T20:00:00Z"), [
+    { date: "2026-10-27", kind: "skip", reason: "Thanksgiving" },
+    { date: "2026-10-29", kind: "skip", reason: "Thanksgiving" },
+  ]),
+  { year: 2026, month: 11, day: 3 }
+);
+const adultSkip = Adult.meeting(2026, 10, 29, [{ date: "2026-10-29", kind: "skip", reason: "Thanksgiving" }]);
+assert.strictEqual(adultSkip.meets, false);
+assert.strictEqual(adultSkip.skipped, true);
+assert.strictEqual(adultSkip.reason, "Thanksgiving");
+const openMat = Adult.meeting(2026, 10, 28, [{ date: "2026-10-28", kind: "extra", reason: "Open mat", start: "18:30", end: "20:00" }]);
+assert.strictEqual(openMat.meets, true);
+assert.strictEqual(openMat.extra, true);
+assert.strictEqual(Adult.meeting(2026, 10, 27, [{ date: "2026-10-27", kind: "extra", reason: "Nope" }]).extra, false);
+assert.deepStrictEqual(Adult.earliestMonth(), { year: 2026, month: 10 });
+assert.strictEqual(Adult.canShowMonth(2026, 9, laEvening), false);
+assert.strictEqual(Days.forProgram("kids").isClassDay(2026, 10, 13), false);
+assert.strictEqual(Days.forProgram("nope").isClassDay(2026, 10, 27), true);
 
 console.log("class day checks passed");

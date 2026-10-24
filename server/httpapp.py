@@ -20,6 +20,7 @@ from server.db import (
     age_group_for_age,
     cleanup,
     connect,
+    is_adult_class_day,
     is_class_day,
     is_legacy_storage_key,
     iso,
@@ -1202,10 +1203,22 @@ class Api:
         if is_class_day(value):
             return True
         row = conn.execute(
-            "SELECT kind FROM class_exceptions WHERE date = ?",
+            "SELECT kind FROM class_exceptions WHERE program = 'kids' AND date = ?",
             (str(value or "").strip(),),
         ).fetchone()
         return bool(row and row["kind"] == "extra")
+
+    def calendar_program(self, raw):
+        text = str(raw or "").strip().lower()
+        if text in ("", "kids"):
+            return "kids"
+        if text == "adult":
+            return "adult"
+        raise ValueError("Choose the kids or adult calendar.")
+
+    def query_program(self, handler):
+        raw = (parse_qs(urlparse(handler.path).query).get("program") or [""])[0]
+        return self.calendar_program(raw)
 
     def exception_json(self, row, public):
         body = {
@@ -1214,25 +1227,31 @@ class Api:
             "reason": row["reason"] or "",
             "start": row["start_time"],
             "end": row["end_time"],
+            "program": row["program"] if "program" in row.keys() else "kids",
         }
         if not public:
             body["createdBy"] = row["created_by"] or ""
             body["createdAt"] = row["created_at"]
         return body
 
-    def list_exception_rows(self, conn):
-        return conn.execute("SELECT * FROM class_exceptions ORDER BY date").fetchall()
+    def list_exception_rows(self, conn, program):
+        return conn.execute(
+            "SELECT * FROM class_exceptions WHERE program = ? ORDER BY date",
+            (program,),
+        ).fetchall()
 
     def public_class_exceptions(self, handler):
+        program = self.query_program(handler)
         conn = self.db()
         try:
-            rows = self.list_exception_rows(conn)
+            rows = self.list_exception_rows(conn, program)
         finally:
             conn.close()
         self.send(handler, 200, {"exceptions": [self.exception_json(row, True) for row in rows]})
 
     def list_class_exceptions(self, handler, conn, public):
-        rows = self.list_exception_rows(conn)
+        program = self.query_program(handler)
+        rows = self.list_exception_rows(conn, program)
         return self.send(handler, 200, {"exceptions": [self.exception_json(row, public) for row in rows]})
 
     def clean_clock(self, value, fallback):
@@ -1248,6 +1267,7 @@ class Api:
 
     def save_class_exception(self, handler, conn, user):
         body = self.read_json(handler)
+        program = self.calendar_program(body.get("program"))
         date = str(body.get("date") or "").strip()
         try:
             parsed = datetime.strptime(date, "%Y-%m-%d")
@@ -1258,24 +1278,30 @@ class Api:
         kind = str(body.get("kind") or "").strip()
         if kind not in ("skip", "extra"):
             raise ValueError("Choose skip or a make-up class.")
-        if kind == "skip" and not is_class_day(date):
+        on_schedule = is_adult_class_day(date) if program == "adult" else is_class_day(date)
+        if kind == "skip" and not on_schedule:
+            if program == "adult":
+                raise ValueError("Only a regular Tuesday or Thursday can be skipped.")
             raise ValueError("Only a regular class Tuesday can be skipped.")
-        if kind == "extra" and is_class_day(date):
+        if kind == "extra" and on_schedule:
+            if program == "adult":
+                raise ValueError("That day is already on the schedule. Skip it if class is cancelled.")
             raise ValueError("That Tuesday is already on the schedule. Skip it if class is cancelled.")
         reason = str(body.get("reason") or "").replace("\u0000", "").strip()
         if len(reason) > 120:
             raise ValueError("Keep the reason to 120 characters.")
-        start = self.clean_clock(body.get("start") or body.get("startTime"), "17:30")
-        end = self.clean_clock(body.get("end") or body.get("endTime"), "18:15")
+        fallback_start, fallback_end = ("18:30", "20:00") if program == "adult" else ("17:30", "18:15")
+        start = self.clean_clock(body.get("start") or body.get("startTime"), fallback_start)
+        end = self.clean_clock(body.get("end") or body.get("endTime"), fallback_end)
         if end <= start:
             raise ValueError("The end time needs to be after the start.")
         now = iso(utcnow())
         conn.execute(
             """
             INSERT INTO class_exceptions
-              (date, kind, reason, start_time, end_time, created_by, created_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?)
-            ON CONFLICT(date) DO UPDATE SET
+              (program, date, kind, reason, start_time, end_time, created_by, created_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            ON CONFLICT(program, date) DO UPDATE SET
               kind = excluded.kind,
               reason = excluded.reason,
               start_time = excluded.start_time,
@@ -1283,19 +1309,29 @@ class Api:
               created_by = excluded.created_by,
               created_at = excluded.created_at
             """,
-            (date, kind, reason, start, end, user.get("username") or "", now),
+            (program, date, kind, reason, start, end, user.get("username") or "", now),
         )
         conn.commit()
-        row = conn.execute("SELECT * FROM class_exceptions WHERE date = ?", (date,)).fetchone()
+        row = conn.execute(
+            "SELECT * FROM class_exceptions WHERE program = ? AND date = ?",
+            (program, date),
+        ).fetchone()
         return self.send(handler, 200, {"exception": self.exception_json(row, False)})
 
     def delete_class_exception(self, handler, conn, date):
-        row = conn.execute("SELECT date FROM class_exceptions WHERE date = ?", (date,)).fetchone()
+        program = self.query_program(handler)
+        row = conn.execute(
+            "SELECT date FROM class_exceptions WHERE program = ? AND date = ?",
+            (program, date),
+        ).fetchone()
         if not row:
             return self.send(handler, 404, {"error": "That date is not changed."})
-        conn.execute("DELETE FROM class_exceptions WHERE date = ?", (date,))
+        conn.execute(
+            "DELETE FROM class_exceptions WHERE program = ? AND date = ?",
+            (program, date),
+        )
         conn.commit()
-        return self.send(handler, 200, {"ok": True, "date": date})
+        return self.send(handler, 200, {"ok": True, "date": date, "program": program})
 
     def public_featured(self, handler):
         conn = self.db()

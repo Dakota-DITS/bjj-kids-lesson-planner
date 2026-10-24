@@ -14,6 +14,7 @@ from server.httpapp import KIDS_FULL, Api, check_password, config_from_env, hash
 from server.db import (
     age_group_for_age,
     connect,
+    is_adult_class_day,
     is_class_day,
     iso,
     migrate,
@@ -1305,6 +1306,204 @@ class ApiTest(unittest.TestCase):
         status, empty = public.call("GET", "/api/public/class-exceptions")
         self.assertEqual(status, 200, empty)
         self.assertEqual(empty["exceptions"], [])
+
+    def test_adult_class_calendar_is_separate_from_kids(self):
+        self.assertTrue(is_adult_class_day("2026-10-27"))
+        self.assertTrue(is_adult_class_day("2026-10-29"))
+        self.assertTrue(is_adult_class_day("2026-10-06"))
+        self.assertFalse(is_adult_class_day("2026-10-28"))
+        self.assertTrue(is_adult_class_day("2026-10-13"))
+        self.assertFalse(is_class_day("2026-10-13"))
+        self.assertFalse(is_adult_class_day("not-a-date"))
+
+        public = self.client()
+        status, guest = public.call(
+            "POST",
+            "/api/class-exceptions",
+            {"program": "adult", "date": "2026-10-29", "kind": "skip", "reason": "Thanksgiving"},
+        )
+        self.assertEqual(status, 403, guest)
+        self.assertIn("reloaded", guest["error"].lower())
+        status, guest_list = public.call("GET", "/api/class-exceptions?program=adult")
+        self.assertEqual(status, 401, guest_list)
+
+        teacher = self.client()
+        teacher.login("alex", "correct-horse")
+        status, denied = teacher.call(
+            "POST",
+            "/api/class-exceptions",
+            {"program": "adult", "date": "2026-10-29", "kind": "skip", "reason": "Thanksgiving"},
+        )
+        self.assertEqual(status, 403, denied)
+        self.assertEqual(denied["error"], "An admin edits the class calendar.")
+        status, readable = teacher.call("GET", "/api/class-exceptions?program=adult")
+        self.assertEqual(status, 200, readable)
+        self.assertEqual(readable["exceptions"], [])
+
+        admin = self.client()
+        admin.login("dakota", "correct-horse")
+        status, bad_program = admin.call(
+            "POST",
+            "/api/class-exceptions",
+            {"program": "nope", "date": "2026-10-29", "kind": "skip"},
+        )
+        self.assertEqual(status, 400, bad_program)
+        status, wednesday = admin.call(
+            "POST",
+            "/api/class-exceptions",
+            {"program": "adult", "date": "2026-10-28", "kind": "skip", "reason": "Nope"},
+        )
+        self.assertEqual(status, 400, wednesday)
+        self.assertIn("Tuesday or Thursday", wednesday["error"])
+        status, already = admin.call(
+            "POST",
+            "/api/class-exceptions",
+            {"program": "adult", "date": "2026-10-29", "kind": "extra", "reason": "Open mat"},
+        )
+        self.assertEqual(status, 400, already)
+        self.assertIn("already on the schedule", already["error"])
+        status, long_reason = admin.call(
+            "POST",
+            "/api/class-exceptions",
+            {"program": "adult", "date": "2026-10-29", "kind": "skip", "reason": "x" * 121},
+        )
+        self.assertEqual(status, 400, long_reason)
+        status, backwards = admin.call(
+            "POST",
+            "/api/class-exceptions",
+            {
+                "program": "adult",
+                "date": "2026-10-28",
+                "kind": "extra",
+                "reason": "Open mat",
+                "start": "20:00",
+                "end": "18:30",
+            },
+        )
+        self.assertEqual(status, 400, backwards)
+        self.assertIn("after the start", backwards["error"])
+
+        conn = self.api.db()
+        before_log = conn.execute("SELECT COUNT(*) AS n FROM change_log").fetchone()["n"]
+        conn.close()
+        status, skipped = admin.call(
+            "POST",
+            "/api/class-exceptions",
+            {"program": "adult", "date": "2026-10-29", "kind": "skip", "reason": "Thanksgiving"},
+        )
+        self.assertEqual(status, 200, skipped)
+        self.assertEqual(skipped["exception"]["program"], "adult")
+        self.assertEqual(skipped["exception"]["start"], "18:30")
+        self.assertEqual(skipped["exception"]["end"], "20:00")
+        status, extra = admin.call(
+            "POST",
+            "/api/class-exceptions",
+            {
+                "program": "adult",
+                "date": "2026-10-28",
+                "kind": "extra",
+                "reason": "Open mat",
+                "start": "18:30",
+                "end": "20:00",
+            },
+        )
+        self.assertEqual(status, 200, extra)
+        self.assertEqual(extra["exception"]["kind"], "extra")
+        status, kids_same_day = admin.call(
+            "POST",
+            "/api/class-exceptions",
+            {"date": "2026-11-10", "kind": "skip", "reason": "Kids only"},
+        )
+        self.assertEqual(status, 200, kids_same_day)
+
+        status, adult_public = public.call("GET", "/api/public/class-exceptions?program=adult")
+        self.assertEqual(status, 200, adult_public)
+        by_date = {row["date"]: row for row in adult_public["exceptions"]}
+        self.assertEqual(by_date["2026-10-29"]["kind"], "skip")
+        self.assertEqual(by_date["2026-10-29"]["reason"], "Thanksgiving")
+        self.assertEqual(by_date["2026-10-28"]["kind"], "extra")
+        self.assertEqual(by_date["2026-10-28"]["reason"], "Open mat")
+        self.assertNotIn("createdBy", by_date["2026-10-29"])
+        self.assertNotIn("2026-11-10", by_date)
+        status, kids_public = public.call("GET", "/api/public/class-exceptions")
+        self.assertEqual(status, 200, kids_public)
+        kids_dates = {row["date"] for row in kids_public["exceptions"]}
+        self.assertIn("2026-11-10", kids_dates)
+        self.assertNotIn("2026-10-29", kids_dates)
+        self.assertNotIn("2026-10-28", kids_dates)
+        status, unknown = public.call("GET", "/api/public/class-exceptions?program=nope")
+        self.assertEqual(status, 400, unknown)
+
+        plan = {"mode": "grace", "settings": {"ageGroup": "upper", "title": "GRACE BJJ KIDS"}, "lesson": {"items": []}}
+        status, blocked = admin.call(
+            "PUT",
+            "/api/plans",
+            {"date": "2026-10-28", "ageGroup": "upper", "plan": plan},
+        )
+        self.assertEqual(status, 400, blocked)
+        status, teacher_delete = teacher.call("DELETE", "/api/class-exceptions/2026-10-29?program=adult")
+        self.assertEqual(status, 403, teacher_delete)
+        status, removed_adult = admin.call("DELETE", "/api/class-exceptions/2026-10-29?program=adult")
+        self.assertEqual(status, 200, removed_adult)
+        status, kids_still = public.call("GET", "/api/public/class-exceptions")
+        self.assertIn("2026-11-10", {row["date"] for row in kids_still["exceptions"]})
+        admin.call("DELETE", "/api/class-exceptions/2026-10-28?program=adult")
+        admin.call("DELETE", "/api/class-exceptions/2026-11-10")
+        status, adult_empty = public.call("GET", "/api/public/class-exceptions?program=adult")
+        self.assertEqual(adult_empty["exceptions"], [])
+        status, kids_empty = public.call("GET", "/api/public/class-exceptions")
+        self.assertNotIn("2026-11-10", {row["date"] for row in kids_empty["exceptions"]})
+
+        conn = self.api.db()
+        try:
+            after_log = conn.execute("SELECT COUNT(*) AS n FROM change_log").fetchone()["n"]
+            self.assertEqual(after_log, before_log)
+        finally:
+            conn.close()
+
+        old_path = tempfile.NamedTemporaryFile(suffix=".db", delete=False).name
+        self.addCleanup(lambda: os.path.exists(old_path) and os.remove(old_path))
+        old = connect(old_path)
+        try:
+            old.execute(
+                """
+                CREATE TABLE class_exceptions (
+                  date TEXT PRIMARY KEY,
+                  kind TEXT NOT NULL CHECK(kind IN ('skip', 'extra')),
+                  reason TEXT NOT NULL DEFAULT '',
+                  start_time TEXT NOT NULL DEFAULT '17:30',
+                  end_time TEXT NOT NULL DEFAULT '18:15',
+                  created_by TEXT NOT NULL DEFAULT '',
+                  created_at TEXT NOT NULL
+                )
+                """
+            )
+            old.execute(
+                """
+                INSERT INTO class_exceptions
+                  (date, kind, reason, start_time, end_time, created_by, created_at)
+                VALUES ('2026-10-27', 'skip', 'Church event', '17:30', '18:15', 'dakota', '2026-10-01T00:00:00Z')
+                """
+            )
+            old.commit()
+            migrate(old)
+            copied = old.execute("SELECT program, date, reason FROM class_exceptions").fetchone()
+            self.assertEqual(copied["program"], "kids")
+            self.assertEqual(copied["date"], "2026-10-27")
+            self.assertEqual(copied["reason"], "Church event")
+            migrate(old)
+            self.assertEqual(old.execute("SELECT COUNT(*) AS n FROM class_exceptions").fetchone()["n"], 1)
+            old.execute(
+                """
+                INSERT INTO class_exceptions
+                  (program, date, kind, reason, start_time, end_time, created_by, created_at)
+                VALUES ('adult', '2026-10-27', 'skip', 'Adult night', '18:30', '20:00', 'dakota', '2026-10-01T00:00:00Z')
+                """
+            )
+            old.commit()
+            self.assertEqual(old.execute("SELECT COUNT(*) AS n FROM class_exceptions").fetchone()["n"], 2)
+        finally:
+            old.close()
 
     def waiver_body(self, **overrides):
         body = {

@@ -4,7 +4,7 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <meta name="bjj-base" content="">
-  <script src="/bjj-base.js?v=20261024-54"></script>
+  <script src="/bjj-base.js?v=20261024-55"></script>
   <meta name="robots" content="noindex, nofollow, noarchive, nosnippet">
   <meta name="googlebot" content="noindex, nofollow">
   <title>Grace BJJ Kids</title>
@@ -23,9 +23,9 @@
   <meta name="apple-mobile-web-app-title" content="Grace BJJ Kids" />
   <link rel="icon" href="/icons/favicon-32.png" type="image/png" sizes="32x32" />
   <link rel="apple-touch-icon" href="/icons/apple-touch-icon.png" sizes="180x180" />
-  <link rel="stylesheet" href="/css/splash.css?v=20261024-54" />
-  <link rel="stylesheet" href="/css/site-header.css?v=20261024-54" />
-  <script src="/pwa.js?v=20261024-54" defer></script>
+  <link rel="stylesheet" href="/css/splash.css?v=20261024-55" />
+  <link rel="stylesheet" href="/css/site-header.css?v=20261024-55" />
+  <script src="/pwa.js?v=20261024-55" defer></script>
 </head>
 <body>
   <a class="skip" href="#main">Skip to content</a>
@@ -280,7 +280,7 @@
     </form>
     <img id="giLightboxImg" alt="" />
   </dialog>
-  <script src="/calendar/class-days.js?v=20261024-54"></script>
+  <script src="/calendar/class-days.js?v=20261024-55"></script>
   <script>
     // Phone and sign-up stay blank. The contact email is in the Location section. The street address is in the page.
     const PUBLIC_INFO = {
@@ -292,109 +292,15 @@
     };
 
     const Days = window.GRACE_CLASS_DAYS;
-    const now = new Date();
-    let classExceptions = [];
-
-    function paintNextClass() {
-      const upcoming = Days.nextClass(now, classExceptions);
-      const info = Days.meeting(upcoming.year, upcoming.month, upcoming.day, classExceptions);
-      const when = Days.longDate(upcoming.year, upcoming.month, upcoming.day);
-      const clock = info.extra && info.start && info.end ? " · " + info.start + "–" + info.end + " PT" : "";
-      document.getElementById("nextClass").textContent = "Next class: " + when + clock;
-    }
-
-    const calendarRoot = document.getElementById("classCalendar");
-    const calendarNotes = document.getElementById("calNotes");
-    let view = Days.clampMonth(Days.laParts(now).year, Days.laParts(now).month, now);
-
-    function esc(value) {
-      return String(value).replace(/&/g, "&amp;").replace(/"/g, "&quot;").replace(/</g, "&lt;");
-    }
-
-    function renderCalendar() {
-      const today = Days.laParts(now);
-      const next = Days.nextClass(now, classExceptions);
-      const notes = [];
-      view = Days.clampMonth(view.year, view.month, now);
-      const prev = Days.addMonths(view.year, view.month, -1);
-      const following = Days.addMonths(view.year, view.month, 1);
-      const prevOk = Days.canShowMonth(prev.year, prev.month, now);
-      const nextOk = Days.canShowMonth(following.year, following.month, now);
-      const title = Days.monthTitle(view.year, view.month);
-      const cells = Days.monthCells(view.year, view.month);
-      const weeks = [];
-      for (let i = 0; i < cells.length; i += 7) weeks.push(cells.slice(i, i + 7));
-      if (!calendarRoot.querySelector("table")) {
-        const head = Days.WEEKDAYS.map((name) => `<th scope="col" abbr="${esc(name)}">${esc(name.slice(0, 3))}</th>`).join("");
-        calendarRoot.innerHTML = `
-          <div class="cal-nav">
-            <button type="button" data-cal="prev" aria-label="Previous month">Prev</button>
-            <h3 id="calHeading" aria-live="polite"></h3>
-            <button type="button" data-cal="next" aria-label="Next month">Next</button>
-          </div>
-          <table class="month-grid">
-            <caption class="visually-hidden"></caption>
-            <thead><tr>${head}</tr></thead>
-            <tbody></tbody>
-          </table>`;
-      }
-      calendarRoot.querySelector("[data-cal=prev]").disabled = !prevOk;
-      calendarRoot.querySelector("[data-cal=next]").disabled = !nextOk;
-      calendarRoot.querySelector("#calHeading").textContent = title;
-      calendarRoot.querySelector("caption").textContent = "Class days in " + title;
-      const body = weeks
-        .map((week) => {
-          const row = week
-            .map((cell) => {
-              if (!cell.inMonth) return `<td class="is-out"><span aria-hidden="true">${cell.day}</span></td>`;
-              const info = Days.meeting(cell.year, cell.month, cell.day, classExceptions);
-              const classDay = info.meets;
-              const isNext = classDay && cell.year === next.year && cell.month === next.month && cell.day === next.day;
-              const isToday = cell.year === today.year && cell.month === today.month && cell.day === today.day;
-              const classes = ["day"];
-              if (classDay) classes.push("is-class");
-              if (info.extra) classes.push("is-extra");
-              if (info.skipped) classes.push("is-skip");
-              if (isNext) classes.push("is-next");
-              if (isToday) classes.push("is-today");
-              const label = Days.dayLabel(cell.year, cell.month, cell.day, { classDay, next: isNext, today: isToday });
-              let tag = "";
-              if (info.skipped) {
-                tag = `<span class="day-tag">No class</span>`;
-                const why = info.reason ? ` (${info.reason})` : "";
-                notes.push(`<li>${esc(Days.longDate(cell.year, cell.month, cell.day))}: No class${esc(why)}</li>`);
-              } else if (isNext) {
-                tag = `<span class="day-tag">Next class</span>`;
-              } else if (info.extra) {
-                tag = `<span class="day-tag">Make-up</span>`;
-                if (info.reason) notes.push(`<li>${esc(Days.longDate(cell.year, cell.month, cell.day))}: ${esc(info.reason)}</li>`);
-              }
-              const skipLabel = info.skipped ? `, no class${info.reason ? ", " + info.reason : ""}` : "";
-              return `<td class="${classes.join(" ")}" aria-label="${esc(label + skipLabel)}"><span class="day-num">${cell.day}</span>${tag}</td>`;
-            })
-            .join("");
-          return `<tr>${row}</tr>`;
-        })
-        .join("");
-      calendarRoot.querySelector("tbody").innerHTML = body;
-      if (calendarNotes) calendarNotes.innerHTML = notes.join("");
-    }
-
-    calendarRoot.addEventListener("click", (event) => {
-      const btn = event.target.closest("button[data-cal]");
-      if (!btn || btn.disabled) return;
-      const step = btn.dataset.cal === "next" ? 1 : -1;
-      view = Days.addMonths(view.year, view.month, step);
-      renderCalendar();
+    const calendar = Days.mountCalendar({
+      root: document.getElementById("classCalendar"),
+      notes: document.getElementById("calNotes"),
+      next: document.getElementById("nextClass"),
     });
-    paintNextClass();
-    renderCalendar();
     fetch("/api/public/class-exceptions", { credentials: "same-origin" })
       .then((res) => (res.ok ? res.json() : { exceptions: [] }))
       .then((body) => {
-        classExceptions = Array.isArray(body.exceptions) ? body.exceptions : [];
-        paintNextClass();
-        renderCalendar();
+        calendar.setExceptions(Array.isArray(body.exceptions) ? body.exceptions : []);
       })
       .catch(() => {});
 
@@ -529,6 +435,6 @@
         .catch(function () {});
     })();
   </script>
-  <script src="/site-nav.js?v=20261024-54"></script>
+  <script src="/site-nav.js?v=20261024-55"></script>
 </body>
 </html>

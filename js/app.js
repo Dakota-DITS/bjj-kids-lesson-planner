@@ -64,6 +64,7 @@
     loadedPlanAge: "",
     savedPlans: [],
     classExceptions: [],
+    adultExceptions: [],
   };
 
   let cameraStream = null;
@@ -2444,6 +2445,29 @@ function sparringSection(plan) {
     return window.GRACE_CLASS_DAYS || null;
   }
 
+  function calendarProgram() {
+    return state.program === "adult" ? "adult" : "kids";
+  }
+
+  function calendarDays() {
+    const days = classDayApi();
+    if (!days) return null;
+    return days.forProgram ? days.forProgram(calendarProgram()) : days;
+  }
+
+  function calendarExceptions() {
+    return state.program === "adult" ? state.adultExceptions || [] : state.classExceptions || [];
+  }
+
+  function syncCalendarDefaults() {
+    const adult = state.program === "adult";
+    if ($("extraStart")) $("extraStart").value = adult ? "18:30" : "17:30";
+    if ($("extraEnd")) $("extraEnd").value = adult ? "20:00" : "18:15";
+    if ($("extraReason")) {
+      $("extraReason").placeholder = adult ? "Reason, optional" : "Make-up for a skipped Tuesday";
+    }
+  }
+
   function nextMeetingIso(from) {
     const days = classDayApi();
     if (!days) return P.nextClassDate(from);
@@ -2513,16 +2537,24 @@ function sparringSection(plan) {
   function renderClassCalendar() {
     const root = $("calendarList");
     if (!root) return;
-    const days = classDayApi();
+    const days = calendarDays();
     const intro = $("calendarIntro");
-    if (intro && !isAdmin()) {
-      intro.textContent = "Regular classes stay on the 2nd and 4th Tuesday, 5:30–6:15 PM PT. Ask an admin to skip a date or add a make-up.";
+    if (intro) {
+      if (state.program === "adult") {
+        intro.textContent = isAdmin()
+          ? "Regular classes stay on Tuesday and Thursday, 6:30–8:00 PM PT. Ages 11 and up."
+          : "Regular classes stay on Tuesday and Thursday, 6:30–8:00 PM PT. Ages 11 and up. Ask an admin to skip a date or add a make-up.";
+      } else if (isAdmin()) {
+        intro.textContent = "Regular classes stay on the 2nd and 4th Tuesday, 5:30–6:15 PM PT, starting Tuesday, October 27, 2026.";
+      } else {
+        intro.textContent = "Regular classes stay on the 2nd and 4th Tuesday, 5:30–6:15 PM PT. Ask an admin to skip a date or add a make-up.";
+      }
     }
     if (!days) {
       root.innerHTML = `<p class="hint">The class calendar did not load.</p>`;
       return;
     }
-    const rows = days.upcomingMeetings(new Date(), 184, state.classExceptions);
+    const rows = days.upcomingMeetings(new Date(), 184, calendarExceptions());
     if (!rows.length) {
       root.innerHTML = `<p class="hint">No class dates in the next six months.</p>`;
       return;
@@ -2562,8 +2594,10 @@ function sparringSection(plan) {
   }
 
   async function refreshClassExceptions() {
-    const body = await window.BJJ_API.send("GET", "/api/class-exceptions");
-    state.classExceptions = Array.isArray(body.exceptions) ? body.exceptions : [];
+    const kids = await window.BJJ_API.send("GET", "/api/class-exceptions?program=kids");
+    state.classExceptions = Array.isArray(kids.exceptions) ? kids.exceptions : [];
+    const adult = await window.BJJ_API.send("GET", "/api/class-exceptions?program=adult");
+    state.adultExceptions = Array.isArray(adult.exceptions) ? adult.exceptions : [];
     noteSkippedDate();
     updateScheduleHint();
     renderHome();
@@ -3355,7 +3389,7 @@ function sparringSection(plan) {
   const LEVEL_LABEL = P.LEVEL_LABELS;
 
   function setView(view) {
-    if (state.program === "adult" && (view === "plan" || view === "review" || view === "calendar")) view = "progress";
+    if (state.program === "adult" && (view === "plan" || view === "review")) view = "progress";
     if (view !== "checkin") stopCamera();
     state.view = view;
     document.body.classList.remove("menu-open");
@@ -4607,10 +4641,12 @@ function sparringSection(plan) {
       /* the choice still applies for this visit */
     }
     renderAdultRoster();
-    const kidsOnly = next === "adult" && (state.view === "plan" || state.view === "review" || state.view === "calendar");
+    const kidsOnly = next === "adult" && (state.view === "plan" || state.view === "review");
+    syncCalendarDefaults();
     if (!keepView && kidsOnly) setView("progress");
     else if (state.view === "progress") renderProgress();
     else if (state.view === "checkin") renderCheckinList();
+    else if (state.view === "calendar") renderClassCalendar();
   }
 
   function restoreProgram() {
@@ -6500,6 +6536,7 @@ function sparringSection(plan) {
         if (!isAdmin()) return;
         try {
           await window.BJJ_API.send("POST", "/api/class-exceptions", {
+            program: calendarProgram(),
             date: $("extraDate").value,
             kind: "extra",
             reason: $("extraReason").value,
@@ -6523,10 +6560,11 @@ function sparringSection(plan) {
         if (!isAdmin()) return;
         try {
           if (undo) {
-            await window.BJJ_API.send("DELETE", `/api/class-exceptions/${undo.dataset.calUndo}`);
+            await window.BJJ_API.send("DELETE", `/api/class-exceptions/${undo.dataset.calUndo}?program=${calendarProgram()}`);
           } else {
             const reasonInput = document.querySelector(`[data-skip-reason="${skip.dataset.calSkip}"]`);
             await window.BJJ_API.send("POST", "/api/class-exceptions", {
+              program: calendarProgram(),
               date: skip.dataset.calSkip,
               kind: "skip",
               reason: reasonInput ? reasonInput.value : "",
