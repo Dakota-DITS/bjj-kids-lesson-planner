@@ -3922,9 +3922,12 @@ function sparringSection(plan) {
   function adultProgressLine(student) {
     const level = adultLevel();
     if (!level) return "No adult curriculum is loaded.";
-    const total = Array.isArray(level.classes) ? level.classes.length : 0;
-    const done = (level.classes || []).filter((item) => adultClassDone(student.id, level, item)).length;
-    return `${done}/${total} classes toward blue belt.`;
+    // This list is white-to-blue only. Blue and higher must not read as "toward blue belt."
+    if (adultBelts().indexOf(student && student.belt) >= 1) return "";
+    const classes = Array.isArray(level.classes) ? level.classes : [];
+    if (!classes.length) return "";
+    const done = classes.filter((item) => adultClassDone(student.id, level, item)).length;
+    return `${done} of ${classes.length} curriculum classes mastered toward blue belt.`;
   }
 
   function renderAdultRoster() {
@@ -3943,11 +3946,13 @@ function sparringSection(plan) {
             const own = isOwnRecord(person)
               ? `<p class="own-record-note">Ask another staff member to update your record.</p>`
               : rankEditorHtml(person);
+            const curriculum = adultProgressLine(person);
+            const curriculumHtml = curriculum ? `<p class="adult-count">${esc(curriculum)}</p>` : "";
             return `<article class="kid-block" data-id="${esc(person.id)}">
               <h3>${esc(person.name)}</h3>
               ${staffLine}
               ${own}
-              <p class="adult-count">${esc(adultProgressLine(person))}</p>
+              ${curriculumHtml}
               <p>${waiver}</p>
             </article>`;
           })
@@ -4106,9 +4111,15 @@ function sparringSection(plan) {
     let count = "";
     let sub = "";
     if (state.program === "adult") {
-      count = adultProgressLine(person).replace(" toward blue belt.", "");
+      const mastered = adultProgressLine(person).replace(/\.$/, "");
       const attended = attendanceDates(person).length;
-      sub = `${attended} ${attended === 1 ? "class" : "classes"} attended`;
+      const attendedLabel = `${attended} ${attended === 1 ? "class" : "classes"} attended`;
+      if (mastered) {
+        count = mastered;
+        sub = attendedLabel;
+      } else {
+        count = attendedLabel;
+      }
     } else {
       const stats = kidTechniqueStats(person);
       const hint = stripeHint(person);
@@ -4255,14 +4266,18 @@ function sparringSection(plan) {
       : DATA.belts
           .map(([id, label]) => `<option value="${esc(id)}"${id === person.belt ? " selected" : ""}>${esc(label)}</option>`)
           .join("");
+    const stripes = P.clampInt(person.stripes, 0, 4, 0);
+    const stripeLabel = `stripes-${person.id}`;
     return `<div class="rank-edit">
-      <label>Belt <select data-rank-belt="${esc(person.id)}" aria-label="Belt for ${esc(person.name)}">${belts}</select></label>
-      <div class="stripe-stepper" role="group" aria-label="Stripes for ${esc(person.name)}">
-        <button type="button" data-stripe-delta="-1" data-rank-student="${esc(person.id)}" aria-label="Remove a stripe">−</button>
-        <span>${esc(String(P.clampInt(person.stripes, 0, 4, 0)))}</span>
-        <button type="button" data-stripe-delta="1" data-rank-student="${esc(person.id)}" aria-label="Add a stripe">+</button>
+      <label class="rank-row"><span class="rank-name">Belt</span> <select data-rank-belt="${esc(person.id)}" aria-label="Belt for ${esc(person.name)}">${belts}</select></label>
+      <div class="rank-row">
+        <span class="rank-name" id="${esc(stripeLabel)}">Stripes</span>
+        <div class="stripe-stepper" role="group" aria-labelledby="${esc(stripeLabel)}">
+          <button type="button" data-stripe-delta="-1" data-rank-student="${esc(person.id)}" aria-label="Remove a stripe"${stripes <= 0 ? " disabled" : ""}>−</button>
+          <span>${esc(String(stripes))}</span>
+          <button type="button" data-stripe-delta="1" data-rank-student="${esc(person.id)}" aria-label="Add a stripe"${stripes >= 4 ? " disabled" : ""}>+</button>
+        </div>
       </div>
-      <label>Stripes <select data-rank-stripes="${esc(person.id)}" aria-label="Stripe count for ${esc(person.name)}">${stripeOptions(person.stripes)}</select></label>
     </div>`;
   }
 
@@ -4301,8 +4316,9 @@ function sparringSection(plan) {
     const staffLine = person.staffLink && person.staffLink.displayName
       ? `<p class="staff-member-line">Staff · ${esc(person.staffLink.displayName)}</p>`
       : "";
+    const curriculum = state.program === "adult" ? adultProgressLine(person) : "";
     const waiver = state.program === "adult"
-      ? `<p>${person.waiver && person.waiver.signed ? `Waiver signed ${esc(person.waiver.signedOn)}.` : "No signed waiver."}</p><p class="adult-count">${esc(adultProgressLine(person))}</p><button type="button" class="ghost" data-adult-card="${esc(person.id)}">Check-in card</button>`
+      ? `<p>${person.waiver && person.waiver.signed ? `Waiver signed ${esc(person.waiver.signedOn)}.` : "No signed waiver."}</p>${curriculum ? `<p class="adult-count">${esc(curriculum)}</p>` : ""}<button type="button" class="ghost" data-adult-card="${esc(person.id)}">Check-in card</button>`
       : kidDetailExtras(person);
     return `<h2>${esc(person.name)}</h2>
       ${own}
@@ -4562,7 +4578,10 @@ function sparringSection(plan) {
   function adultScanNote(people) {
     const lines = (people || [])
       .filter((person) => person && person.program === "adult")
-      .map((person) => `${person.name} ${adultProgressLine(person)}`);
+      .map((person) => {
+        const line = adultProgressLine(person);
+        return line ? `${person.name} ${line}` : person.name;
+      });
     return lines.length ? ` ${lines.join(" ")}` : "";
   }
 
@@ -5312,7 +5331,9 @@ function sparringSection(plan) {
           const here = ids.has(person.id);
           const waiver = person.waiver && person.waiver.signed ? "waiver signed" : "no signed waiver";
           const rank = `${P.beltLabel(person.belt)} · ${stripeText(person)}`;
-          return `<li class="${here ? "here" : ""}">${esc(person.name)} — ${here ? "here" : "not yet"} · ${esc(rank)} · ${esc(waiver)} · ${esc(adultProgressLine(person))}</li>`;
+          const line = adultProgressLine(person);
+          const progress = line ? ` · ${esc(line)}` : "";
+          return `<li class="${here ? "here" : ""}">${esc(person.name)} — ${here ? "here" : "not yet"} · ${esc(rank)} · ${esc(waiver)}${progress}</li>`;
         })
         .join("");
       return;
@@ -6191,11 +6212,13 @@ function sparringSection(plan) {
       });
       $("adultRosterList").addEventListener("click", async (event) => {
         const delta = event.target.closest("[data-stripe-delta]");
-        if (!delta) return;
+        if (!delta || delta.disabled) return;
         const person = (state.rosterAdults || []).find((item) => item.id === delta.dataset.rankStudent);
         if (!person) return;
-        const next = P.clampInt(person.stripes, 0, 4, 0) + Number(delta.dataset.stripeDelta || 0);
-        await saveRank(person, person.belt, P.clampInt(next, 0, 4, person.stripes));
+        const current = P.clampInt(person.stripes, 0, 4, 0);
+        const next = current + Number(delta.dataset.stripeDelta || 0);
+        if (next < 0 || next > 4) return;
+        await saveRank(person, person.belt, next);
       });
     }
     if ($("addAdultBtn")) $("addAdultBtn").addEventListener("click", () => addAdult());
@@ -6274,10 +6297,13 @@ function sparringSection(plan) {
     $("progressView").addEventListener("click", async (event) => {
       const delta = event.target.closest("[data-stripe-delta]");
       if (delta) {
+        if (delta.disabled) return;
         const person = allStudents().find((item) => item.id === delta.dataset.rankStudent);
         if (!person) return;
-        const next = P.clampInt(person.stripes, 0, 4, 0) + Number(delta.dataset.stripeDelta || 0);
-        await saveRank(person, person.belt, P.clampInt(next, 0, 4, person.stripes));
+        const current = P.clampInt(person.stripes, 0, 4, 0);
+        const next = current + Number(delta.dataset.stripeDelta || 0);
+        if (next < 0 || next > 4) return;
+        await saveRank(person, person.belt, next);
         return;
       }
       const addAttend = event.target.closest("[data-attend-add]");
@@ -6968,8 +6994,12 @@ function sparringSection(plan) {
         const reset = user.id === mine
           ? ""
           : `<button class="ghost" type="button" data-reset="${esc(user.id)}" data-username="${esc(user.username)}">Reset password</button>`;
-        const makeAdmin = `<button class="ghost" type="button" data-role-user="${esc(user.id)}" data-role="admin"${user.role === "admin" ? " disabled" : ""}>Make admin</button>`;
-        const makeTeacher = `<button class="ghost" type="button" data-role-user="${esc(user.id)}" data-role="teacher"${user.role === "teacher" ? " disabled" : ""}>Make teacher</button>`;
+        const makeAdmin = user.role === "admin"
+          ? ""
+          : `<button class="ghost" type="button" data-role-user="${esc(user.id)}" data-role="admin">Make admin</button>`;
+        const makeTeacher = user.role === "teacher"
+          ? ""
+          : `<button class="ghost" type="button" data-role-user="${esc(user.id)}" data-role="teacher">Make teacher</button>`;
         const linked = user.memberName
           ? `Linked member: ${user.memberName}`
           : "Not linked to a member";

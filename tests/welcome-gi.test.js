@@ -72,6 +72,6 @@ const publicList = sw.split("const PUBLIC_ASSETS")[1].split("const STAFF_ASSETS"
 assert.equal(publicList.includes("/img/gi/"), false);
 assert.ok(sw.includes('path.startsWith("/img/gi/")'));
 assert.equal((sw.match(/"\/api\//g) || []).length, 1);
-assert.ok(sw.includes('const VERSION = "20261024-53"'));
+assert.ok(sw.includes('const VERSION = "20261024-54"'));
 
 console.log("welcome gi checks passed");
