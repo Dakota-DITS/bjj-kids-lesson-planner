@@ -9,9 +9,23 @@
   var base = pageBase();
   if (!("serviceWorker" in navigator)) return;
 
-  var staff = location.pathname === base + "/app" || location.pathname.indexOf(base + "/app/") === 0;
+  var path = location.pathname || "/";
+  if (base && path.indexOf(base) === 0) path = path.slice(base.length) || "/";
+  if (path.charAt(0) !== "/") path = "/" + path;
+  var inApp = path === "/app" || path.indexOf("/app/") === 0;
+  var inLogin = path === "/login" || path.indexOf("/login/") === 0;
+  var inKids = path === "/kids" || path.indexOf("/kids/") === 0 || path === "/coloring" || path.indexOf("/coloring/") === 0;
+  var staff = inApp;
+  var installLine = (inApp || inLogin)
+    ? "Add Grace BJJ Staff to your home screen."
+    : (inKids ? "Add Grace BJJ Kids to your home screen." : "Add Grace BJJ to your home screen.");
+  var iosLine = (inApp || inLogin)
+    ? "To install Grace BJJ Staff, tap Share, then Add to Home Screen."
+    : (inKids
+      ? "To install Grace BJJ Kids, tap Share, then Add to Home Screen."
+      : "To install Grace BJJ, tap Share, then Add to Home Screen.");
   var scope = staff ? base + "/app/" : (base ? base + "/" : "/");
-  var dismissKey = staff ? "bjj-install-dismiss-staff" : "bjj-install-dismiss-public";
+  var dismissKey = (inApp || inLogin) ? "bjj-install-dismiss-staff" : "bjj-install-dismiss-public";
   var refreshing = false;
   var hadController = !!navigator.serviceWorker.controller;
 
@@ -98,11 +112,7 @@
     tip.setAttribute("role", "region");
     tip.setAttribute("aria-label", "Add to home screen");
     var text = document.createElement("p");
-    if (ios) {
-      text.textContent = "To install, tap Share, then Add to Home Screen.";
-    } else {
-      text.textContent = staff ? "Add Grace BJJ Staff to your home screen." : "Add Grace BJJ Kids to your home screen.";
-    }
+    text.textContent = ios ? iosLine : installLine;
     tip.appendChild(text);
     if (!ios) {
       var add = document.createElement("button");
