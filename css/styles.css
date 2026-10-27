@@ -305,6 +305,83 @@ body {
   padding: 4px 6px;
 }
 
+.rename-form {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  align-items: center;
+  margin: 0;
+}
+.rename-form input {
+  min-width: 12rem;
+  max-width: 100%;
+  font: inherit;
+  color: var(--ui-text);
+  background: #1c1917;
+  border: 1px solid #57534e;
+  border-radius: 6px;
+  padding: 4px 8px;
+}
+
+.waiver-view[hidden] { display: none !important; }
+.waiver-view {
+  position: fixed;
+  inset: 0;
+  z-index: 40;
+  overflow: auto;
+  background: #e7e5e4;
+  color: #1c1917;
+  padding: 16px 16px 48px;
+}
+.waiver-view-bar {
+  display: flex;
+  gap: 8px;
+  width: min(8.5in, 100%);
+  margin: 0 auto 12px;
+}
+.waiver-print-sheet {
+  box-sizing: border-box;
+  width: min(8.5in, 100%);
+  min-height: 11in;
+  margin: 0 auto;
+  padding: 0.5in;
+  background: #fff;
+  color: #111;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.18);
+  font-family: "Liberation Sans", Arial, sans-serif;
+}
+.waiver-print-head h1 {
+  margin: 0 0 4px;
+  font-size: 22px;
+  line-height: 1.2;
+}
+.waiver-print-head p { margin: 0; }
+.waiver-kicker {
+  font-size: 12px;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+.waiver-fields {
+  display: grid;
+  grid-template-columns: minmax(9rem, 2.2in) minmax(0, 1fr);
+  gap: 3px 12px;
+  margin: 14px 0 8px;
+}
+.waiver-field { display: contents; }
+.waiver-fields dt { margin: 0; font-weight: 700; }
+.waiver-fields dd { margin: 0; overflow-wrap: anywhere; }
+.waiver-sign { margin: 10px 0 0; }
+.waiver-sign figcaption { font-size: 12px; font-weight: 700; }
+.waiver-sign img {
+  display: block;
+  width: auto;
+  max-width: 3.4in;
+  max-height: 1.05in;
+  object-fit: contain;
+  object-position: left center;
+  background: #fff;
+}
+
 .sheet-list-empty {
   display: grid;
   place-items: center;
@@ -1494,6 +1571,48 @@ body.program-adult #extraClassForm.admin-only { display: block !important; }
     background: #fff !important;
   }
   .wallet-card, .signin-row, .progress-sheet { break-inside: avoid; }
+  .waiver-view { display: none !important; }
+  body[data-print="waiver"] .app,
+  body[data-print="waiver"] .gate,
+  body[data-print="waiver"] .must-change,
+  body[data-print="waiver"] .toast,
+  body[data-print="waiver"] .modal-back,
+  body[data-print="waiver"] .phone-bar,
+  body[data-print="waiver"] .scrim,
+  body[data-print="waiver"] .reset-dialog {
+    display: none !important;
+  }
+  body[data-print="waiver"] {
+    margin: 0 !important;
+    padding: 0 !important;
+    background: #fff !important;
+  }
+  body[data-print="waiver"] .waiver-view {
+    display: block !important;
+    position: static !important;
+    inset: auto !important;
+    overflow: visible !important;
+    background: #fff !important;
+    color: #000 !important;
+    padding: 0 !important;
+  }
+  body[data-print="waiver"] .waiver-print-sheet {
+    width: auto;
+    max-width: none;
+    min-height: 0;
+    max-height: 10in;
+    margin: 0;
+    padding: 0;
+    box-shadow: none;
+    overflow: hidden;
+    break-inside: avoid;
+    page-break-inside: avoid;
+    break-after: avoid;
+    page-break-after: avoid;
+  }
+  body[data-print="waiver"] .waiver-print-head h1 { font-size: 18pt; }
+  body[data-print="waiver"] .waiver-fields { font-size: 11pt; }
+  body[data-print="waiver"] .waiver-sign img { max-height: 1.15in; }
 }
 
 .seg.views {
@@ -2058,6 +2177,8 @@ body.authed #mustChange { display: none !important; }
   #checkinView .btn-row button, .toolbar .btn-row button { width: 100%; }
   #checkinVideo { max-height: 240px; }
   .work-view { margin: 12px 0 32px; padding: 16px; }
+  .waiver-print-sheet { min-height: 0; padding: 16px; }
+  .waiver-fields { grid-template-columns: 1fr; }
   .wallet-grid { grid-template-columns: 1fr; }
   .sidebar, .stage, .paper, .work-view, .toolbar, .plan-running-header, .phone-bar {
     min-width: 0;

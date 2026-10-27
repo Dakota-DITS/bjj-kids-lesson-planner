@@ -18,6 +18,7 @@
     pinned: [],
     reps: {},
     roster: [],
+    renamingId: "",
     rosterAdults: [],
     program: "kids",
     adultChecks: {},
@@ -2308,13 +2309,24 @@ function sparringSection(plan) {
         const waiverBtn = waiver.signed
           ? `<button type="button" data-roster="waiver">View / print waiver</button>`
           : "";
+        const renaming = state.renamingId === kid.id;
+        const nameHtml = renaming
+          ? `<form class="rename-form" data-roster="rename-form">
+              <label for="rename-${id}">Name</label>
+              <input id="rename-${id}" data-roster="rename-input" maxlength="40" value="${esc(kid.name)}" autocomplete="off" />
+              <button type="submit">Save</button>
+              <button type="button" data-roster="rename-cancel">Cancel</button>
+            </form>`
+          : `<h3>${esc(kid.name)}</h3>`;
+        const editBtn = renaming ? "" : `<button type="button" data-roster="rename">Edit name</button>`;
         return `<article class="card roster-card" data-id="${id}">
           <header>
-            <h3>${esc(kid.name)}</h3>
+            ${nameHtml}
             <span class="badge">age ${esc(kid.age)}</span>
           </header>
           <p class="${waiver.signed ? "hint" : "error"}">${waiverLine}</p>
           <div class="roster-edit">
+            ${editBtn}
             ${waiverBtn}
             <button type="button" data-roster="token">New parent code</button>
             <button type="button" data-roster="revoke">Turn off parent code</button>
@@ -3984,12 +3996,16 @@ function sparringSection(plan) {
               : rankEditorHtml(person);
             const curriculum = adultProgressLine(person);
             const curriculumHtml = curriculum ? `<p class="adult-count">${esc(curriculum)}</p>` : "";
+            const waiverBtn = person.waiver && person.waiver.signed && person.waiver.waiverId
+              ? `<button type="button" data-roster="waiver">View / print waiver</button>`
+              : "";
             return `<article class="kid-block" data-id="${esc(person.id)}">
               <h3>${esc(person.name)}</h3>
               ${staffLine}
               ${own}
               ${curriculumHtml}
               <p>${waiver}</p>
+              ${waiverBtn}
             </article>`;
           })
           .join("")
@@ -5694,30 +5710,141 @@ function sparringSection(plan) {
       if (event.target.dataset.roster === "stripes") stripes = P.clampInt(event.target.value, 0, 4, 0);
       await saveRank(kid, belt, stripes);
     });
+    function signatureSrc(value) {
+      const src = String(value || "").trim();
+      return /^data:image\/png;base64,[A-Za-z0-9+/=]+$/.test(src) ? src : "";
+    }
+
+    function waiverField(label, value) {
+      const text = String(value == null ? "" : value).trim();
+      if (!text) return "";
+      return `<div class="waiver-field"><dt>${esc(label)}</dt><dd>${esc(text)}</dd></div>`;
+    }
+
+    function openWaiverSheet(detail) {
+      const view = $("waiverView");
+      const sheet = $("waiverPrintSheet");
+      if (!view || !sheet || !detail) return;
+      const payload = detail.payload && typeof detail.payload === "object" ? detail.payload : {};
+      const goals = Array.isArray(payload.goals)
+        ? payload.goals.filter((item) => typeof item === "string" && item.trim()).join(", ")
+        : "";
+      const kind = detail.kind === "adult" ? "Adult class" : "Kids class";
+      const emergency = [payload.emergencyName, payload.emergencyPhone].filter(Boolean).join(" · ");
+      const signature = signatureSrc(detail.signature);
+      const parentSignature = signatureSrc(detail.parentSignature);
+      sheet.innerHTML =
+        `<header class="waiver-print-head">` +
+        `<p class="waiver-kicker">Grace BJJ · signed enrollment</p>` +
+        `<h1>${esc(detail.participantName || "")}</h1>` +
+        `<p>${esc(kind)}</p>` +
+        `</header>` +
+        `<dl class="waiver-fields">` +
+        waiverField("Signed", detail.signedOn) +
+        waiverField("Signed by", detail.signerName) +
+        waiverField("Printed name", payload.printName) +
+        waiverField("Typed name", payload.typedName) +
+        waiverField("Date of birth", detail.dob) +
+        waiverField("Email", detail.email) +
+        waiverField("Phone", detail.phone) +
+        waiverField("Address", payload.address) +
+        waiverField("Parent or guardian", payload.parentName) +
+        waiverField("Emergency contact", emergency) +
+        waiverField("Goals", goals) +
+        waiverField("Injuries or medical notes", payload.injuries) +
+        waiverField("Parent or guardian printed name", payload.parentPrintName) +
+        `</dl>` +
+        (signature
+          ? `<figure class="waiver-sign"><figcaption>Signature</figcaption><img alt="Signature" src="${signature}" /></figure>`
+          : "") +
+        (parentSignature
+          ? `<figure class="waiver-sign"><figcaption>Parent or guardian signature</figcaption><img alt="Parent or guardian signature" src="${parentSignature}" /></figure>`
+          : "");
+      view.hidden = false;
+      const close = $("waiverPrintClose");
+      if (close) close.focus();
+    }
+
+    function closeWaiverSheet() {
+      const view = $("waiverView");
+      if (view) view.hidden = true;
+      if (document.body.dataset.print === "waiver") delete document.body.dataset.print;
+    }
+
+    function printWaiverSheet() {
+      if (!$("waiverView") || $("waiverView").hidden) return;
+      document.body.dataset.print = "waiver";
+      const finish = () => {
+        window.removeEventListener("afterprint", finish);
+      };
+      window.addEventListener("afterprint", finish);
+      window.print();
+    }
+
     async function printStaffWaiver(waiverId) {
       const detail = await window.BJJ_API.send("GET", `/api/waivers/${waiverId}`);
-      const win = window.open("", "_blank", "noopener,noreferrer");
-      if (!win) {
-        toast("Allow pop-ups to print the form.");
+      openWaiverSheet(detail);
+    }
+
+    if ($("waiverPrintBtn")) $("waiverPrintBtn").addEventListener("click", printWaiverSheet);
+    if ($("waiverPrintClose")) $("waiverPrintClose").addEventListener("click", closeWaiverSheet);
+
+    async function saveKidName(kid, rawName) {
+      const name = String(rawName || "").trim().slice(0, 40);
+      if (!name) {
+        toast("Add the student's name.");
         return;
       }
-      const injuries = detail.payload && detail.payload.injuries ? detail.payload.injuries : "";
-      win.document.write(
-        `<!DOCTYPE html><title>Signed enrollment</title><body style="font-family:sans-serif;padding:24px">` +
-          `<h1>${esc(detail.participantName || "")}</h1>` +
-          `<p>Signed ${esc(detail.signedOn || "")} by ${esc(detail.signerName || "")}</p>` +
-          (injuries ? `<p>Injuries or medical notes: ${esc(injuries)}</p>` : "") +
-          (detail.signature ? `<img alt="Signature" src="${esc(detail.signature)}" />` : "") +
-          `</body>`
-      );
-      win.document.close();
-      win.focus();
-      win.print();
+      const saved = await window.BJJ_API.send("POST", `/api/students/${kid.id}/name`, { name });
+      state.renamingId = "";
+      rememberStudent(saved);
+      renderRoster();
+      renderAdultRoster();
+      if (state.view === "progress") renderProgress();
+      if (state.view === "checkin") renderCheckinList();
+      if (state.view === "calendar") renderClassCalendar();
+      if (state.view === "cards" && state.openCardId === kid.id) {
+        const current = allStudents().find((item) => item.id === kid.id);
+        if (current) openCheckinCard(current);
+      }
+      if (state.plan) retimePlan();
+      refreshChangeLog().catch(() => {});
+      toast("Name saved.");
     }
+
+    $("rosterList").addEventListener("submit", async (event) => {
+      const form = event.target.closest("form[data-roster='rename-form']");
+      if (!form) return;
+      event.preventDefault();
+      const card = form.closest(".roster-card");
+      const kid = card && state.roster.find((item) => item.id === card.dataset.id);
+      if (!kid) return;
+      const input = form.querySelector("[data-roster='rename-input']");
+      try {
+        await saveKidName(kid, input ? input.value : "");
+      } catch (err) {
+        toast(err.message || "Could not save that name.");
+      }
+    });
 
     $("rosterList").addEventListener("click", async (event) => {
       const card = event.target.closest(".roster-card");
       const kid = card && state.roster.find((item) => item.id === card.dataset.id);
+      if (event.target.closest("button[data-roster='rename']") && kid) {
+        state.renamingId = kid.id;
+        renderRoster();
+        const input = $("rosterList").querySelector(`[data-id="${kid.id}"] [data-roster="rename-input"]`);
+        if (input) {
+          input.focus();
+          input.select();
+        }
+        return;
+      }
+      if (event.target.closest("button[data-roster='rename-cancel']")) {
+        state.renamingId = "";
+        renderRoster();
+        return;
+      }
       if (event.target.closest("button[data-roster='waiver']") && kid && kid.waiver && kid.waiver.waiverId) {
         try {
           await printStaffWaiver(kid.waiver.waiverId);
@@ -6216,10 +6343,15 @@ function sparringSection(plan) {
       if (event.target === $("sheetModal")) closeSheetEditor();
     });
 
-    document.addEventListener("keydown", (event) => {
+      document.addEventListener("keydown", (event) => {
       if (event.key === "Escape") {
         closeModal();
         closeSheetEditor();
+        closeWaiverSheet();
+        if (state.renamingId) {
+          state.renamingId = "";
+          renderRoster();
+        }
         document.body.classList.remove("menu-open");
         if ($("menuToggle")) $("menuToggle").setAttribute("aria-expanded", "false");
       }
@@ -6249,6 +6381,19 @@ function sparringSection(plan) {
         await saveRank(person, beltEl ? beltEl.value : person.belt, stripeEl ? Number(stripeEl.value) : person.stripes);
       });
       $("adultRosterList").addEventListener("click", async (event) => {
+        const waiverBtn = event.target.closest("button[data-roster='waiver']");
+        if (waiverBtn) {
+          const block = waiverBtn.closest("[data-id]");
+          const person = block && (state.rosterAdults || []).find((item) => item.id === block.dataset.id);
+          if (person && person.waiver && person.waiver.waiverId) {
+            try {
+              await printStaffWaiver(person.waiver.waiverId);
+            } catch (err) {
+              toast(err.message || "Could not open that form.");
+            }
+          }
+          return;
+        }
         const delta = event.target.closest("[data-stripe-delta]");
         if (!delta || delta.disabled) return;
         const person = (state.rosterAdults || []).find((item) => item.id === delta.dataset.rankStudent);
@@ -6979,6 +7124,7 @@ function sparringSection(plan) {
       if (!value.userId && !value.studentId) return "not linked";
       return value.studentName || value.username || "linked";
     }
+    if (Object.prototype.hasOwnProperty.call(value, "name")) return String(value.name || "");
     return "";
   }
 
