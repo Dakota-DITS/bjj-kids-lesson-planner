@@ -1399,24 +1399,81 @@ body.program-adult #extraClassForm.admin-only { display: block !important; }
   body[data-print="lesson"] .block-title { font-size: 16pt; }
   body[data-print="lesson"] .item-title,
   body[data-print="lesson"] .name-print { font-size: 14pt; }
+  .paper.sheet-page,
   .sheet-page {
     break-before: page;
     page-break-before: always;
-    margin-top: 0;
-    padding: 0.15in 0.2in 0.2in;
-    min-height: 10in;
-    box-shadow: none;
-  }
-  .sheet-page.baked {
+    break-after: auto;
+    page-break-after: auto;
+    margin: 0;
     padding: 0;
+    box-shadow: none;
+    background: #fff;
+    box-sizing: border-box;
+    min-height: 0;
+    height: auto;
+    max-height: 10in;
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+    align-items: stretch;
+  }
+  .paper-wrap > .sheet-page:first-child {
+    break-before: auto;
+    page-break-before: auto;
+  }
+  .sheet-page .sheet-brand { margin: 0 0 2px; }
+  .sheet-page .sheet-logo { height: 32px; }
+  .sheet-page .sheet-title {
+    font-size: 28px;
+    line-height: 1;
+    margin: 0;
+    -webkit-text-stroke-width: 2px;
+  }
+  .sheet-page .sheet-sub { margin: 0 0 2px; font-size: 12px; }
+  .sheet-page .sheet-stage {
+    flex: 0 1 auto;
+    min-height: 0;
+    width: auto;
+    max-width: 100%;
+    margin: 0 auto;
+  }
+  .sheet-page .sheet-art,
+  .sheet-page .sheet-full {
+    display: block;
+    width: auto;
+    max-width: 100%;
+    height: auto;
+    max-height: 6.9in;
+    margin: 0 auto;
+    object-fit: contain;
+  }
+  .sheet-page.baked .sheet-full { max-height: 9.15in; }
+  .sheet-page .sheet-qs { margin: 2px auto; }
+  .sheet-page .sheet-qs li { margin: 2px 0; }
+  .sheet-page .sheet-qs .ask { font-size: 16px; }
+  .sheet-page .sheet-qs .n { font-size: 22px; }
+  .sheet-page .sheet-name { margin-top: 2px; font-size: 24px; }
+  .sheet-page .sheet-foot { margin: 2px 0 0; font-size: 13px; }
+  .sheet-page .comic-grid { margin: 2px 0; gap: 6px; }
+  .sheet-page .comic-panel img,
+  .sheet-page .comic-grid.six .comic-panel img {
+    height: auto;
+    max-height: 1.45in;
+    object-fit: contain;
   }
   .plan-running-header,
   .plan-running-footer {
     position: static;
   }
+  .plan-running-footer {
+    margin-top: 8px;
+    break-before: avoid;
+    page-break-before: avoid;
+  }
   @page {
     size: letter;
-    margin: 0.7in 0.75in 0.75in 0.75in;
+    margin: 0.5in;
   }
   .block { break-inside: avoid; }
   .block.lesson-block { break-inside: auto; }
@@ -1426,8 +1483,16 @@ body.program-adult #extraClassForm.admin-only { display: block !important; }
   body[data-print="cards"] .paper-wrap,
   body[data-print="progress"] .paper-wrap { display: none !important; }
   body[data-print="cards"] #cardView,
-  body[data-print="progress"] #cardView { display: block !important; }
-  .card-page { break-after: page; page-break-after: always; }
+  body[data-print="progress"] #cardView {
+    display: block !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    max-width: none !important;
+    width: auto !important;
+    min-height: 0 !important;
+    box-shadow: none !important;
+    background: #fff !important;
+  }
   .wallet-card, .signin-row, .progress-sheet { break-inside: avoid; }
 }
 
@@ -2034,6 +2099,27 @@ body.authed #mustChange { display: none !important; }
   .block-title .when { white-space: nowrap; }
   .sidebar { transform: none !important; }
   body { overflow: visible; }
+  .card-page {
+    box-sizing: border-box;
+    margin: 0 !important;
+    break-inside: avoid;
+    page-break-inside: avoid;
+    break-after: page;
+    page-break-after: always;
+    min-height: 0 !important;
+    height: auto !important;
+    max-height: none;
+  }
+  body[data-print="cards"] .card-page,
+  body[data-print="progress"] .progress-sheet {
+    min-height: 9.8in !important;
+    max-height: 10in;
+    overflow: hidden;
+  }
+  #cardView .card-page:last-child {
+    break-after: auto;
+    page-break-after: auto;
+  }
 }
 
 body:not(.program-adult) .adult-only { display: none; }
