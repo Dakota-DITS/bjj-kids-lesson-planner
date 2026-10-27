@@ -953,6 +953,9 @@ class Api:
         rank_match = re.match(r"^/api/students/([A-Za-z0-9_-]{1,40})/rank$", path)
         if rank_match and method == "POST":
             return self.set_student_rank(handler, conn, user, rank_match.group(1))
+        name_match = re.match(r"^/api/students/([A-Za-z0-9_-]{1,40})/name$", path)
+        if name_match and method == "POST":
+            return self.rename_student(handler, conn, user, name_match.group(1))
         attend_match = re.match(r"^/api/students/([A-Za-z0-9_-]{1,40})/attendance$", path)
         if attend_match and method == "POST":
             return self.set_student_attendance(handler, conn, user, attend_match.group(1))
@@ -3290,6 +3293,35 @@ class Api:
                 {"stripes": stripes},
             )
         conn.commit()
+        fresh = conn.execute("SELECT * FROM students WHERE id = ?", (sid,)).fetchone()
+        return self.send(handler, 200, self.student_json(fresh, conn))
+
+    def rename_student(self, handler, conn, user, sid):
+        body = self.read_json(handler)
+        row = conn.execute("SELECT * FROM students WHERE id = ?", (sid,)).fetchone()
+        if not row:
+            return self.send(handler, 404, {"error": "That student is not on the roster."})
+        blocked = self.block_self_edit(handler, conn, user, sid)
+        if blocked:
+            return blocked
+        if (self.cell(row, "program", "kids") or "kids") == "adult":
+            raise ValueError("That name edit is for a kids student.")
+        name = clip(body.get("name"), 40)
+        if not name:
+            raise ValueError("Add the student's name.")
+        old = row["name"]
+        if name != old:
+            conn.execute("UPDATE students SET name = ? WHERE id = ?", (name, sid))
+            self.append_change(
+                conn,
+                user,
+                sid,
+                name,
+                "rename",
+                {"name": old},
+                {"name": name},
+            )
+            conn.commit()
         fresh = conn.execute("SELECT * FROM students WHERE id = ?", (sid,)).fetchone()
         return self.send(handler, 200, self.student_json(fresh, conn))
 

@@ -3687,6 +3687,217 @@ class ApiTest(unittest.TestCase):
                 conn.close()
 
 
+    def test_rename_kid_keeps_record_and_logs(self):
+        admin = self.client()
+        status, me = admin.login("dakota", "correct-horse")
+        self.assertEqual(status, 200, me)
+        teacher = self.client()
+        status, alex = teacher.login("alex", "correct-horse")
+        self.assertEqual(status, 200, alex)
+        alex_id = alex["user"]["id"]
+        guest = self.client()
+        status, csrf = guest.call("GET", "/api/auth/csrf")
+        self.assertEqual(status, 200, csrf)
+        past = (date.fromisoformat(today_pacific()) - timedelta(days=3)).isoformat()
+        kid_id = ""
+        adult_id = ""
+        try:
+            status, kid = admin.call(
+                "POST",
+                "/api/students",
+                {
+                    "name": "Rename Kid",
+                    "age": 8,
+                    "belt": "white",
+                    "stripes": 1,
+                    "dob": "2018-03-09",
+                    "confirmOverCap": True,
+                },
+            )
+            self.assertEqual(status, 201, kid)
+            kid_id = kid["id"]
+            token = kid["parentToken"]
+            status, adult = admin.call(
+                "POST",
+                "/api/students",
+                {"program": "adult", "name": "Rename Adult", "age": 30, "belt": "white", "stripes": 0, "dob": "1990-01-15"},
+            )
+            self.assertEqual(status, 201, adult)
+            adult_id = adult["id"]
+            status, stripes = teacher.call("POST", f"/api/students/{kid_id}/rank", {"stripes": 2})
+            self.assertEqual(status, 200, stripes)
+            self.assertEqual(stripes["stripes"], 2)
+            status, attended = teacher.call(
+                "POST",
+                f"/api/students/{kid_id}/attendance",
+                {"date": past, "present": True},
+            )
+            self.assertEqual(status, 200, attended)
+            self.assertIn(past, attended["dates"])
+            conn = connect(self.api.cfg["db_path"])
+            try:
+                conn.execute(
+                    """
+                    INSERT INTO waivers (
+                      id, kind, submitted_at, signed_on, participant_name, signer_name,
+                      dob, email, phone, payload_json, signature_png, parent_signature_png,
+                      added_to_roster, roster_student_id
+                    ) VALUES (?, 'kids', ?, '2026-01-15', ?, ?, ?, ?, ?, ?, ?, ?, 1, ?)
+                    """,
+                    (
+                        "w-rename-kid",
+                        iso(utcnow()),
+                        "Rename Kid",
+                        "Parent Signer",
+                        "2018-03-09",
+                        "rename@example.com",
+                        "555-0100",
+                        json.dumps({
+                            "injuries": "EXAMPLE-NOTE",
+                            "emergencyName": "Emergency Pat",
+                            "emergencyPhone": "555-0199",
+                        }),
+                        PNG,
+                        PNG,
+                        kid_id,
+                    ),
+                )
+                conn.execute(
+                    "INSERT INTO levels (student_id, tech_id, level) VALUES (?, 'ls-upa', 'drilled')",
+                    (kid_id,),
+                )
+                conn.commit()
+            finally:
+                conn.close()
+
+            status, hidden = guest.call("POST", f"/api/students/{kid_id}/name", {"name": "Nope"})
+            self.assertEqual(status, 403, hidden)
+            self.assertEqual(hidden["error"], "The page needs to be reloaded before saving.")
+            status, missing = teacher.call("POST", "/api/students/s-missing/name", {"name": "Nope"})
+            self.assertEqual(status, 404, missing)
+            self.assertEqual(missing["error"], "That student is not on the roster.")
+            status, blank = teacher.call("POST", f"/api/students/{kid_id}/name", {"name": "   "})
+            self.assertEqual(status, 400, blank)
+            self.assertEqual(blank["error"], "Add the student's name.")
+            status, grown = teacher.call("POST", f"/api/students/{adult_id}/name", {"name": "Other Adult"})
+            self.assertEqual(status, 400, grown)
+            self.assertEqual(grown["error"], "That name edit is for a kids student.")
+            status, patched = teacher.call("PATCH", f"/api/students/{kid_id}", {"name": "Patched", "age": 8})
+            self.assertEqual(status, 403, patched)
+            self.assertEqual(patched["error"], "An admin edits the roster.")
+
+            conn = connect(self.api.cfg["db_path"])
+            try:
+                conn.execute(
+                    "INSERT INTO staff_member_links (user_id, student_id) VALUES (?, ?)",
+                    (alex_id, kid_id),
+                )
+                conn.commit()
+            finally:
+                conn.close()
+            status, own = teacher.call("POST", f"/api/students/{kid_id}/name", {"name": "Own Kid"})
+            self.assertEqual(status, 403, own)
+            self.assertEqual(own["error"], "Ask another staff member to update your record.")
+            conn = connect(self.api.cfg["db_path"])
+            try:
+                conn.execute("DELETE FROM staff_member_links WHERE student_id = ?", (kid_id,))
+                conn.commit()
+                rename_logs = conn.execute(
+                    "SELECT COUNT(*) AS n FROM change_log WHERE student_id = ? AND action = 'rename'",
+                    (kid_id,),
+                ).fetchone()["n"]
+            finally:
+                conn.close()
+
+            status, same = teacher.call("POST", f"/api/students/{kid_id}/name", {"name": "  Rename Kid  "})
+            self.assertEqual(status, 200, same)
+            self.assertEqual(same["name"], "Rename Kid")
+            self.assertEqual(same["id"], kid_id)
+            conn = connect(self.api.cfg["db_path"])
+            try:
+                self.assertEqual(
+                    conn.execute(
+                        "SELECT COUNT(*) AS n FROM change_log WHERE student_id = ? AND action = 'rename'",
+                        (kid_id,),
+                    ).fetchone()["n"],
+                    rename_logs,
+                )
+            finally:
+                conn.close()
+
+            wanted = ("  " + ("Bright " * 12)).strip()[:40]
+            status, renamed = teacher.call("POST", f"/api/students/{kid_id}/name", {"name": "  " + ("Bright " * 12)})
+            self.assertEqual(status, 200, renamed)
+            self.assertEqual(renamed["name"], wanted)
+            self.assertEqual(renamed["id"], kid_id)
+            self.assertEqual(renamed["age"], 8)
+            self.assertEqual(renamed["belt"], "white")
+            self.assertEqual(renamed["stripes"], 2)
+            self.assertEqual(renamed["parentToken"], token)
+            self.assertEqual(renamed["dob"], "2018-03-09")
+            self.assertEqual(renamed["waiver"]["waiverId"], "w-rename-kid")
+            self.assertTrue(renamed["waiver"]["signed"])
+            self.assertIsNone(renamed["staffLink"])
+
+            status, detail = teacher.call("GET", "/api/waivers/w-rename-kid")
+            self.assertEqual(status, 200, detail)
+            self.assertEqual(detail["participantName"], "Rename Kid")
+            self.assertEqual(detail["signerName"], "Parent Signer")
+            self.assertEqual(detail["payload"]["injuries"], "EXAMPLE-NOTE")
+            self.assertEqual(detail["rosterStudentId"], kid_id)
+
+            status, boot = teacher.call("GET", "/api/bootstrap")
+            self.assertEqual(status, 200, boot)
+            fresh = next(row for row in boot["students"] if row["id"] == kid_id)
+            self.assertEqual(fresh["name"], wanted)
+            self.assertEqual(fresh["stripes"], 2)
+            self.assertEqual(boot["levels"][kid_id]["ls-upa"], "drilled")
+            self.assertTrue(any(past == row["date"] and kid_id in row["attended"] for row in boot["classes"]))
+
+            status, log = admin.call("GET", f"/api/change-log?studentId={kid_id}")
+            self.assertEqual(status, 200, log)
+            renames = [row for row in log["entries"] if row["action"] == "rename"]
+            self.assertEqual(len(renames), 1)
+            self.assertEqual(renames[0]["before"], {"name": "Rename Kid"})
+            self.assertEqual(renames[0]["after"], {"name": wanted})
+            self.assertEqual(renames[0]["actorId"], alex_id)
+            self.assertEqual(renames[0]["studentId"], kid_id)
+            self.assertEqual(renames[0]["studentName"], wanted)
+            self.assertTrue(str(renames[0]["atPt"]).endswith("PT"))
+            status, denied = teacher.call("GET", "/api/change-log")
+            self.assertEqual(status, 403, denied)
+            self.assertEqual(denied["error"], "An admin reads the change log.")
+
+            parent = self.client()
+            status, profile = parent.call(
+                "POST",
+                "/api/public/parent",
+                {"token": token, "month": 3, "day": 9},
+            )
+            self.assertEqual(status, 200, profile)
+            self.assertEqual(profile["firstName"], wanted.split()[0])
+            self.assertEqual(profile["stripes"], 2)
+            self.assertNotIn("EXAMPLE-NOTE", json.dumps(profile))
+            self.assertNotIn("staffLink", profile)
+            self.assertNotIn("parentToken", profile)
+        finally:
+            if kid_id:
+                admin.call("DELETE", f"/api/students/{kid_id}")
+            if adult_id:
+                admin.call("DELETE", f"/api/students/{adult_id}")
+            conn = connect(self.api.cfg["db_path"])
+            try:
+                conn.execute("DELETE FROM waivers WHERE id = 'w-rename-kid'")
+                if kid_id:
+                    conn.execute("DELETE FROM levels WHERE student_id = ?", (kid_id,))
+                    conn.execute("DELETE FROM staff_member_links WHERE student_id = ?", (kid_id,))
+                    conn.execute("DELETE FROM change_log WHERE student_id = ?", (kid_id,))
+                    conn.execute("DELETE FROM classes WHERE attended = ?", (json.dumps([kid_id]),))
+                conn.commit()
+            finally:
+                conn.close()
+
+
 class DemoIsolationTest(unittest.TestCase):
     def test_demo_cookie_is_not_the_production_cookie(self):
         obj = Api.__new__(Api)
@@ -3905,7 +4116,6 @@ class DemoIsolationTest(unittest.TestCase):
         self.assertIn('href="/kids/"', source_home)
         with self.assertRaises(SystemExit):
             prefix_tree.publish(root, "/srv/bjj-planner", "/demo")
-
 
 def _handler(api):
     from http.server import BaseHTTPRequestHandler

@@ -25,7 +25,7 @@ function pngInfo(rel) {
 }
 
 const sw = text("sw.js");
-assert.ok(sw.includes('const VERSION = "20261027-57"'));
+assert.ok(sw.includes('const VERSION = "20261027-58"'));
 assert.ok(sw.includes("skipWaiting"));
 assert.ok(sw.includes("clients.claim"));
 assert.ok(sw.includes("grace-public-"));
@@ -153,19 +153,19 @@ for (const rel of ["kids/index.html", "kids/waiver/index.html"]) {
   assert.ok(html.includes('href="/kids/manifest.webmanifest"'), rel);
   assert.ok(html.includes('name="application-name" content="Grace BJJ Kids"'), rel);
   assert.ok(html.includes('name="apple-mobile-web-app-title" content="Grace BJJ Kids"'), rel);
-  assert.ok(html.includes('src="/pwa.js?v=20261027-57"'), rel);
+  assert.ok(html.includes('src="/pwa.js?v=20261027-58"'), rel);
 }
 const coloring = text("coloring/index.html");
 assert.ok(coloring.includes('href="/coloring/manifest.webmanifest"'));
 assert.ok(coloring.includes('name="application-name" content="Grace BJJ Kids"'));
 assert.ok(coloring.includes('name="apple-mobile-web-app-title" content="Grace BJJ Kids"'));
-assert.ok(coloring.includes('src="/pwa.js?v=20261027-57"'));
+assert.ok(coloring.includes('src="/pwa.js?v=20261027-58"'));
 const login = text("login/index.html");
 assert.ok(login.includes('href="/login/manifest.webmanifest"'));
 assert.ok(login.includes('name="application-name" content="Grace BJJ Staff"'));
 assert.ok(login.includes('name="apple-mobile-web-app-title" content="Grace BJJ Staff"'));
 assert.equal(login.includes('content="Grace BJJ Kids"'), false);
-assert.ok(login.includes('src="/pwa.js?v=20261027-57"'));
+assert.ok(login.includes('src="/pwa.js?v=20261027-58"'));
 
 const app = text("app/index.html");
 assert.ok(app.includes('href="/app/manifest.webmanifest"'));
@@ -176,7 +176,7 @@ assert.ok(text("app/waitlist/index.html").includes('href="/app/manifest.webmanif
 assert.ok(app.includes('name="apple-mobile-web-app-capable" content="yes"'));
 assert.ok(app.includes('name="apple-mobile-web-app-status-bar-style" content="black"'));
 assert.ok(app.includes('href="/icons/staff-apple-touch-icon.png"'));
-assert.ok(app.includes('src="/pwa.js?v=20261027-57"'));
+assert.ok(app.includes('src="/pwa.js?v=20261027-58"'));
 assert.ok(app.includes('content="#1c1917"'));
 
 assert.ok(text("index.html").includes('name="application-name" content="Grace BJJ"'));
