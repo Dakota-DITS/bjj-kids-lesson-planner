@@ -1,0 +1,439 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="bjj-base" content="">
+  <script src="/bjj-base.js?v=20261028-61"></script>
+  <meta name="robots" content="noindex, nofollow, noarchive, nosnippet">
+  <meta name="googlebot" content="noindex, nofollow">
+  <title>Check-in station · Grace BJJ Staff</title>
+  <link rel="manifest" href="/app/manifest.webmanifest" />
+  <meta name="theme-color" content="#1c1917" />
+  <meta name="mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black" />
+  <meta name="application-name" content="Grace BJJ Staff" />
+  <meta name="apple-mobile-web-app-title" content="Grace BJJ Staff" />
+  <link rel="icon" href="/icons/staff-favicon-32.png" type="image/png" sizes="32x32" />
+  <link rel="apple-touch-icon" href="/icons/staff-apple-touch-icon.png" sizes="180x180" />
+  <link rel="stylesheet" href="/css/waiver.css?v=20261028-61" />
+  <link rel="stylesheet" href="/css/button-groups.css?v=20261028-61" />
+  <script src="/pwa.js?v=20261028-61" defer></script>
+  <style>
+    :root { color-scheme: light; }
+    * { box-sizing: border-box; }
+    body[data-station="scan"] {
+      margin: 0;
+      background: #f4f1ea;
+      color: #1c1917;
+      font-family: "Liberation Sans", "Noto Sans", "Segoe UI", sans-serif;
+      font-size: 1.05rem;
+      line-height: 1.4;
+    }
+    button, input, select { font: inherit; }
+    button { min-height: 48px; min-width: 48px; }
+    a { color: #9b2a12; }
+    .gate { margin: 24px; font-size: 1.2rem; }
+    .topbar {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px 16px;
+      align-items: center;
+      justify-content: space-between;
+      padding: 12px 16px;
+      background: #1c1917;
+      color: #fff7ed;
+    }
+    .topbar a { color: #fff7ed; font-weight: 700; }
+    .topbar h1 { margin: 0; font-size: 1.35rem; }
+    .top-actions { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+    .station {
+      display: grid;
+      grid-template-columns: minmax(0, 360px) minmax(0, 1fr);
+      gap: 16px;
+      padding: 16px;
+      align-items: start;
+      width: 100%;
+      max-width: 100%;
+    }
+    .scan-col, .table-col, .waiver-panel, .topbar, .top-actions {
+      min-width: 0;
+      max-width: 100%;
+    }
+    .scan-col, .table-col, .waiver-panel {
+      background: #fff;
+      color: #1c1917;
+      border: 2px solid #1c1917;
+      border-radius: 16px;
+      padding: 12px;
+    }
+    video, img, canvas {
+      max-width: 100%;
+      min-width: 0;
+    }
+    .viewfinder {
+      box-sizing: border-box;
+      width: 100%;
+      max-width: 100%;
+      margin: 0 0 12px;
+      padding: 8px;
+      border: 8px solid #9b2a12;
+      border-radius: 24px;
+      background: #1c1917;
+      box-shadow: 0 10px 24px rgba(28, 25, 23, 0.28);
+    }
+    video {
+      display: block;
+      width: 100%;
+      height: auto;
+      max-height: 42vh;
+      margin: 0;
+      background: #111;
+      border-radius: 14px;
+      object-fit: cover;
+    }
+    #cameraNote, .scan-banner, .scan-banner h2, .scan-banner p {
+      overflow-wrap: anywhere;
+    }
+    .scan-banner {
+      margin: 12px 0;
+      padding: 14px;
+      border-radius: 14px;
+      background: #fff7ed;
+      border: 3px solid #1c1917;
+    }
+    .scan-banner h2 { margin: 0 0 6px; font-size: 1.8rem; line-height: 1.15; color: #1c1917; }
+    .scan-banner p { margin: 4px 0; font-size: 1.15rem; color: #1c1917; }
+    body[data-station="scan"] .scan-banner h2,
+    body[data-station="scan"] .scan-banner p { color: #1c1917; }
+    .scan-kicker { font-size: 0.85rem !important; letter-spacing: 0.04em; text-transform: uppercase; font-weight: 700; }
+    .scan-banner.is-ok { background: #ecfdf3; border-color: #166534; }
+    .scan-banner.is-dup { background: #fff7ed; border-color: #9a3412; }
+    .scan-banner.is-waiver, .scan-banner.is-unknown, .scan-banner.is-blank { background: #fef2f2; border-color: #991b1b; }
+    .scan-chip {
+      display: inline-block;
+      margin-top: 6px;
+      padding: 8px 14px;
+      border-radius: 999px;
+      font-weight: 800;
+      line-height: 1.25;
+      white-space: nowrap;
+      background: #1c1917;
+      color: #fff;
+    }
+    .scan-chip.is-ok { background: #166534; }
+    .scan-chip.is-dup { background: #9a3412; }
+    .scan-chip.is-waiver, .scan-chip.is-unknown, .scan-chip.is-outside, .scan-chip.is-blank { background: #991b1b; }
+    .row {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 12px;
+      align-items: center;
+      max-width: 100%;
+    }
+    .station button,
+    .topbar button,
+    .waiver-panel button {
+      min-height: 48px;
+      min-width: 44px;
+      padding: 12px 18px;
+      border-radius: 12px;
+      border: 2px solid #1c1917;
+      background: #fff;
+      color: #1c1917;
+      font-weight: 700;
+    }
+    .btn-grid button.primary, #kidsWaiverBtn, #adultWaiverBtn {
+      background: #9b2a12;
+      color: #fff7ed;
+      border-color: #9b2a12;
+    }
+    .btn-grid button.on { box-shadow: inset 0 0 0 3px #1c1917; }
+    label { font-weight: 700; }
+    input[type="date"], input[type="text"], input[type="number"], select {
+      min-height: 48px;
+      font-size: 1.05rem;
+    }
+    .totals { font-size: 1.25rem; font-weight: 800; margin: 8px 0; }
+    .table-wrap { max-width: 100%; overflow-x: auto; }
+    table { width: 100%; border-collapse: collapse; }
+    th, td { text-align: left; padding: 8px 6px; border-bottom: 1px solid #d6d3d1; vertical-align: top; }
+    #scanTable .scan-chip { padding: 8px 12px; }
+    th { font-size: 0.85rem; }
+    tr.is-last { background: #fef3c7; box-shadow: inset 0 0 0 3px #b45309; }
+    input, select { max-width: 100%; min-width: 0; }
+    caption { text-align: left; font-weight: 800; font-size: 1.25rem; margin-bottom: 8px; }
+    .claim-form { margin-top: 12px; padding: 12px; border: 2px dashed #9b2a12; border-radius: 12px; }
+    .claim-form.hidden, [hidden] { display: none !important; }
+    .waiver-panel {
+      grid-column: 1 / -1;
+      max-height: 70vh;
+      overflow: auto;
+    }
+    body[data-station="scan"] #waiverMount.sheet {
+      width: 100%;
+      max-width: 100%;
+      margin: 0;
+      color: #1c1917;
+    }
+    body[data-station="scan"] #waiverMount h1,
+    body[data-station="scan"] #waiverMount .lede {
+      color: #1c1917;
+    }
+    .waiver-result {
+      margin: 0 0 12px;
+      padding: 22px 18px;
+      background: #dcfce7;
+      color: #14532d;
+      border: 4px solid #166534;
+      border-radius: 16px;
+    }
+    body[data-station="scan"] #waiverResult h2 {
+      margin: 0 0 8px;
+      color: #14532d;
+      font-size: 1.7rem;
+      line-height: 1.2;
+    }
+    body[data-station="scan"] #waiverResult p {
+      margin: 0 0 16px;
+      color: #14532d;
+      font-size: 1.15rem;
+    }
+    body[data-station="scan"][data-kind="adult"] #waiverMount section,
+    body[data-station="scan"][data-kind="adult"] #waiverMount form {
+      color: #f5f0e8;
+    }
+    body[data-station="scan"][data-kind="adult"] #waiverMount h1,
+    body[data-station="scan"][data-kind="adult"] #waiverMount .lede {
+      color: #1c1917;
+    }
+    body[data-station="scan"][data-kind="adult"] #waiverMount input,
+    body[data-station="scan"][data-kind="adult"] #waiverMount select,
+    body[data-station="scan"][data-kind="adult"] #waiverMount textarea {
+      color: #1c1917;
+    }
+    body[data-station="scan"] #waiverResult button {
+      background: #166534;
+      color: #fff;
+      border-color: #14532d;
+    }
+    #waiverResult:not([hidden]) ~ .row { display: none; }
+    #scanTable button {
+      background: #9b2a12;
+      color: #fff7ed;
+      border-color: #9b2a12;
+    }
+    .waiver-error {
+      position: sticky;
+      top: 0;
+      z-index: 3;
+      margin: 0 0 12px;
+      padding: 16px 18px;
+      background: #fef2f2;
+      color: #7f1d1d;
+      border: 4px solid #991b1b;
+      border-radius: 16px;
+      font-size: 1.15rem;
+      font-weight: 800;
+    }
+    .toast {
+      position: fixed;
+      left: 16px;
+      right: 16px;
+      bottom: 16px;
+      margin: 0 auto;
+      max-width: 32rem;
+      padding: 12px 16px;
+      background: #1c1917;
+      color: #fff;
+      border-radius: 12px;
+      opacity: 0;
+      pointer-events: none;
+    }
+    .toast.show { opacity: 1; }
+    .scan-sr {
+      position: absolute;
+      width: 1px;
+      height: 1px;
+      padding: 0;
+      margin: -1px;
+      overflow: hidden;
+      clip: rect(0 0 0 0);
+      clip-path: inset(50%);
+      white-space: nowrap;
+      border: 0;
+    }
+    .scan-own { font-size: 0.9rem; }
+    @media (min-width: 801px) {
+      body.waiver-open .station { grid-template-columns: minmax(0, 380px) minmax(0, 1fr); }
+      body.waiver-open .scan-col { grid-column: 1; grid-row: 1; }
+      body.waiver-open .table-col { grid-column: 1; grid-row: 2; }
+      body.waiver-open .waiver-panel {
+        grid-column: 2;
+        grid-row: 1 / span 2;
+        max-height: calc(100vh - 110px);
+        position: sticky;
+        top: 12px;
+      }
+    }
+    @media (max-width: 800px) {
+      .station { grid-template-columns: minmax(0, 1fr); padding: 10px; width: 100%; }
+      .row, .waiver-actions, #cameraNote { max-width: 100%; }
+      #checkinDate { width: 100%; }
+      video { max-height: 28vh; }
+      .waiver-panel {
+        position: fixed;
+        left: 0;
+        right: 0;
+        bottom: 0;
+        z-index: 20;
+        width: 100%;
+        max-height: 78vh;
+        border-radius: 16px 16px 0 0;
+        box-shadow: 0 -8px 24px rgba(0, 0, 0, 0.28);
+      }
+      .scan-banner h2 { font-size: 1.45rem; }
+      .table-wrap { overflow: visible; }
+      #scanTable thead {
+        position: absolute;
+        width: 1px;
+        height: 1px;
+        overflow: hidden;
+        clip: rect(0 0 0 0);
+      }
+      #scanTable, #scanTable tbody, #scanTable tr, #scanTable td { display: block; width: 100%; }
+      #scanTable tr {
+        margin: 0 0 10px;
+        padding: 10px 12px;
+        border: 1px solid #d6d3d1;
+        border-radius: 12px;
+      }
+      #scanTable td { border: 0; padding: 3px 0; }
+      #scanTable td:nth-child(1)::before { content: "Time "; font-weight: 800; }
+      #scanTable td:nth-child(3)::before { content: "Class "; font-weight: 800; }
+      #scanTable td:nth-child(4)::before { content: "Belt "; font-weight: 800; }
+      #scanTable td:nth-child(5)::before { content: "Waiver "; font-weight: 800; }
+      #scanTable td:nth-child(2) { font-size: 1.2rem; font-weight: 800; }
+      #scanTable .scan-chip { margin-top: 8px; }
+      #scanTable button { width: 100%; }
+    }
+  </style>
+</head>
+<body data-station="scan">
+  <p id="gate" class="gate">Checking the teacher login…</p>
+  <header class="topbar">
+    <div>
+      <h1>Check-in station</h1>
+      <p id="whoami"></p>
+    </div>
+    <div class="top-actions">
+      <a href="/app/">Planner</a>
+      <button type="button" id="logoutBtn">Log out</button>
+    </div>
+  </header>
+  <div class="station">
+    <section class="scan-col" aria-label="Scanner">
+      <div class="viewfinder">
+        <video id="checkinVideo" playsinline muted autoplay aria-label="Card scanner camera"></video>
+      </div>
+      <p id="cameraNote"></p>
+      <div id="scanBanner" class="scan-banner" aria-live="polite">
+        <p class="scan-kicker">Last scan</p>
+        <h2>Starting the camera…</h2>
+      </div>
+      <p id="checkinStatus" class="scan-sr" role="status"></p>
+      <div class="btn-grid" aria-label="Scanner actions">
+        <button class="primary" id="cameraBtn" type="button">Start camera</button>
+        <button type="button" id="cameraStop">Stop camera</button>
+        <button type="button" id="kidsWaiverBtn">Kids waiver</button>
+        <button type="button" id="adultWaiverBtn">Adult waiver</button>
+      </div>
+      <form id="claimForm" class="claim-form hidden" novalidate>
+        <h3>Add new student</h3>
+        <p>This card is not linked yet. Saving adds the student and checks them in.</p>
+        <div class="row">
+          <label>Name <input id="claimName" maxlength="40" autocomplete="off" /></label>
+          <label>Age <input id="claimAge" type="number" inputmode="numeric" min="3" max="17" /></label>
+          <label>Class
+            <select id="claimGroup">
+              <option value="">Choose a class</option>
+              <option value="mite">Mighty Mites 3–6</option>
+              <option value="upper">Pee Wees 7–10</option>
+            </select>
+          </label>
+          <label>Belt <select id="claimBelt"></select></label>
+          <label>Stripes
+            <select id="claimStripes">
+              <option value="0">0</option>
+              <option value="1">1</option>
+              <option value="2">2</option>
+              <option value="3">3</option>
+              <option value="4">4</option>
+            </select>
+          </label>
+        </div>
+        <p class="potty-note hidden" id="claimPotty">Kids ages 3–6 must be fully potty trained to join class.</p>
+        <p id="claimNote" role="alert"></p>
+        <div class="btn-grid">
+          <button class="primary" type="submit">Save and check in</button>
+          <button type="button" id="claimCancel">Cancel</button>
+        </div>
+      </form>
+    </section>
+    <section class="table-col" aria-label="Checked in today">
+      <div class="field">
+        <label for="checkinDate">Date</label>
+        <input id="checkinDate" type="date" />
+      </div>
+      <div class="btn-grid" role="group" aria-label="Filter">
+        <button type="button" class="on" data-scan-filter="all" aria-pressed="true">All</button>
+        <button type="button" data-scan-filter="kids" aria-pressed="false">Kids</button>
+        <button type="button" data-scan-filter="adults" aria-pressed="false">Adults</button>
+      </div>
+      <p id="scanDayNote"></p>
+      <p id="scanTotals" class="totals">0 kids · 0 adults · 0 total</p>
+      <div class="table-wrap">
+        <table id="scanTable">
+          <caption>Checked in today</caption>
+          <thead>
+            <tr>
+              <th>Time</th>
+              <th>Name</th>
+              <th>Class</th>
+              <th>Belt</th>
+              <th>Waiver</th>
+              <th>Status</th>
+              <th>Undo</th>
+            </tr>
+          </thead>
+          <tbody id="scanRows"></tbody>
+        </table>
+      </div>
+    </section>
+    <section id="waiverPanel" class="waiver-panel" hidden aria-label="Enrollment form">
+      <div id="waiverResult" class="waiver-result" hidden role="status">
+        <h2 id="waiverResultTitle">Waiver submitted.</h2>
+        <p id="waiverResultText">The church office has the form. The scanner is still on.</p>
+        <div class="btn-grid">
+          <button type="button" id="waiverResultClose">Back to scanner</button>
+        </div>
+      </div>
+      <p id="waiverError" class="waiver-error" hidden role="alert"></p>
+      <div class="btn-grid">
+        <button type="button" id="waiverClose">Back to scanner</button>
+      </div>
+      <div id="waiverMount" class="sheet"></div>
+    </section>
+  </div>
+  <p id="toast" class="toast" role="status"></p>
+  <script src="/vendor/qrcode-generator/qrcode.js?v=20261028-61"></script>
+  <script src="/vendor/jsQR/jsQR.js?v=20261028-61"></script>
+  <script src="/calendar/class-days.js?v=20261028-61"></script>
+  <script src="/js/plan-math.js?v=20261028-61"></script>
+  <script src="/js/data.js?v=20261028-61"></script>
+  <script src="/js/curriculum.js?v=20261028-61"></script>
+  <script src="/js/api.js?v=20261028-61"></script>
+  <script src="/js/app.js?v=20261028-61"></script>
+</body>
+</html>

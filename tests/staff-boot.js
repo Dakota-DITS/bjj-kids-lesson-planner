@@ -163,7 +163,7 @@ async function bootCase(browser, oldMath, stale) {
       note: (document.getElementById("staffBeltNote") || {}).textContent || "",
       roster: (document.getElementById("rosterList") || {}).textContent || "",
       plan: (document.getElementById("plan") || {}).textContent || "",
-      script: [...document.scripts].some((script) => (script.src || "").includes("plan-math.js?v=20261027-58")),
+      script: [...document.scripts].some((script) => (script.src || "").includes("plan-math.js?v=20261028-61")),
     };
   });
   assert.strictEqual(state.authed, true, stale ? "stale plan-math did not authenticate" : "app did not authenticate");
@@ -206,7 +206,7 @@ async function main() {
   try {
     await waitForServer();
     const js = await header("/js/app.js");
-    const css = await header("/css/splash.css?v=20261027-58");
+    const css = await header("/css/splash.css?v=20261028-61");
     const home = await header("/");
     const app = await header("/app/");
     assert.strictEqual(js.status, 200);
