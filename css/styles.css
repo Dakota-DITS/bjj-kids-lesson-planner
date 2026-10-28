@@ -25,7 +25,7 @@
   --ui-bg-2: #292524;
   --ui-line: #44403c;
   --ui-text: #f5f0e8;
-  --ui-muted: #a8a29e;
+  --ui-muted: #d6d3d1;
   --accent: #9f1239;
   --accent-2: #be123c;
   --ok: #166534;
@@ -1363,6 +1363,32 @@ body.program-adult #extraClassForm.admin-only { display: block !important; }
   align-items: center;
   min-height: 44px;
 }
+.staff-links {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 8px;
+  margin: 8px 0 0;
+}
+.staff-links a.staff-link {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 44px;
+  padding: 8px 12px;
+  border-radius: 8px;
+  border: 1px solid #d6d3d1;
+  background: #44403c;
+  color: #fff7ed;
+  font-weight: 700;
+  text-align: center;
+  text-decoration: none;
+}
+@media (min-width: 861px) {
+  body:has(.pwa-tip-bar) .sidebar {
+    max-height: calc(100vh - 88px);
+  }
+}
 #accountPanel summary {
   cursor: pointer;
   min-height: 44px;
@@ -1427,6 +1453,11 @@ body.program-adult #extraClassForm.admin-only { display: block !important; }
 }
 .home-card strong { display: block; font-size: 1.05rem; }
 .home-card p { margin: 4px 0 0; }
+.home-card.is-warn {
+  border-color: #9f1239;
+  background: #fff1f2;
+}
+.home-card.is-warn p { color: #9f1239; font-weight: 700; }
 @media (min-width: 860px) {
   .home-cards { grid-template-columns: 1fr 1fr; }
 }
@@ -1654,6 +1685,20 @@ body.program-adult #extraClassForm.admin-only { display: block !important; }
 
 .work-view h2 { margin: 0 0 8px; }
 .work-view h3 { margin: 18px 0 8px; }
+.card-preview-bar { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; }
+.card-preview-bar h2 { flex: 1 1 12rem; margin: 0; }
+.card-preview-bar .pick-row { flex: 1 1 100%; }
+#reviewView .who-here {
+  position: sticky;
+  top: 0;
+  z-index: 4;
+  background: var(--paper-screen);
+  padding: 4px 0 8px;
+}
+body[data-staff-view="review"] .stage { overflow: visible; }
+@media (max-width: 860px) {
+  #reviewView .who-here { top: 60px; }
+}
 
 .tap, .level-row button, .chip {
   min-height: 48px;
@@ -2001,18 +2046,21 @@ body.program-adult #extraClassForm.admin-only { display: block !important; }
 #calendarView .field label { color: #3f3a36; }
 #calendarView .field input,
 #calendarView .field select,
-#calendarView .calendar-row input {
+#calendarView .calendar-row input,
+#calendarView .calendar-row textarea {
   color: #1c1917;
   background: #fff;
   border: 1px solid #44403c;
 }
-#calendarView input::placeholder {
+#calendarView input::placeholder,
+#calendarView textarea::placeholder {
   color: #595959;
   opacity: 1;
 }
 #calendarView .field input:focus,
 #calendarView .field select:focus,
-#calendarView .calendar-row input:focus {
+#calendarView .calendar-row input:focus,
+#calendarView .calendar-row textarea:focus {
   outline: 2px solid #9f1239;
   border-color: #9f1239;
 }
@@ -2029,8 +2077,25 @@ body.program-adult #extraClassForm.admin-only { display: block !important; }
   color: #1c1917;
 }
 .calendar-row p { margin: 0; flex: 1 1 12rem; color: #1c1917; }
-.calendar-row .skip-reason { flex: 1 1 10rem; min-width: 0; }
-.calendar-row input[type="text"] { width: 100%; min-height: 44px; }
+.skip-box {
+  flex: 1 1 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 8px;
+  margin-top: 4px;
+  padding-top: 12px;
+  border-top: 1px solid #d6d3d1;
+}
+.skip-box label { font-weight: 700; color: #1c1917; }
+.calendar-row textarea.skip-reason {
+  width: 100%;
+  min-height: 96px;
+  resize: vertical;
+  font: inherit;
+  padding: 8px 10px;
+}
+.skip-box .skip-class { align-self: flex-start; margin-top: 8px; }
 .calendar-row button { min-height: 44px; }
 .calendar-row.is-skip {
   background: #fff7ed;
@@ -2268,8 +2333,8 @@ body.program-adult #viewSwitch button[data-view="review"] { display: none; }
 }
 .roster-name { display: block; font-weight: 700; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .roster-meta, .roster-sub { display: block; color: var(--muted); font-size: 12px; font-weight: 600; }
-.roster-meter { height: 10px; background: #d6d3d1; border: 1px solid #44403c; border-radius: 99px; overflow: hidden; }
-.roster-meter > span { display: block; height: 100%; background: var(--accent); }
+.roster-meter { height: 14px; background: #44403c; border: 2px solid #1c1917; border-radius: 99px; overflow: hidden; }
+.roster-meter > span { display: block; height: 100%; background: #fecdd3; }
 .roster-count { font-weight: 700; font-size: 13px; text-align: right; color: var(--ink); }
 .stage-scroll, .matrix-scroll {
   overflow: auto;

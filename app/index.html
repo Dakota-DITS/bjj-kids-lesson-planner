@@ -4,10 +4,10 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <meta name="bjj-base" content="">
-  <script src="/bjj-base.js?v=20261028-61"></script>
+  <script src="/bjj-base.js?v=20261028-62"></script>
   <meta name="robots" content="noindex, nofollow, noarchive, nosnippet">
   <meta name="googlebot" content="noindex, nofollow">
-  <title>Grace BJJ Kids · Staff</title>
+  <title>Grace BJJ Staff</title>
   <link rel="manifest" href="/app/manifest.webmanifest" />
   <meta name="theme-color" content="#1c1917" />
   <meta name="mobile-web-app-capable" content="yes" />
@@ -17,9 +17,9 @@
   <meta name="apple-mobile-web-app-title" content="Grace BJJ Staff" />
   <link rel="icon" href="/icons/staff-favicon-32.png" type="image/png" sizes="32x32" />
   <link rel="apple-touch-icon" href="/icons/staff-apple-touch-icon.png" sizes="180x180" />
-  <link rel="stylesheet" href="/css/styles.css?v=20261028-61" />
-  <link rel="stylesheet" href="/css/button-groups.css?v=20261028-61" />
-  <script src="/pwa.js?v=20261028-61" defer></script>
+  <link rel="stylesheet" href="/css/styles.css?v=20261028-62" />
+  <link rel="stylesheet" href="/css/button-groups.css?v=20261028-62" />
+  <script src="/pwa.js?v=20261028-62" defer></script>
 </head>
 <body>
   <p id="gate" class="gate">Checking the teacher login…</p>
@@ -68,9 +68,11 @@
         <button type="button" data-view="checkin">Check-in</button>
         <button type="button" data-view="calendar">Calendar</button>
       </div>
-      <p class="waiver-link"><a href="/app/scan/">Check-in station</a></p>
-      <p class="admin-only waiver-link"><a href="/app/waivers/">Enrollment review</a></p>
-      <p class="admin-only waiver-link"><a href="/app/waitlist/">Kids waitlist</a></p>
+      <nav class="staff-links" aria-label="Staff pages">
+        <a class="staff-link" href="/app/scan/">Check-in station</a>
+        <a class="staff-link admin-only" href="/app/waivers/">Enrollment review</a>
+        <a class="staff-link admin-only kids-only" href="/app/waitlist/">Kids waitlist</a>
+      </nav>
       <p id="waitlistBanner" class="admin-only waitlist-banner hidden"></p>
 
       <p id="importBanner" class="panel hint hidden">
@@ -694,13 +696,13 @@
     </form>
   </dialog>
 
-  <script src="/vendor/qrcode-generator/qrcode.js?v=20261028-61"></script>
-  <script src="/vendor/jsQR/jsQR.js?v=20261028-61"></script>
-  <script src="/calendar/class-days.js?v=20261028-61"></script>
-  <script src="/js/plan-math.js?v=20261028-61"></script>
-  <script src="/js/data.js?v=20261028-61"></script>
-  <script src="/js/curriculum.js?v=20261028-61"></script>
-  <script src="/js/api.js?v=20261028-61"></script>
-  <script src="/js/app.js?v=20261028-61"></script>
+  <script src="/vendor/qrcode-generator/qrcode.js?v=20261028-62"></script>
+  <script src="/vendor/jsQR/jsQR.js?v=20261028-62"></script>
+  <script src="/calendar/class-days.js?v=20261028-62"></script>
+  <script src="/js/plan-math.js?v=20261028-62"></script>
+  <script src="/js/data.js?v=20261028-62"></script>
+  <script src="/js/curriculum.js?v=20261028-62"></script>
+  <script src="/js/api.js?v=20261028-62"></script>
+  <script src="/js/app.js?v=20261028-62"></script>
 </body>
 </html>

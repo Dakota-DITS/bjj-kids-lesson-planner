@@ -94,21 +94,24 @@
       var style = document.createElement("style");
       style.id = "pwa-tip-style";
       style.textContent = [
-        ".pwa-tip{position:fixed;z-index:22;left:12px;right:12px;bottom:calc(12px + env(safe-area-inset-bottom,0px));display:flex;flex-wrap:wrap;align-items:center;gap:8px;box-sizing:border-box;max-width:calc(100vw - 24px);padding:12px;border-radius:16px;font-size:16px;line-height:1.35;box-shadow:0 8px 24px rgba(20,17,15,.18)}",
+        ".pwa-tip{display:flex;flex-wrap:wrap;align-items:center;gap:8px;box-sizing:border-box;padding:12px;font-size:16px;line-height:1.35;box-shadow:0 8px 24px rgba(20,17,15,.18)}",
+        ".pwa-tip-overlay{position:fixed;z-index:22;left:12px;right:12px;bottom:calc(12px + env(safe-area-inset-bottom,0px));max-width:calc(100vw - 24px);border-radius:16px}",
+        ".pwa-tip-bar{position:relative;z-index:5;width:100%;max-width:100%;margin:0;border-radius:0;border-left:0;border-right:0}",
         ".pwa-tip p{margin:0;flex:1 1 180px}",
         ".pwa-tip button{min-height:44px;padding:8px 14px;border-radius:999px;font:inherit;font-size:16px;cursor:pointer}",
+        ".pwa-tip button.dismiss{min-width:44px;padding:0 12px;font-size:1.4rem;line-height:1;font-weight:700}",
         ".pwa-tip-public{background:#fff8f3;color:#14110f;border:1px solid #eadfd6}",
         ".pwa-tip-public button.add{background:#9b2a12;color:#fff8f3;border:0}",
-        ".pwa-tip-public button.later{background:transparent;color:#14110f;border:1px solid #eadfd6}",
+        ".pwa-tip-public button.later,.pwa-tip-public button.dismiss{background:transparent;color:#14110f;border:1px solid #eadfd6}",
         ".pwa-tip-staff{background:#1c1917;color:#fff8f3;border:1px solid #44403c}",
         ".pwa-tip-staff button.add{background:#fff8f3;color:#1c1917;border:0}",
-        ".pwa-tip-staff button.later{background:transparent;color:#fff8f3;border:1px solid #57534e}",
+        ".pwa-tip-staff button.later,.pwa-tip-staff button.dismiss{background:transparent;color:#fff8f3;border:1px solid #d6d3d1}",
         "@media print{.pwa-tip{display:none !important}}"
       ].join("");
       document.head.appendChild(style);
     }
     tip = document.createElement("div");
-    tip.className = "pwa-tip no-print " + (staff ? "pwa-tip-staff" : "pwa-tip-public");
+    tip.className = "pwa-tip no-print " + (inApp ? "pwa-tip-bar pwa-tip-staff" : "pwa-tip-overlay pwa-tip-public");
     tip.setAttribute("role", "region");
     tip.setAttribute("aria-label", "Add to home screen");
     var text = document.createElement("p");
@@ -134,7 +137,15 @@
     later.textContent = "Not now";
     later.addEventListener("click", dismiss);
     tip.appendChild(later);
-    document.body.appendChild(tip);
+    var close = document.createElement("button");
+    close.type = "button";
+    close.className = "dismiss";
+    close.setAttribute("aria-label", "Dismiss");
+    close.textContent = "\u00d7";
+    close.addEventListener("click", dismiss);
+    tip.appendChild(close);
+    if (inApp && document.body.firstChild) document.body.insertBefore(tip, document.body.firstChild);
+    else document.body.appendChild(tip);
   }
 
   window.addEventListener("beforeinstallprompt", function (event) {

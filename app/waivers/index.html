@@ -4,7 +4,7 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <meta name="bjj-base" content="">
-  <script src="/bjj-base.js?v=20261028-61"></script>
+  <script src="/bjj-base.js?v=20261028-62"></script>
   <meta name="robots" content="noindex, nofollow, noarchive, nosnippet">
   <meta name="googlebot" content="noindex, nofollow">
   <title>Enrollment review · Grace BJJ Staff</title>
@@ -12,7 +12,7 @@
   <meta name="application-name" content="Grace BJJ Staff" />
   <meta name="apple-mobile-web-app-title" content="Grace BJJ Staff" />
   <link rel="icon" href="/icons/staff-favicon-32.png" type="image/png" sizes="32x32" />
-  <script src="/pwa.js?v=20261028-61" defer></script>
+  <script src="/pwa.js?v=20261028-62" defer></script>
   <style>
     :root { color-scheme: dark; }
     body {
@@ -54,6 +54,15 @@
       padding: 14px;
     }
     .card p { margin: 0 0 8px; }
+    .card.is-linked {
+      background: #1c1917;
+      border-color: #57534e;
+    }
+    .linked-state {
+      margin: 8px 0;
+      color: #d6d3d1;
+      font-weight: 700;
+    }
     .row { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
     .meta { color: #e7e5e4; }
     .hint { color: #d6d3d1; }
@@ -105,11 +114,11 @@
       .row button, .row .button { width: 100%; }
     }
   </style>
-  <link rel="stylesheet" href="/css/button-groups.css?v=20261028-61" />
+  <link rel="stylesheet" href="/css/button-groups.css?v=20261028-62" />
 </head>
 <body>
   <main>
-    <p><a href="/app/">Back to staff</a></p>
+    <p><a class="back-staff" href="/app/">Back to staff</a></p>
     <h1>Enrollment review</h1>
     <p>Kids and adults stay in separate lists. A form is not linked until you match it or add the student.</p>
     <p id="status" role="status">Checking the login…</p>
@@ -264,8 +273,29 @@
         card.append(note);
       }
       if (form.linked) {
-        line(card, "Linked to " + text(form.rosterStudentName) + ". Unlink if this is the wrong student.");
-      } else if (form.preselectId) {
+        card.classList.add("is-linked");
+        const linked = document.createElement("p");
+        linked.className = "linked-state";
+        linked.textContent = "Linked to " + text(form.rosterStudentName) + ".";
+        card.append(linked);
+        const actions = document.createElement("div");
+        actions.className = "row";
+        const view = document.createElement("button");
+        view.type = "button";
+        view.className = "ghost";
+        view.textContent = "View form";
+        view.addEventListener("click", () => showDetail(form.id));
+        const unlink = document.createElement("button");
+        unlink.type = "button";
+        unlink.className = "ghost";
+        unlink.textContent = "Unlink";
+        unlink.addEventListener("click", () => saveUnlink(form, unlink));
+        actions.append(view, unlink);
+        card.append(actions);
+        li.append(card);
+        return li;
+      }
+      if (form.preselectId) {
         const note = document.createElement("p");
         note.className = "hint";
         note.textContent = "Exact match selected. It is not saved until you match.";
@@ -304,14 +334,6 @@
       view.textContent = "View form";
       view.addEventListener("click", () => showDetail(form.id));
       actions.append(match, add, view);
-      if (form.linked) {
-        const unlink = document.createElement("button");
-        unlink.type = "button";
-        unlink.className = "ghost";
-        unlink.textContent = "Unlink";
-        unlink.addEventListener("click", () => saveUnlink(form, unlink));
-        actions.append(unlink);
-      }
       card.append(actions);
       const notice = document.createElement("p");
       notice.className = "warn";
@@ -326,7 +348,7 @@
       list.textContent = "";
       const open = waiting(forms);
       const done = linkedForms(forms);
-      if (!open.length) {
+      if (!open.length && !done.length) {
         const li = document.createElement("li");
         li.textContent = program === "kids" ? "No kids forms are waiting for review." : "No adult forms are waiting for review.";
         list.append(li);
@@ -365,9 +387,12 @@
       renderProgram(document.getElementById("kidsList"), kids, "kids");
       renderProgram(document.getElementById("adultsList"), adults, "adults");
       const waitingCount = waiting(kids).length + waiting(adults).length;
+      const listed = kids.length + adults.length;
       status.textContent = waitingCount
         ? waitingCount + " form" + (waitingCount === 1 ? "" : "s") + " waiting for review."
-        : "No forms are waiting for review.";
+        : listed
+          ? ""
+          : "No forms are waiting for review.";
     }
 
     async function saveMatch(form, card, button) {

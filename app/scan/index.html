@@ -4,7 +4,7 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <meta name="bjj-base" content="">
-  <script src="/bjj-base.js?v=20261028-61"></script>
+  <script src="/bjj-base.js?v=20261028-62"></script>
   <meta name="robots" content="noindex, nofollow, noarchive, nosnippet">
   <meta name="googlebot" content="noindex, nofollow">
   <title>Check-in station · Grace BJJ Staff</title>
@@ -17,9 +17,9 @@
   <meta name="apple-mobile-web-app-title" content="Grace BJJ Staff" />
   <link rel="icon" href="/icons/staff-favicon-32.png" type="image/png" sizes="32x32" />
   <link rel="apple-touch-icon" href="/icons/staff-apple-touch-icon.png" sizes="180x180" />
-  <link rel="stylesheet" href="/css/waiver.css?v=20261028-61" />
-  <link rel="stylesheet" href="/css/button-groups.css?v=20261028-61" />
-  <script src="/pwa.js?v=20261028-61" defer></script>
+  <link rel="stylesheet" href="/css/waiver.css?v=20261028-62" />
+  <link rel="stylesheet" href="/css/button-groups.css?v=20261028-62" />
+  <script src="/pwa.js?v=20261028-62" defer></script>
   <style>
     :root { color-scheme: light; }
     * { box-sizing: border-box; }
@@ -110,7 +110,7 @@
     .scan-kicker { font-size: 0.85rem !important; letter-spacing: 0.04em; text-transform: uppercase; font-weight: 700; }
     .scan-banner.is-ok { background: #ecfdf3; border-color: #166534; }
     .scan-banner.is-dup { background: #fff7ed; border-color: #9a3412; }
-    .scan-banner.is-waiver, .scan-banner.is-unknown, .scan-banner.is-blank { background: #fef2f2; border-color: #991b1b; }
+    .scan-banner.is-waiver, .scan-banner.is-unknown, .scan-banner.is-blank, .scan-banner.is-camera { background: #fef2f2; border-color: #991b1b; }
     .scan-chip {
       display: inline-block;
       margin-top: 6px;
@@ -124,7 +124,21 @@
     }
     .scan-chip.is-ok { background: #166534; }
     .scan-chip.is-dup { background: #9a3412; }
-    .scan-chip.is-waiver, .scan-chip.is-unknown, .scan-chip.is-outside, .scan-chip.is-blank { background: #991b1b; }
+    .scan-chip.is-waiver, .scan-chip.is-unknown, .scan-chip.is-outside, .scan-chip.is-blank, .scan-chip.is-camera { background: #991b1b; }
+    #cameraNote.is-unavailable, .scan-day {
+      margin: 8px 0 12px;
+      padding: 14px;
+      border-radius: 14px;
+      font-size: 1.15rem;
+      font-weight: 800;
+      color: #1c1917;
+    }
+    #cameraNote.is-unavailable, .scan-day.is-empty {
+      background: #fef2f2;
+      border: 3px solid #991b1b;
+      color: #7f1d1d;
+    }
+    .scan-day { background: #fff7ed; border: 3px solid #1c1917; }
     .row {
       display: flex;
       flex-wrap: wrap;
@@ -328,7 +342,7 @@
       <p id="whoami"></p>
     </div>
     <div class="top-actions">
-      <a href="/app/">Planner</a>
+      <a class="back-staff" href="/app/">Back to staff</a>
       <button type="button" id="logoutBtn">Log out</button>
     </div>
   </header>
@@ -340,7 +354,7 @@
       <p id="cameraNote"></p>
       <div id="scanBanner" class="scan-banner" aria-live="polite">
         <p class="scan-kicker">Last scan</p>
-        <h2>Starting the camera…</h2>
+        <h2>Point the camera at a card.</h2>
       </div>
       <p id="checkinStatus" class="scan-sr" role="status"></p>
       <div class="btn-grid" aria-label="Scanner actions">
@@ -383,7 +397,7 @@
     </section>
     <section class="table-col" aria-label="Checked in today">
       <div class="field">
-        <label for="checkinDate">Date</label>
+        <label for="checkinDate">Class date</label>
         <input id="checkinDate" type="date" />
       </div>
       <div class="btn-grid" role="group" aria-label="Filter">
@@ -427,13 +441,13 @@
     </section>
   </div>
   <p id="toast" class="toast" role="status"></p>
-  <script src="/vendor/qrcode-generator/qrcode.js?v=20261028-61"></script>
-  <script src="/vendor/jsQR/jsQR.js?v=20261028-61"></script>
-  <script src="/calendar/class-days.js?v=20261028-61"></script>
-  <script src="/js/plan-math.js?v=20261028-61"></script>
-  <script src="/js/data.js?v=20261028-61"></script>
-  <script src="/js/curriculum.js?v=20261028-61"></script>
-  <script src="/js/api.js?v=20261028-61"></script>
-  <script src="/js/app.js?v=20261028-61"></script>
+  <script src="/vendor/qrcode-generator/qrcode.js?v=20261028-62"></script>
+  <script src="/vendor/jsQR/jsQR.js?v=20261028-62"></script>
+  <script src="/calendar/class-days.js?v=20261028-62"></script>
+  <script src="/js/plan-math.js?v=20261028-62"></script>
+  <script src="/js/data.js?v=20261028-62"></script>
+  <script src="/js/curriculum.js?v=20261028-62"></script>
+  <script src="/js/api.js?v=20261028-62"></script>
+  <script src="/js/app.js?v=20261028-62"></script>
 </body>
 </html>
