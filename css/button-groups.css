@@ -1,0 +1,75 @@
+/* Button groups share one gap. Phones use two equal columns so wrapped
+   rows line up. Wider screens keep each button at its natural width. */
+.btn-grid,
+.btn-row,
+.card-actions,
+.chip-row,
+.roster-edit {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px;
+  margin-top: 16px;
+  margin-bottom: 16px;
+  min-width: 0;
+  max-width: 100%;
+}
+
+.btn-grid > button,
+.btn-grid > a,
+.btn-row > button,
+.btn-row > a,
+.card-actions > button,
+.chip-row > button,
+.chip-row > .chip,
+.roster-edit > button,
+.roster-edit > select,
+.roster-edit > label {
+  min-height: 44px;
+  margin: 0;
+}
+
+.card-actions > button {
+  padding: 10px 14px;
+  font-size: 0.95rem;
+}
+
+@media (max-width: 800px) {
+  .btn-grid,
+  .btn-row,
+  .card-actions,
+  .chip-row,
+  .roster-edit {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    align-items: stretch;
+    gap: 12px;
+    width: 100%;
+  }
+
+  .btn-grid > button,
+  .btn-grid > a,
+  .btn-row > button,
+  .btn-row > a,
+  .card-actions > button,
+  .chip-row > button,
+  .chip-row > .chip,
+  .roster-edit > button,
+  .roster-edit > select,
+  .roster-edit > label,
+  .btn-grid > input,
+  .btn-grid > label,
+  .btn-row > input:not([type="file"]) {
+    width: 100%;
+    min-width: 0;
+    max-width: 100%;
+    justify-content: center;
+    text-align: center;
+  }
+
+  .btn-grid > :only-child,
+  .btn-row > :only-child,
+  .card-actions > :only-child {
+    grid-column: 1 / -1;
+  }
+}

@@ -2316,7 +2316,7 @@ function sparringSection(plan) {
           : "";
         const renaming = state.renamingId === kid.id;
         const nameHtml = renaming
-          ? `<form class="rename-form" data-roster="rename-form">
+          ? `<form class="rename-form btn-grid" data-roster="rename-form">
               <label for="rename-${id}">Name</label>
               <input id="rename-${id}" data-roster="rename-input" maxlength="40" value="${esc(kid.name)}" autocomplete="off" />
               <button type="submit">Save</button>
@@ -2597,8 +2597,8 @@ function sparringSection(plan) {
           </article>`;
         }
         const skip = canEditCalendar()
-          ? `<input class="skip-reason" type="text" maxlength="120" placeholder="Reason, optional" aria-label="Reason for skipping ${esc(title)}" data-skip-reason="${esc(row.iso)}" />
-             <button class="ghost" type="button" data-cal-skip="${esc(row.iso)}">Skip this class</button>`
+          ? `<div class="btn-grid"><input class="skip-reason" type="text" maxlength="120" placeholder="Reason, optional" aria-label="Reason for skipping ${esc(title)}" data-skip-reason="${esc(row.iso)}" />
+             <button class="ghost" type="button" data-cal-skip="${esc(row.iso)}">Skip this class</button></div>`
           : "";
         return `<article class="calendar-row">
           <p><strong>${esc(title)}</strong><br>${esc(when)}</p>
@@ -3512,7 +3512,7 @@ function sparringSection(plan) {
       <h3>Who was here</h3>
       <div class="chip-row">${chips}</div>
       ${blocks}
-      <div class="btn-row" style="margin-top:16px">
+      <div class="btn-row">
         <button class="primary tap" type="button" id="saveClassBtn">Save class</button>
       </div>
       <p class="hint">Save marks the class taught and sets Introduced for anyone still blank. A higher level you already tapped stays.</p>`;
@@ -4354,7 +4354,7 @@ function sparringSection(plan) {
       : "<li>No check-ins yet.</li>";
     const form = own
       ? ""
-      : `<div class="attendance-add">
+      : `<div class="attendance-add btn-grid">
           <label>Class date <input type="date" data-attend-date="${esc(person.id)}" aria-label="Class date for ${esc(person.name)}" /></label>
           <button type="button" data-attend-add="${esc(person.id)}">Add check-in</button>
         </div>`;
@@ -5138,10 +5138,12 @@ function sparringSection(plan) {
           : "";
         return `<article class="saved-plan${editing ? " is-editing" : ""}">
           <p>${esc(prettyDate(plan.classDate))} · ${esc(classLabel(plan.ageGroup))}${editing ? " · Editing" : ""}${skipped}<br>${esc(plan.savedBy || "A teacher")} · ${esc(prettyStamp(plan.updatedAt))}</p>
-          <button class="ghost" type="button" data-plan-edit="${esc(plan.id)}">Edit</button>
-          <button class="ghost" type="button" data-plan-print="${esc(plan.id)}">Print</button>
-          <button class="ghost" type="button" data-plan-share="${esc(plan.id)}">Share</button>
-          ${remove}
+          <div class="btn-grid">
+            <button class="ghost" type="button" data-plan-edit="${esc(plan.id)}">Edit</button>
+            <button class="ghost" type="button" data-plan-print="${esc(plan.id)}">Print</button>
+            <button class="ghost" type="button" data-plan-share="${esc(plan.id)}">Share</button>
+            ${remove}
+          </div>
         </article>`;
       })
       .join("");
@@ -7253,7 +7255,8 @@ function sparringSection(plan) {
             </div>`;
         }
         return `<div class="staff-row">
-          <p><span>${esc(shown)} · ${esc(user.role)}${pending} · login ${esc(user.username)}</span>${makeAdmin}${makeTeacher}${reset}<button class="ghost" type="button" data-user="${esc(user.id)}">Remove</button></p>
+          <p><span>${esc(shown)} · ${esc(user.role)}${pending} · login ${esc(user.username)}</span></p>
+          <div class="btn-grid">${makeAdmin}${makeTeacher}${reset}<button class="ghost" type="button" data-user="${esc(user.id)}">Remove</button></div>
           <p class="staff-member-line">${esc(linked)}</p>
           ${memberControls}
         </div>`;

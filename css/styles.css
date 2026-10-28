@@ -472,7 +472,6 @@ button.primary {
   border-color: var(--accent-2);
   font-weight: 700;
   letter-spacing: 0.02em;
-  flex: 1;
 }
 
 button.ghost, a.ghost {
@@ -599,8 +598,9 @@ button.danger {
 }
 
 .card-actions button {
-  padding: 4px 8px;
-  font-size: 0.75rem;
+  min-height: 44px;
+  padding: 10px 14px;
+  font-size: 0.95rem;
 }
 
 .card.off { opacity: 0.45; }
@@ -2173,8 +2173,6 @@ body.authed #mustChange { display: none !important; }
   .staff-table td:first-child { white-space: normal; width: auto; }
   .block-title { flex-wrap: wrap; gap: 6px; font-size: 18px; }
   .block-title .when { white-space: normal; }
-  #checkinView .btn-row, .toolbar .btn-row { flex-direction: column; }
-  #checkinView .btn-row button, .toolbar .btn-row button { width: 100%; }
   #checkinVideo { max-height: 240px; }
   .work-view { margin: 12px 0 32px; padding: 16px; }
   .waiver-print-sheet { min-height: 0; padding: 16px; }

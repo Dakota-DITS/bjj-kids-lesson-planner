@@ -4,7 +4,7 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <meta name="bjj-base" content="">
-  <script src="/bjj-base.js?v=20261028-60"></script>
+  <script src="/bjj-base.js?v=20261028-61"></script>
   <meta name="robots" content="noindex, nofollow, noarchive, nosnippet">
   <meta name="googlebot" content="noindex, nofollow">
   <title>Check-in station · Grace BJJ Staff</title>
@@ -17,8 +17,9 @@
   <meta name="apple-mobile-web-app-title" content="Grace BJJ Staff" />
   <link rel="icon" href="/icons/staff-favicon-32.png" type="image/png" sizes="32x32" />
   <link rel="apple-touch-icon" href="/icons/staff-apple-touch-icon.png" sizes="180x180" />
-  <link rel="stylesheet" href="/css/waiver.css?v=20261028-60" />
-  <script src="/pwa.js?v=20261028-60" defer></script>
+  <link rel="stylesheet" href="/css/waiver.css?v=20261028-61" />
+  <link rel="stylesheet" href="/css/button-groups.css?v=20261028-61" />
+  <script src="/pwa.js?v=20261028-61" defer></script>
   <style>
     :root { color-scheme: light; }
     * { box-sizing: border-box; }
@@ -124,11 +125,12 @@
     .scan-chip.is-ok { background: #166534; }
     .scan-chip.is-dup { background: #9a3412; }
     .scan-chip.is-waiver, .scan-chip.is-unknown, .scan-chip.is-outside, .scan-chip.is-blank { background: #991b1b; }
-    .row, .waiver-actions {
+    .row {
       display: flex;
       flex-wrap: wrap;
       gap: 12px;
       align-items: center;
+      max-width: 100%;
     }
     .station button,
     .topbar button,
@@ -142,12 +144,12 @@
       color: #1c1917;
       font-weight: 700;
     }
-    .row button.primary, #kidsWaiverBtn, #adultWaiverBtn {
+    .btn-grid button.primary, #kidsWaiverBtn, #adultWaiverBtn {
       background: #9b2a12;
       color: #fff7ed;
       border-color: #9b2a12;
     }
-    .row button.on { outline: 3px solid #1c1917; }
+    .btn-grid button.on { box-shadow: inset 0 0 0 3px #1c1917; }
     label { font-weight: 700; }
     input[type="date"], input[type="text"], input[type="number"], select {
       min-height: 48px;
@@ -314,14 +316,7 @@
       #scanTable td:nth-child(5)::before { content: "Waiver "; font-weight: 800; }
       #scanTable td:nth-child(2) { font-size: 1.2rem; font-weight: 800; }
       #scanTable .scan-chip { margin-top: 8px; }
-      #scanTable button,
-      .scan-col .row button,
-      .waiver-actions button,
-      #waiverClose,
-      #waiverResultClose {
-        flex: 1 1 calc(50% - 12px);
-        width: auto;
-      }
+      #scanTable button { width: 100%; }
     }
   </style>
 </head>
@@ -348,11 +343,9 @@
         <h2>Starting the camera…</h2>
       </div>
       <p id="checkinStatus" class="scan-sr" role="status"></p>
-      <div class="row">
+      <div class="btn-grid" aria-label="Scanner actions">
         <button class="primary" id="cameraBtn" type="button">Start camera</button>
         <button type="button" id="cameraStop">Stop camera</button>
-      </div>
-      <div class="waiver-actions row" aria-label="Enrollment forms">
         <button type="button" id="kidsWaiverBtn">Kids waiver</button>
         <button type="button" id="adultWaiverBtn">Adult waiver</button>
       </div>
@@ -382,20 +375,21 @@
         </div>
         <p class="potty-note hidden" id="claimPotty">Kids ages 3–6 must be fully potty trained to join class.</p>
         <p id="claimNote" role="alert"></p>
-        <div class="row">
+        <div class="btn-grid">
           <button class="primary" type="submit">Save and check in</button>
           <button type="button" id="claimCancel">Cancel</button>
         </div>
       </form>
     </section>
     <section class="table-col" aria-label="Checked in today">
-      <div class="row">
-        <label>Date <input id="checkinDate" type="date" /></label>
-        <div class="row" role="group" aria-label="Filter">
-          <button type="button" class="on" data-scan-filter="all" aria-pressed="true">All</button>
-          <button type="button" data-scan-filter="kids" aria-pressed="false">Kids</button>
-          <button type="button" data-scan-filter="adults" aria-pressed="false">Adults</button>
-        </div>
+      <div class="field">
+        <label for="checkinDate">Date</label>
+        <input id="checkinDate" type="date" />
+      </div>
+      <div class="btn-grid" role="group" aria-label="Filter">
+        <button type="button" class="on" data-scan-filter="all" aria-pressed="true">All</button>
+        <button type="button" data-scan-filter="kids" aria-pressed="false">Kids</button>
+        <button type="button" data-scan-filter="adults" aria-pressed="false">Adults</button>
       </div>
       <p id="scanDayNote"></p>
       <p id="scanTotals" class="totals">0 kids · 0 adults · 0 total</p>
@@ -421,23 +415,25 @@
       <div id="waiverResult" class="waiver-result" hidden role="status">
         <h2 id="waiverResultTitle">Waiver submitted.</h2>
         <p id="waiverResultText">The church office has the form. The scanner is still on.</p>
-        <button type="button" id="waiverResultClose">Back to scanner</button>
+        <div class="btn-grid">
+          <button type="button" id="waiverResultClose">Back to scanner</button>
+        </div>
       </div>
       <p id="waiverError" class="waiver-error" hidden role="alert"></p>
-      <div class="row">
+      <div class="btn-grid">
         <button type="button" id="waiverClose">Back to scanner</button>
       </div>
       <div id="waiverMount" class="sheet"></div>
     </section>
   </div>
   <p id="toast" class="toast" role="status"></p>
-  <script src="/vendor/qrcode-generator/qrcode.js?v=20261028-60"></script>
-  <script src="/vendor/jsQR/jsQR.js?v=20261028-60"></script>
-  <script src="/calendar/class-days.js?v=20261028-60"></script>
-  <script src="/js/plan-math.js?v=20261028-60"></script>
-  <script src="/js/data.js?v=20261028-60"></script>
-  <script src="/js/curriculum.js?v=20261028-60"></script>
-  <script src="/js/api.js?v=20261028-60"></script>
-  <script src="/js/app.js?v=20261028-60"></script>
+  <script src="/vendor/qrcode-generator/qrcode.js?v=20261028-61"></script>
+  <script src="/vendor/jsQR/jsQR.js?v=20261028-61"></script>
+  <script src="/calendar/class-days.js?v=20261028-61"></script>
+  <script src="/js/plan-math.js?v=20261028-61"></script>
+  <script src="/js/data.js?v=20261028-61"></script>
+  <script src="/js/curriculum.js?v=20261028-61"></script>
+  <script src="/js/api.js?v=20261028-61"></script>
+  <script src="/js/app.js?v=20261028-61"></script>
 </body>
 </html>

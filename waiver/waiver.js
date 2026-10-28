@@ -106,7 +106,7 @@
     box.id = "bjj-demo-states";
     box.className = "no-print";
     box.innerHTML = '<p><strong>Demo preview states.</strong> ' + count + "</p>"
-      + '<div class="row"><button type="button" data-demo-state="open">Spots open</button>'
+      + '<div class="row btn-grid"><button type="button" data-demo-state="open">Spots open</button>'
       + '<button type="button" data-demo-state="full">Class full, waitlist</button></div>'
       + '<p id="bjjDemoStateNote"></p>';
     const main = document.getElementById("main");
