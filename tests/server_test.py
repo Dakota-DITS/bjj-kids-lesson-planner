@@ -3897,6 +3897,85 @@ class ApiTest(unittest.TestCase):
             finally:
                 conn.close()
 
+    def test_checkin_undo_writes_the_change_log(self):
+        admin = self.client()
+        status, _me = admin.login("dakota", "correct-horse")
+        self.assertEqual(status, 200)
+        teacher = self.client()
+        status, alex = teacher.login("alex", "correct-horse")
+        self.assertEqual(status, 200, alex)
+        guest = self.client()
+        past = (date.fromisoformat(today_pacific()) - timedelta(days=2)).isoformat()
+        kid_id = ""
+        adult_id = ""
+        try:
+            status, kid = admin.call(
+                "POST",
+                "/api/students",
+                {"name": "Station Kid", "age": 8, "belt": "white", "stripes": 1, "dob": "2018-04-04", "confirmOverCap": True},
+            )
+            self.assertEqual(status, 201, kid)
+            kid_id = kid["id"]
+            status, adult = admin.call(
+                "POST",
+                "/api/students",
+                {"program": "adult", "name": "Station Adult", "age": 30, "belt": "blue", "stripes": 2, "dob": "1992-05-05"},
+            )
+            self.assertEqual(status, 201, adult)
+            adult_id = adult["id"]
+            status, hidden = guest.call("POST", f"/api/students/{kid_id}/attendance", {"date": past, "present": True})
+            self.assertEqual(status, 403, hidden)
+            status, added = teacher.call(
+                "POST",
+                f"/api/students/{kid_id}/attendance",
+                {"date": past, "present": True},
+            )
+            self.assertEqual(status, 200, added)
+            self.assertIn(past, added["dates"])
+            status, adult_in = teacher.call("POST", "/api/adult-attendance", {"date": past, "studentId": adult_id})
+            self.assertEqual(status, 200, adult_in)
+            self.assertTrue(any(row["date"] == past and adult_id in row["attended"] for row in adult_in["adultAttendance"]))
+            status, again = teacher.call("POST", "/api/adult-attendance", {"date": past, "studentId": adult_id})
+            self.assertEqual(status, 200, again)
+            status, removed = teacher.call(
+                "POST",
+                f"/api/students/{kid_id}/attendance",
+                {"date": past, "present": False},
+            )
+            self.assertEqual(status, 200, removed)
+            self.assertNotIn(past, removed["dates"])
+            status, log = admin.call("GET", f"/api/change-log?studentId={kid_id}")
+            self.assertEqual(status, 200, log)
+            actions = [row["action"] for row in log["entries"]]
+            self.assertIn("attendance_add", actions)
+            self.assertIn("attendance_remove", actions)
+            undo = next(row for row in log["entries"] if row["action"] == "attendance_remove")
+            self.assertEqual(undo["before"]["date"], past)
+            self.assertEqual(undo["after"]["present"], False)
+            self.assertEqual(undo["actorId"], alex["user"]["id"])
+            status, denied = teacher.call("GET", "/api/change-log")
+            self.assertEqual(status, 403, denied)
+        finally:
+            if kid_id:
+                admin.call("DELETE", f"/api/students/{kid_id}")
+            if adult_id:
+                admin.call("DELETE", f"/api/students/{adult_id}")
+            conn = connect(self.api.cfg["db_path"])
+            try:
+                if kid_id:
+                    conn.execute("DELETE FROM change_log WHERE student_id = ?", (kid_id,))
+                conn.execute("DELETE FROM classes WHERE date = ?", (past,))
+                if adult_id:
+                    conn.execute("DELETE FROM change_log WHERE student_id = ?", (adult_id,))
+                    rows = conn.execute("SELECT id, attended FROM adult_classes WHERE date = ?", (past,)).fetchall()
+                    for row in rows:
+                        attended = json.loads(row["attended"] or "[]")
+                        kept = [item for item in attended if item != adult_id]
+                        conn.execute("UPDATE adult_classes SET attended = ? WHERE id = ?", (json.dumps(kept), row["id"]))
+                conn.commit()
+            finally:
+                conn.close()
+
 
 class DemoIsolationTest(unittest.TestCase):
     def test_demo_cookie_is_not_the_production_cookie(self):

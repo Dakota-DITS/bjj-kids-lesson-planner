@@ -73,6 +73,11 @@
   let noteTimer = 0;
   let claimOpen = false;
   let progressScrollNext = false;
+  let stationTicks = 0;
+  let stationLog = [];
+  let stationLastKey = "";
+  let stationFilter = "all";
+  let waiverWatch = null;
 
   const $ = (id) => document.getElementById(id);
   const esc = P.escapeHtml;
@@ -2631,6 +2636,7 @@ function sparringSection(plan) {
   }
 
   function syncPlanCounts() {
+    if (document.body.dataset.station === "scan") return;
     writeClassCounts();
     if (state.plan) retimePlan();
     else updateTimeSum();
@@ -4874,7 +4880,8 @@ function sparringSection(plan) {
     const result = studentIds.length ? await markPresent(studentIds) : null;
     if (unclaimed.length && !claimOpen) {
       openClaim(unclaimed[0]);
-      if (unclaimed.length > 1) {
+      stationNotice({ kind: "blank" });
+      if (unclaimed.length > 1 && $("checkinStatus")) {
         $("checkinStatus").textContent = "More than one new card. Add this student, then scan the next card.";
         $("checkinStatus").className = "checkin-status";
       }
@@ -4885,9 +4892,12 @@ function sparringSection(plan) {
       return;
     }
     if (messages.length) {
-      $("checkinStatus").textContent = messages[0];
-      $("checkinStatus").className = "checkin-status dup";
+      if ($("checkinStatus")) {
+        $("checkinStatus").textContent = messages[0];
+        $("checkinStatus").className = "checkin-status dup";
+      }
       beep(false);
+      stationNotice({ kind: "message", message: messages[0] });
       return;
     }
     if (result) showScanResult(result);
@@ -5364,6 +5374,7 @@ function sparringSection(plan) {
       el.className = "checkin-status";
     }
     renderCheckinList();
+    stationNotice({ kind: "result", result });
   }
 
   function renderCheckinList() {
@@ -5423,6 +5434,11 @@ function sparringSection(plan) {
       osc.stop(ctx.currentTime + 0.18);
     } catch (err) {
       /* sound is a bonus */
+    }
+    try {
+      if (navigator.vibrate) navigator.vibrate(ok ? 40 : [28, 40, 28]);
+    } catch (err) {
+      /* haptic is a bonus */
     }
   }
 
@@ -5530,10 +5546,33 @@ function sparringSection(plan) {
   }
 
   async function scanVideoFrame() {
+    if (document.body.dataset.station === "scan") {
+      stationTicks += 1;
+      document.body.dataset.scanTicks = String(stationTicks);
+    }
     const video = $("checkinVideo");
     if (!video || video.readyState < 2) return;
     const ids = await decodeSource(video);
     if (!ids.length) return;
+    if (document.body.dataset.station === "scan") {
+      const key = ids.slice().sort().join("|");
+      const now = Date.now();
+      if (scanVideoFrame.lastKey === key && now - (scanVideoFrame.lastAt || 0) < 2500) return;
+      scanVideoFrame.lastKey = key;
+      scanVideoFrame.lastAt = now;
+      for (const id of ids) {
+        const found = resolveScan(id);
+        if (found.type === "student") {
+          const person = allStudents().find((item) => item.id === found.id);
+          if (person && person.program !== "adult" && typeof P.kidGroupId === "function") {
+            const group = P.kidGroupId(person.age);
+            if (group) state.ageGroup = group;
+          }
+        }
+        await handleScans([id]);
+      }
+      return;
+    }
     await handleScans(ids);
   }
 
@@ -5560,6 +5599,7 @@ function sparringSection(plan) {
       }, 700);
       $("checkinStatus").textContent = "Looking for a card…";
       $("checkinStatus").className = "checkin-status";
+      if (document.body.dataset.station === "scan") paintScanBanner(null, null, "Looking for a card…");
     } catch (err) {
       $("checkinStatus").textContent = "The camera is not available. Upload a photo of the cards instead.";
       $("checkinStatus").className = "checkin-status dup";
@@ -7436,10 +7476,413 @@ function sparringSection(plan) {
     });
   }
 
+  function pacificTodayIso() {
+    return new Intl.DateTimeFormat("en-CA", {
+      timeZone: "America/Los_Angeles",
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit",
+    }).format(new Date());
+  }
+
+  function pacificClock(date) {
+    const clock = new Intl.DateTimeFormat("en-US", {
+      timeZone: "America/Los_Angeles",
+      hour: "numeric",
+      minute: "2-digit",
+    }).format(date);
+    return `${clock} PT`;
+  }
+
+  function stationClassLabel(person) {
+    if (!person) return "";
+    if (person.program === "adult") return "Adult class";
+    const group = typeof P.kidGroupId === "function" ? P.kidGroupId(person.age) : "";
+    if (group === "mite") return "Kids · 3–6 Mighty Mites";
+    if (group === "upper") return "Kids · 7–10 Pee Wees";
+    return "Kids class";
+  }
+
+  function stationRank(person) {
+    if (!person) return "";
+    return `${P.beltLabel(person.belt)} · ${stripeText(person)}`;
+  }
+
+  function stationWaiverText(person) {
+    if (!person) return "";
+    return person.waiver && person.waiver.signed ? "Waiver signed" : "No signed waiver";
+  }
+
+  function stationStatusWord(status) {
+    if (status === "dup") return "Already checked in";
+    if (status === "waiver") return "Needs waiver";
+    if (status === "unknown") return "Unknown card";
+    if (status === "outside") return "Not in this class";
+    if (status === "blank") return "New card";
+    return "OK";
+  }
+
+  function personHere(person, date) {
+    if (!person || !date) return false;
+    if (person.program === "adult") return adultHere(date).has(person.id);
+    return state.progress.classes.some(
+      (entry) => entry.date === date && Array.isArray(entry.attended) && entry.attended.includes(person.id)
+    );
+  }
+
+  function pushStationRow(row) {
+    stationLog = stationLog.filter((item) => !(item.key === row.key && item.date === row.date));
+    stationLog.unshift(row);
+    stationLastKey = row.key;
+  }
+
+  function paintScanBanner(person, result, message) {
+    const banner = $("scanBanner");
+    if (!banner) return;
+    let status = "ok";
+    let title = message || "Looking for a card…";
+    let meta = "";
+    let waiver = "";
+    if (person) {
+      const known = result && (result.known || []).some((item) => item.id === person.id);
+      const missing = !(person.waiver && person.waiver.signed);
+      status = known ? (missing ? "waiver" : "ok") : "dup";
+      title = person.name;
+      meta = `${stationClassLabel(person)} · ${stationRank(person)}`;
+      waiver = stationWaiverText(person);
+      if (!known) waiver = `${waiver}. Already checked in today.`;
+    } else if (result && result.unknown && result.unknown.length) {
+      status = "unknown";
+      title = "Unknown card";
+      meta = "That code is not a Grace card.";
+    } else if (message) {
+      status = /new card/i.test(message) ? "blank" : /looking|camera/i.test(message) ? "ok" : "unknown";
+      title = message;
+    }
+    banner.className = `scan-banner is-${status}`;
+    banner.innerHTML = `<p class="scan-kicker">Last scan</p><h2>${esc(title)}</h2>${
+      meta ? `<p>${esc(meta)}</p>` : ""
+    }${waiver ? `<p>${esc(waiver)}</p>` : ""}<p class="scan-chip">${esc(stationStatusWord(status))}</p>`;
+  }
+
+  function stationNotice(info) {
+    if (document.body.dataset.station !== "scan" || !info) return;
+    const date = ($("checkinDate") && $("checkinDate").value) || pacificTodayIso();
+    const at = pacificClock(new Date());
+    const atMs = Date.now();
+    if (info.kind === "result" && info.result) {
+      const result = info.result;
+      (result.known || []).forEach((person) => {
+        const missing = !(person.waiver && person.waiver.signed);
+        pushStationRow({
+          key: person.id,
+          person,
+          status: missing ? "waiver" : "ok",
+          at,
+          atMs,
+          date,
+        });
+      });
+      (result.dup || []).forEach((person) => {
+        pushStationRow({ key: person.id, person, status: "dup", at, atMs, date });
+      });
+      (result.outside || []).forEach((person) => {
+        pushStationRow({ key: person.id, person, status: "outside", at, atMs, date });
+      });
+      (result.unknown || []).forEach((id) => {
+        pushStationRow({ key: `u:${id}`, unknown: String(id), status: "unknown", at, atMs, date });
+      });
+      const person = (result.known && result.known[0]) || (result.dup && result.dup[0]) || null;
+      paintScanBanner(person, result);
+    } else if (info.kind === "message") {
+      const text = info.message || "Unknown card";
+      pushStationRow({ key: `m:${text}`, unknown: text, status: "unknown", at, atMs, date });
+      paintScanBanner(null, null, text);
+    } else if (info.kind === "blank") {
+      paintScanBanner(null, null, "New card. Add this student.");
+    }
+    renderStationTable();
+  }
+
+  function checkedInPeople(date) {
+    const people = [];
+    const seen = new Set();
+    state.progress.classes.forEach((entry) => {
+      if (entry.date !== date || !Array.isArray(entry.attended)) return;
+      entry.attended.forEach((id) => {
+        if (seen.has(id)) return;
+        const person = state.roster.find((kid) => kid.id === id);
+        if (!person) return;
+        seen.add(id);
+        people.push(person);
+      });
+    });
+    const adult = (state.adultAttendance || []).find((entry) => entry.date === date);
+    ((adult && adult.attended) || []).forEach((id) => {
+      if (seen.has(id)) return;
+      const person = (state.rosterAdults || []).find((item) => item.id === id);
+      if (!person) return;
+      seen.add(id);
+      people.push(person);
+    });
+    return people;
+  }
+
+  function stationRows(date) {
+    const map = new Map();
+    checkedInPeople(date).forEach((person) => {
+      const missing = !(person.waiver && person.waiver.signed);
+      map.set(person.id, {
+        key: person.id,
+        person,
+        status: missing ? "waiver" : "ok",
+        at: "",
+        atMs: 0,
+        date,
+      });
+    });
+    stationLog
+      .filter((row) => row.date === date)
+      .slice()
+      .reverse()
+      .forEach((row) => {
+        if (row.person && !personHere(row.person, date)) return;
+        const prev = map.get(row.key) || {};
+        map.set(row.key, {
+          ...prev,
+          ...row,
+          person: row.person || prev.person,
+          at: row.at || prev.at || "",
+          atMs: row.atMs || prev.atMs || 0,
+        });
+      });
+    return [...map.values()].sort((a, b) => (b.atMs || 0) - (a.atMs || 0) || String(a.person && a.person.name || a.unknown).localeCompare(String(b.person && b.person.name || b.unknown)));
+  }
+
+  function renderStationTable() {
+    const body = $("scanRows");
+    if (!body) return;
+    const date = ($("checkinDate") && $("checkinDate").value) || pacificTodayIso();
+    let rows = stationRows(date);
+    if (stationFilter === "kids") rows = rows.filter((row) => row.person && row.person.program !== "adult");
+    if (stationFilter === "adults") rows = rows.filter((row) => row.person && row.person.program === "adult");
+    const counted = stationRows(date).filter((row) => row.person && personHere(row.person, date));
+    const kids = counted.filter((row) => row.person.program !== "adult").length;
+    const adults = counted.filter((row) => row.person.program === "adult").length;
+    if ($("scanTotals")) $("scanTotals").textContent = `${kids} kids · ${adults} adults · ${kids + adults} total`;
+    body.innerHTML = rows.length
+      ? rows
+          .map((row) => {
+            const person = row.person;
+            const name = person ? person.name : row.unknown || "Unknown card";
+            const klass = person ? stationClassLabel(person) : "";
+            const rank = person ? stationRank(person) : "";
+            const waiver = person ? stationWaiverText(person) : "";
+            const undo = person && personHere(person, date) && !isOwnRecord(person)
+              ? `<button type="button" data-station-undo="${esc(person.id)}">Undo</button>`
+              : person && isOwnRecord(person)
+                ? `<span class="scan-own">Ask another staff member</span>`
+                : "";
+            return `<tr class="${row.key === stationLastKey ? "is-last" : ""}" data-scan-key="${esc(row.key)}">
+              <td>${esc(row.at || "Earlier")}</td>
+              <td>${esc(name)}</td>
+              <td>${esc(klass)}</td>
+              <td>${esc(rank)}</td>
+              <td>${esc(waiver)}</td>
+              <td><span class="scan-chip is-${esc(row.status)}">${esc(stationStatusWord(row.status))}</span></td>
+              <td>${undo}</td>
+            </tr>`;
+          })
+          .join("")
+      : `<tr><td colspan="7">Nobody is checked in for this date yet.</td></tr>`;
+    paintDayNote();
+  }
+
+  function paintDayNote() {
+    const note = $("scanDayNote");
+    const input = $("checkinDate");
+    if (!note || !input || !input.value) return;
+    const days = window.GRACE_CLASS_DAYS;
+    const parts = input.value.split("-").map(Number);
+    if (!days || typeof days.forProgram !== "function" || parts.length !== 3) {
+      note.textContent = "";
+      return;
+    }
+    const kids = days.forProgram("kids").meeting(parts[0], parts[1], parts[2], state.classExceptions || []);
+    const adult = days.forProgram("adult").meeting(parts[0], parts[1], parts[2], state.adultExceptions || []);
+    const kidText = kids.meets ? (kids.extra ? "Kids make-up class" : "Kids class meets") : kids.skipped ? "Kids class skipped" : "No kids class";
+    const adultText = adult.meets ? (adult.extra ? "Adult make-up class" : "Adult class meets") : adult.skipped ? "Adult class skipped" : "No adult class";
+    note.textContent = `${kidText} · ${adultText}`;
+  }
+
+  async function openStationWaiver(kind) {
+    const panel = $("waiverPanel");
+    const host = $("waiverMount");
+    if (!panel || !host) return;
+    panel.hidden = false;
+    document.body.classList.add("waiver-open");
+    if ($("waiverDone")) $("waiverDone").hidden = true;
+    host.innerHTML = `<p class="scan-loading">Loading the ${kind === "kids" ? "kids" : "adult"} form…</p>`;
+    const path = kind === "kids" ? "/kids/waiver/" : "/waiver/";
+    const res = await fetch(path, { credentials: "same-origin", cache: "no-store" });
+    if (!res.ok) {
+      host.innerHTML = `<p class="scan-loading">The form could not be loaded.</p>`;
+      return;
+    }
+    const html = await res.text();
+    const doc = new DOMParser().parseFromString(html, "text/html");
+    const main = doc.querySelector("main");
+    host.innerHTML = main ? main.innerHTML : "";
+    document.body.dataset.kind = kind === "kids" ? "kids" : "adult";
+    document.querySelectorAll("script[data-station-waiver]").forEach((node) => node.remove());
+    const script = document.createElement("script");
+    script.src = `/waiver/waiver.js?station=${Date.now()}`;
+    script.dataset.stationWaiver = "1";
+    document.body.appendChild(script);
+    if (waiverWatch) waiverWatch.disconnect();
+    waiverWatch = new MutationObserver(() => {
+      const note = host.querySelector("#formNote");
+      if (!note || !/Enrollment saved/i.test(note.textContent)) return;
+      const text = note.textContent;
+      waiverWatch.disconnect();
+      waiverWatch = null;
+      closeStationWaiver();
+      const done = $("waiverDone");
+      if (done) {
+        done.hidden = false;
+        done.textContent = text;
+      }
+    });
+    waiverWatch.observe(host, { subtree: true, childList: true, characterData: true });
+    const close = $("waiverClose");
+    if (close) close.focus();
+  }
+
+  function closeStationWaiver() {
+    const panel = $("waiverPanel");
+    const host = $("waiverMount");
+    if (waiverWatch) waiverWatch.disconnect();
+    waiverWatch = null;
+    if (host) host.innerHTML = "";
+    if (panel) panel.hidden = true;
+    document.body.classList.remove("waiver-open");
+    delete document.body.dataset.kind;
+    document.querySelectorAll("script[data-station-waiver]").forEach((node) => node.remove());
+  }
+
+  async function stationInject(ids) {
+    const list = Array.isArray(ids) ? ids : [ids];
+    for (const id of list) {
+      const found = resolveScan(id);
+      if (found.type === "student") {
+        const person = allStudents().find((item) => item.id === found.id);
+        if (person && person.program !== "adult" && typeof P.kidGroupId === "function") {
+          const group = P.kidGroupId(person.age);
+          if (group) state.ageGroup = group;
+        }
+      }
+      await handleScans([id]);
+    }
+  }
+
+  async function startScanStation() {
+    if ($("checkinDate") && !$("checkinDate").value) $("checkinDate").value = pacificTodayIso();
+    const who = $("whoami");
+    if (who && state.session) who.textContent = `${sessionDisplayName()} · ${state.session.role}`;
+    if ($("claimBelt") && DATA.belts) {
+      $("claimBelt").innerHTML = DATA.belts
+        .map(([id, label]) => `<option value="${esc(id)}">${esc(label)}</option>`)
+        .join("");
+    }
+    if ($("claimForm")) $("claimForm").addEventListener("submit", (event) => submitClaim(event));
+    if ($("claimCancel")) {
+      $("claimCancel").addEventListener("click", () => {
+        closeClaim();
+        if ($("checkinStatus")) {
+          $("checkinStatus").textContent = "Card not linked.";
+          $("checkinStatus").className = "checkin-status";
+        }
+      });
+    }
+    if ($("claimAge")) $("claimAge").addEventListener("input", syncClaimPotty);
+    if ($("claimGroup")) $("claimGroup").addEventListener("change", syncClaimPotty);
+    if ($("checkinDate")) {
+      $("checkinDate").addEventListener("change", () => renderStationTable());
+    }
+    document.querySelectorAll("[data-scan-filter]").forEach((btn) => {
+      btn.addEventListener("click", () => {
+        stationFilter = btn.dataset.scanFilter || "all";
+        document.querySelectorAll("[data-scan-filter]").forEach((item) => {
+          const on = item === btn;
+          item.classList.toggle("on", on);
+          item.setAttribute("aria-pressed", on ? "true" : "false");
+        });
+        renderStationTable();
+      });
+    });
+    const table = $("scanTable");
+    if (table) {
+      table.addEventListener("click", async (event) => {
+        const btn = event.target.closest("[data-station-undo]");
+        if (!btn) return;
+        const person = allStudents().find((item) => item.id === btn.dataset.stationUndo);
+        const date = $("checkinDate") && $("checkinDate").value;
+        if (!person || !date) return;
+        if (!window.confirm(`Remove the check-in for ${person.name}?`)) return;
+        await saveAttendance(person, date, false);
+        renderStationTable();
+      });
+    }
+    if ($("kidsWaiverBtn")) $("kidsWaiverBtn").addEventListener("click", () => openStationWaiver("kids"));
+    if ($("adultWaiverBtn")) $("adultWaiverBtn").addEventListener("click", () => openStationWaiver("adult"));
+    if ($("waiverClose")) $("waiverClose").addEventListener("click", closeStationWaiver);
+    if ($("cameraBtn")) $("cameraBtn").addEventListener("click", () => startCamera());
+    if ($("cameraStop")) {
+      $("cameraStop").addEventListener("click", () => {
+        stopCamera();
+        if ($("checkinStatus")) {
+          $("checkinStatus").textContent = "Camera stopped.";
+          $("checkinStatus").className = "checkin-status";
+        }
+      });
+    }
+    if ($("logoutBtn")) {
+      $("logoutBtn").addEventListener("click", async () => {
+        stopCamera();
+        try {
+          await window.BJJ_API.send("POST", "/api/logout");
+        } catch (err) {
+          /* still leave */
+        }
+        window.location.href = "/login/";
+      });
+    }
+    window.BJJ_SCAN = {
+      inject: stationInject,
+      ticks: () => stationTicks,
+      streaming: () => !!(cameraStream && cameraTimer),
+    };
+    try {
+      await refreshClassExceptions();
+    } catch (err) {
+      /* the date hint can wait */
+    }
+    renderStationTable();
+    cameraHelp();
+    document.body.classList.add("authed");
+    const gate = $("gate");
+    if (gate) gate.hidden = true;
+    startCamera();
+  }
+
   async function boot() {
     try {
       const body = await window.BJJ_API.bootstrap();
       applyBootstrap(body);
+      if (document.body.dataset.station === "scan") {
+        await startScanStation();
+        return;
+      }
       await startApp();
     } catch (err) {
       console.error(err);
