@@ -4,7 +4,7 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <meta name="bjj-base" content="">
-  <script src="/bjj-base.js?v=20261028-59"></script>
+  <script src="/bjj-base.js?v=20261028-60"></script>
   <meta name="robots" content="noindex, nofollow, noarchive, nosnippet">
   <meta name="googlebot" content="noindex, nofollow">
   <title>Check-in station · Grace BJJ Staff</title>
@@ -17,8 +17,8 @@
   <meta name="apple-mobile-web-app-title" content="Grace BJJ Staff" />
   <link rel="icon" href="/icons/staff-favicon-32.png" type="image/png" sizes="32x32" />
   <link rel="apple-touch-icon" href="/icons/staff-apple-touch-icon.png" sizes="180x180" />
-  <link rel="stylesheet" href="/css/waiver.css?v=20261028-59" />
-  <script src="/pwa.js?v=20261028-59" defer></script>
+  <link rel="stylesheet" href="/css/waiver.css?v=20261028-60" />
+  <script src="/pwa.js?v=20261028-60" defer></script>
   <style>
     :root { color-scheme: light; }
     * { box-sizing: border-box; }
@@ -49,10 +49,16 @@
     .top-actions { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
     .station {
       display: grid;
-      grid-template-columns: minmax(280px, 420px) minmax(0, 1fr);
+      grid-template-columns: minmax(0, 360px) minmax(0, 1fr);
       gap: 16px;
       padding: 16px;
       align-items: start;
+      width: 100%;
+      max-width: 100%;
+    }
+    .scan-col, .table-col, .waiver-panel, .topbar, .top-actions {
+      min-width: 0;
+      max-width: 100%;
     }
     .scan-col, .table-col, .waiver-panel {
       background: #fff;
@@ -61,13 +67,33 @@
       border-radius: 16px;
       padding: 12px;
     }
+    video, img, canvas {
+      max-width: 100%;
+      min-width: 0;
+    }
+    .viewfinder {
+      box-sizing: border-box;
+      width: 100%;
+      max-width: 100%;
+      margin: 0 0 12px;
+      padding: 8px;
+      border: 8px solid #9b2a12;
+      border-radius: 24px;
+      background: #1c1917;
+      box-shadow: 0 10px 24px rgba(28, 25, 23, 0.28);
+    }
     video {
       display: block;
       width: 100%;
+      height: auto;
       max-height: 42vh;
+      margin: 0;
       background: #111;
-      border-radius: 12px;
+      border-radius: 14px;
       object-fit: cover;
+    }
+    #cameraNote, .scan-banner, .scan-banner h2, .scan-banner p {
+      overflow-wrap: anywhere;
     }
     .scan-banner {
       margin: 12px 0;
@@ -76,8 +102,10 @@
       background: #fff7ed;
       border: 3px solid #1c1917;
     }
-    .scan-banner h2 { margin: 0 0 6px; font-size: 1.8rem; line-height: 1.15; }
-    .scan-banner p { margin: 4px 0; font-size: 1.15rem; }
+    .scan-banner h2 { margin: 0 0 6px; font-size: 1.8rem; line-height: 1.15; color: #1c1917; }
+    .scan-banner p { margin: 4px 0; font-size: 1.15rem; color: #1c1917; }
+    body[data-station="scan"] .scan-banner h2,
+    body[data-station="scan"] .scan-banner p { color: #1c1917; }
     .scan-kicker { font-size: 0.85rem !important; letter-spacing: 0.04em; text-transform: uppercase; font-weight: 700; }
     .scan-banner.is-ok { background: #ecfdf3; border-color: #166534; }
     .scan-banner.is-dup { background: #fff7ed; border-color: #9a3412; }
@@ -85,18 +113,29 @@
     .scan-chip {
       display: inline-block;
       margin-top: 6px;
-      padding: 4px 10px;
+      padding: 8px 14px;
       border-radius: 999px;
       font-weight: 800;
+      line-height: 1.25;
+      white-space: nowrap;
       background: #1c1917;
       color: #fff;
     }
     .scan-chip.is-ok { background: #166534; }
     .scan-chip.is-dup { background: #9a3412; }
     .scan-chip.is-waiver, .scan-chip.is-unknown, .scan-chip.is-outside, .scan-chip.is-blank { background: #991b1b; }
-    .row { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
-    .row button, .waiver-actions button {
-      padding: 10px 14px;
+    .row, .waiver-actions {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 12px;
+      align-items: center;
+    }
+    .station button,
+    .topbar button,
+    .waiver-panel button {
+      min-height: 48px;
+      min-width: 44px;
+      padding: 12px 18px;
       border-radius: 12px;
       border: 2px solid #1c1917;
       background: #fff;
@@ -115,11 +154,13 @@
       font-size: 1.05rem;
     }
     .totals { font-size: 1.25rem; font-weight: 800; margin: 8px 0; }
-    .table-wrap { overflow-x: auto; }
+    .table-wrap { max-width: 100%; overflow-x: auto; }
     table { width: 100%; border-collapse: collapse; }
-    th, td { text-align: left; padding: 10px 8px; border-bottom: 1px solid #d6d3d1; vertical-align: top; }
+    th, td { text-align: left; padding: 8px 6px; border-bottom: 1px solid #d6d3d1; vertical-align: top; }
+    #scanTable .scan-chip { padding: 8px 12px; }
     th { font-size: 0.85rem; }
-    tr.is-last { background: #fef3c7; outline: 3px solid #b45309; }
+    tr.is-last { background: #fef3c7; box-shadow: inset 0 0 0 3px #b45309; }
+    input, select { max-width: 100%; min-width: 0; }
     caption { text-align: left; font-weight: 800; font-size: 1.25rem; margin-bottom: 8px; }
     .claim-form { margin-top: 12px; padding: 12px; border: 2px dashed #9b2a12; border-radius: 12px; }
     .claim-form.hidden, [hidden] { display: none !important; }
@@ -128,14 +169,71 @@
       max-height: 70vh;
       overflow: auto;
     }
-    .waiver-done {
-      margin: 0 16px 16px;
-      padding: 14px;
-      background: #ecfdf3;
-      border: 3px solid #166534;
-      border-radius: 14px;
-      font-size: 1.2rem;
-      font-weight: 700;
+    body[data-station="scan"] #waiverMount.sheet {
+      width: 100%;
+      max-width: 100%;
+      margin: 0;
+      color: #1c1917;
+    }
+    body[data-station="scan"] #waiverMount h1,
+    body[data-station="scan"] #waiverMount .lede {
+      color: #1c1917;
+    }
+    .waiver-result {
+      margin: 0 0 12px;
+      padding: 22px 18px;
+      background: #dcfce7;
+      color: #14532d;
+      border: 4px solid #166534;
+      border-radius: 16px;
+    }
+    body[data-station="scan"] #waiverResult h2 {
+      margin: 0 0 8px;
+      color: #14532d;
+      font-size: 1.7rem;
+      line-height: 1.2;
+    }
+    body[data-station="scan"] #waiverResult p {
+      margin: 0 0 16px;
+      color: #14532d;
+      font-size: 1.15rem;
+    }
+    body[data-station="scan"][data-kind="adult"] #waiverMount section,
+    body[data-station="scan"][data-kind="adult"] #waiverMount form {
+      color: #f5f0e8;
+    }
+    body[data-station="scan"][data-kind="adult"] #waiverMount h1,
+    body[data-station="scan"][data-kind="adult"] #waiverMount .lede {
+      color: #1c1917;
+    }
+    body[data-station="scan"][data-kind="adult"] #waiverMount input,
+    body[data-station="scan"][data-kind="adult"] #waiverMount select,
+    body[data-station="scan"][data-kind="adult"] #waiverMount textarea {
+      color: #1c1917;
+    }
+    body[data-station="scan"] #waiverResult button {
+      background: #166534;
+      color: #fff;
+      border-color: #14532d;
+    }
+    #waiverResult:not([hidden]) ~ .row { display: none; }
+    #scanTable button {
+      background: #9b2a12;
+      color: #fff7ed;
+      border-color: #9b2a12;
+    }
+    .waiver-error {
+      position: sticky;
+      top: 0;
+      z-index: 3;
+      margin: 0 0 12px;
+      padding: 16px 18px;
+      background: #fef2f2;
+      color: #7f1d1d;
+      border: 4px solid #991b1b;
+      border-radius: 16px;
+      font-size: 1.15rem;
+      font-weight: 800;
     }
     .toast {
       position: fixed;
@@ -165,19 +263,65 @@
       border: 0;
     }
     .scan-own { font-size: 0.9rem; }
+    @media (min-width: 801px) {
+      body.waiver-open .station { grid-template-columns: minmax(0, 380px) minmax(0, 1fr); }
+      body.waiver-open .scan-col { grid-column: 1; grid-row: 1; }
+      body.waiver-open .table-col { grid-column: 1; grid-row: 2; }
+      body.waiver-open .waiver-panel {
+        grid-column: 2;
+        grid-row: 1 / span 2;
+        max-height: calc(100vh - 110px);
+        position: sticky;
+        top: 12px;
+      }
+    }
     @media (max-width: 800px) {
-      .station { grid-template-columns: 1fr; padding: 10px; }
+      .station { grid-template-columns: minmax(0, 1fr); padding: 10px; width: 100%; }
+      .row, .waiver-actions, #cameraNote { max-width: 100%; }
+      #checkinDate { width: 100%; }
+      video { max-height: 28vh; }
       .waiver-panel {
         position: fixed;
         left: 0;
         right: 0;
         bottom: 0;
         z-index: 20;
+        width: 100%;
         max-height: 78vh;
         border-radius: 16px 16px 0 0;
         box-shadow: 0 -8px 24px rgba(0, 0, 0, 0.28);
       }
-      .scan-banner h2 { font-size: 1.6rem; }
+      .scan-banner h2 { font-size: 1.45rem; }
+      .table-wrap { overflow: visible; }
+      #scanTable thead {
+        position: absolute;
+        width: 1px;
+        height: 1px;
+        overflow: hidden;
+        clip: rect(0 0 0 0);
+      }
+      #scanTable, #scanTable tbody, #scanTable tr, #scanTable td { display: block; width: 100%; }
+      #scanTable tr {
+        margin: 0 0 10px;
+        padding: 10px 12px;
+        border: 1px solid #d6d3d1;
+        border-radius: 12px;
+      }
+      #scanTable td { border: 0; padding: 3px 0; }
+      #scanTable td:nth-child(1)::before { content: "Time "; font-weight: 800; }
+      #scanTable td:nth-child(3)::before { content: "Class "; font-weight: 800; }
+      #scanTable td:nth-child(4)::before { content: "Belt "; font-weight: 800; }
+      #scanTable td:nth-child(5)::before { content: "Waiver "; font-weight: 800; }
+      #scanTable td:nth-child(2) { font-size: 1.2rem; font-weight: 800; }
+      #scanTable .scan-chip { margin-top: 8px; }
+      #scanTable button,
+      .scan-col .row button,
+      .waiver-actions button,
+      #waiverClose,
+      #waiverResultClose {
+        flex: 1 1 calc(50% - 12px);
+        width: auto;
+      }
     }
   </style>
 </head>
@@ -195,7 +339,9 @@
   </header>
   <div class="station">
     <section class="scan-col" aria-label="Scanner">
-      <video id="checkinVideo" playsinline muted autoplay aria-label="Card scanner camera"></video>
+      <div class="viewfinder">
+        <video id="checkinVideo" playsinline muted autoplay aria-label="Card scanner camera"></video>
+      </div>
       <p id="cameraNote"></p>
       <div id="scanBanner" class="scan-banner" aria-live="polite">
         <p class="scan-kicker">Last scan</p>
@@ -272,21 +418,26 @@
       </div>
     </section>
     <section id="waiverPanel" class="waiver-panel" hidden aria-label="Enrollment form">
+      <div id="waiverResult" class="waiver-result" hidden role="status">
+        <h2 id="waiverResultTitle">Waiver submitted.</h2>
+        <p id="waiverResultText">The church office has the form. The scanner is still on.</p>
+        <button type="button" id="waiverResultClose">Back to scanner</button>
+      </div>
+      <p id="waiverError" class="waiver-error" hidden role="alert"></p>
       <div class="row">
         <button type="button" id="waiverClose">Back to scanner</button>
       </div>
       <div id="waiverMount" class="sheet"></div>
     </section>
   </div>
-  <p id="waiverDone" class="waiver-done" hidden role="status"></p>
   <p id="toast" class="toast" role="status"></p>
-  <script src="/vendor/qrcode-generator/qrcode.js?v=20261028-59"></script>
-  <script src="/vendor/jsQR/jsQR.js?v=20261028-59"></script>
-  <script src="/calendar/class-days.js?v=20261028-59"></script>
-  <script src="/js/plan-math.js?v=20261028-59"></script>
-  <script src="/js/data.js?v=20261028-59"></script>
-  <script src="/js/curriculum.js?v=20261028-59"></script>
-  <script src="/js/api.js?v=20261028-59"></script>
-  <script src="/js/app.js?v=20261028-59"></script>
+  <script src="/vendor/qrcode-generator/qrcode.js?v=20261028-60"></script>
+  <script src="/vendor/jsQR/jsQR.js?v=20261028-60"></script>
+  <script src="/calendar/class-days.js?v=20261028-60"></script>
+  <script src="/js/plan-math.js?v=20261028-60"></script>
+  <script src="/js/data.js?v=20261028-60"></script>
+  <script src="/js/curriculum.js?v=20261028-60"></script>
+  <script src="/js/api.js?v=20261028-60"></script>
+  <script src="/js/app.js?v=20261028-60"></script>
 </body>
 </html>

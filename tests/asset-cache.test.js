@@ -3,7 +3,7 @@ const assert = require("assert");
 const fs = require("fs");
 const path = require("path");
 
-const VERSION = "20261028-59";
+const VERSION = "20261028-60";
 const root = path.join(__dirname, "..");
 
 function read(rel) {

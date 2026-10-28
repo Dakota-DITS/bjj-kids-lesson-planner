@@ -7562,7 +7562,7 @@ function sparringSection(plan) {
     banner.className = `scan-banner is-${status}`;
     banner.innerHTML = `<p class="scan-kicker">Last scan</p><h2>${esc(title)}</h2>${
       meta ? `<p>${esc(meta)}</p>` : ""
-    }${waiver ? `<p>${esc(waiver)}</p>` : ""}<p class="scan-chip">${esc(stationStatusWord(status))}</p>`;
+    }${waiver ? `<p>${esc(waiver)}</p>` : ""}<p class="scan-chip is-${esc(status)}">${esc(stationStatusWord(status))}</p>`;
   }
 
   function stationNotice(info) {
@@ -7715,13 +7715,54 @@ function sparringSection(plan) {
     note.textContent = `${kidText} · ${adultText}`;
   }
 
+  function clearWaiverFeedback() {
+    const result = $("waiverResult");
+    const err = $("waiverError");
+    const host = $("waiverMount");
+    if (result) result.hidden = true;
+    if (err) {
+      err.hidden = true;
+      err.textContent = "";
+    }
+    if (host) host.hidden = false;
+  }
+
+  function showWaiverSuccess(name) {
+    const who = String(name || "").trim();
+    const title = $("waiverResultTitle");
+    const text = $("waiverResultText");
+    if (title) title.textContent = who ? `Waiver submitted. Thank you, ${who}.` : "Waiver submitted. Thank you.";
+    if (text) text.textContent = "The church office has the form. The scanner is still on.";
+    const host = $("waiverMount");
+    if (host) host.hidden = true;
+    const err = $("waiverError");
+    if (err) err.hidden = true;
+    const result = $("waiverResult");
+    if (result) result.hidden = false;
+    const panel = $("waiverPanel");
+    if (panel) panel.scrollTop = 0;
+    const back = $("waiverResultClose");
+    if (back) back.focus();
+  }
+
+  function showWaiverError(message) {
+    const err = $("waiverError");
+    if (!err) return;
+    const detail = String(message || "Enrollment could not be saved.").trim();
+    err.textContent = `Could not submit the waiver. ${detail} Your answers are still in the form.`;
+    err.hidden = false;
+    const panel = $("waiverPanel");
+    if (panel) panel.scrollTop = 0;
+  }
+
   async function openStationWaiver(kind) {
     const panel = $("waiverPanel");
     const host = $("waiverMount");
     if (!panel || !host) return;
+    clearWaiverFeedback();
     panel.hidden = false;
+    panel.scrollTop = 0;
     document.body.classList.add("waiver-open");
-    if ($("waiverDone")) $("waiverDone").hidden = true;
     host.innerHTML = `<p class="scan-loading">Loading the ${kind === "kids" ? "kids" : "adult"} form…</p>`;
     const path = kind === "kids" ? "/kids/waiver/" : "/waiver/";
     const res = await fetch(path, { credentials: "same-origin", cache: "no-store" });
@@ -7740,18 +7781,32 @@ function sparringSection(plan) {
     script.dataset.stationWaiver = "1";
     document.body.appendChild(script);
     if (waiverWatch) waiverWatch.disconnect();
+    let submitted = false;
+    host.addEventListener(
+      "submit",
+      (event) => {
+        if (event.target && event.target.id === "waiverForm") {
+          submitted = true;
+          const err = $("waiverError");
+          if (err) err.hidden = true;
+        }
+      },
+      true
+    );
     waiverWatch = new MutationObserver(() => {
       const note = host.querySelector("#formNote");
-      if (!note || !/Enrollment saved/i.test(note.textContent)) return;
-      const text = note.textContent;
-      waiverWatch.disconnect();
-      waiverWatch = null;
-      closeStationWaiver();
-      const done = $("waiverDone");
-      if (done) {
-        done.hidden = false;
-        done.textContent = text;
+      const form = host.querySelector("#waiverForm");
+      if (!note) return;
+      const message = note.textContent.trim();
+      if (/Enrollment saved/i.test(message)) {
+        const nameField = host.querySelector("#participantName");
+        const name = nameField ? nameField.value : "";
+        waiverWatch.disconnect();
+        waiverWatch = null;
+        showWaiverSuccess(name);
+        return;
       }
+      if (submitted && message && form && !form.hidden) showWaiverError(message);
     });
     waiverWatch.observe(host, { subtree: true, childList: true, characterData: true });
     const close = $("waiverClose");
@@ -7763,6 +7818,7 @@ function sparringSection(plan) {
     const host = $("waiverMount");
     if (waiverWatch) waiverWatch.disconnect();
     waiverWatch = null;
+    clearWaiverFeedback();
     if (host) host.innerHTML = "";
     if (panel) panel.hidden = true;
     document.body.classList.remove("waiver-open");
@@ -7836,6 +7892,7 @@ function sparringSection(plan) {
     if ($("kidsWaiverBtn")) $("kidsWaiverBtn").addEventListener("click", () => openStationWaiver("kids"));
     if ($("adultWaiverBtn")) $("adultWaiverBtn").addEventListener("click", () => openStationWaiver("adult"));
     if ($("waiverClose")) $("waiverClose").addEventListener("click", closeStationWaiver);
+    if ($("waiverResultClose")) $("waiverResultClose").addEventListener("click", closeStationWaiver);
     if ($("cameraBtn")) $("cameraBtn").addEventListener("click", () => startCamera());
     if ($("cameraStop")) {
       $("cameraStop").addEventListener("click", () => {
