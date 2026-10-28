@@ -1,5 +1,19 @@
 /* Button groups share one gap. Phones use two equal columns so wrapped
    rows line up. Wider screens keep each button at its natural width. */
+a.back-staff {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 44px;
+  padding: 8px 16px;
+  border-radius: 999px;
+  border: 2px solid #a8a29e;
+  background: transparent;
+  color: #fff7ed;
+  font-weight: 700;
+  text-decoration: none;
+  line-height: 1.2;
+}
 .btn-grid,
 .btn-row,
 .card-actions,

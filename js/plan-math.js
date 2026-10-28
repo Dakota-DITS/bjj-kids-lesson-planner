@@ -371,13 +371,14 @@
       };
     }
     const ratio = k / a;
+    const adultWord = a === 1 ? "adult" : "adults";
     if (ratio > RATIO_LIMIT) {
       return {
         ok: false,
         ratio,
         kids: k,
         adults: a,
-        text: `Warning: ${k} kids / ${a} adults is ${ratio.toFixed(1)}:1. The limit is 4:1. Add adults before class.`,
+        text: `${k} kids / ${a} ${adultWord} is ${ratio.toFixed(1)}:1, limit is 4:1.`,
       };
     }
     return {
@@ -385,7 +386,7 @@
       ratio,
       kids: k,
       adults: a,
-      text: `${k} kids / ${a} adults is within the 4:1 ratio.`,
+      text: `${k} kids / ${a} ${adultWord} is within the 4:1 ratio.`,
     };
   }
 

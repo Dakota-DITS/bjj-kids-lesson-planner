@@ -1788,7 +1788,7 @@ function sparringSection(plan) {
             )}.</p>`
           : ""
       }
-      ${ratio.ok ? "" : `<p class="callout warn">${esc(ratio.text)}</p>`}
+      ${ratio.ok ? "" : `<p class="callout warn no-print">${esc(ratio.text)}</p>`}
 
       <h2 class="section-name">Staff</h2>
       ${
@@ -1901,7 +1901,7 @@ function sparringSection(plan) {
         <h2 class="block-title">Class rules</h2>
         <div class="item">
           <ul>${rulesFor(plan).map((rule) => `<li>${esc(rule)}</li>`).join("")}</ul>
-          ${plan.mode === "grace" ? `<p class="${ratio.ok ? "" : "warn-text"}">${esc(ratio.text)}</p>` : ""}
+          ${plan.mode === "grace" ? `<p class="no-print${ratio.ok ? "" : " warn-text"}">${esc(ratio.text)}</p>` : ""}
         </div>
       </section>
       <div class="plan-running-footer">
@@ -2387,12 +2387,17 @@ function sparringSection(plan) {
     const beltText = belts.length
       ? `${belts.map((name) => esc(name)).join(", ")}. The head instructor decides.`
       : "Nobody is ready for a belt hint.";
+    const ratio = P.ratioStatus(
+      $("kidCount") ? $("kidCount").value : 0,
+      $("adultCount") ? $("adultCount").value : 0
+    );
     root.innerHTML = `
       <h2>At a glance</h2>
       <div class="home-cards">
         <article class="home-card"><strong>Next class</strong><p>${esc(nextLabel)}, 5:30–6:15 PM</p><p>Opens with a short prayer.</p><p>Teacher ${esc(instructorName() || "the teacher")}</p>${
           P.isCombo(state.ageGroup) ? `<p>${esc(P.comboLabel(state.ageGroup))}</p>` : ""
         }</article>
+        <article class="home-card${ratio.ok ? "" : " is-warn"}" id="glanceRatio"><strong>Ratio</strong><p>${esc(ratio.text)}</p></article>
         <article class="home-card"><strong>Roster</strong><p>${esc(enrollmentLine())}</p><p>${esc(groups.join(" · "))}${outside ? esc(` · Other ages: ${outside}`) : ""}</p></article>
         <article class="home-card"><strong>Close to a stripe</strong><p>${closeText}</p></article>
         <article class="home-card"><strong>Belt hint</strong><p>${beltText}</p></article>
@@ -2430,6 +2435,12 @@ function sparringSection(plan) {
       else if (state.ratioSource === "edited") source = " The kid count was typed in.";
       ratioEl.className = ratio.ok ? "hint" : "hint warn";
       ratioEl.textContent = ratio.text + source;
+    }
+    const glance = $("glanceRatio");
+    if (glance) {
+      glance.classList.toggle("is-warn", !ratio.ok);
+      const line = glance.querySelector("p");
+      if (line) line.textContent = ratio.text;
     }
     const span = P.classSpan(P.parseStartMinutes(s.startTime), s.totalMin);
     if (!state.plan) {
@@ -2597,8 +2608,11 @@ function sparringSection(plan) {
           </article>`;
         }
         const skip = canEditCalendar()
-          ? `<div class="btn-grid"><input class="skip-reason" type="text" maxlength="120" placeholder="Reason, optional" aria-label="Reason for skipping ${esc(title)}" data-skip-reason="${esc(row.iso)}" />
-             <button class="ghost" type="button" data-cal-skip="${esc(row.iso)}">Skip this class</button></div>`
+          ? `<div class="skip-box">
+              <label for="skip-reason-${esc(row.iso)}">Reason, optional</label>
+              <textarea id="skip-reason-${esc(row.iso)}" class="skip-reason" maxlength="120" rows="3" placeholder="Reason, optional" aria-label="Reason for skipping ${esc(title)}" data-skip-reason="${esc(row.iso)}"></textarea>
+              <button class="danger skip-class" type="button" data-cal-skip="${esc(row.iso)}">Skip this class</button>
+            </div>`
           : "";
         return `<article class="calendar-row">
           <p><strong>${esc(title)}</strong><br>${esc(when)}</p>
@@ -3026,7 +3040,7 @@ function sparringSection(plan) {
     if (banner) {
       const snap = state.kidsEnrollment || {};
       const active = Number(snap.waitlistActive) || 0;
-      const show = isAdmin() && snap.waitlistSpotOpen === true && active > 0;
+      const show = isAdmin() && state.program !== "adult" && snap.waitlistSpotOpen === true && active > 0;
       banner.classList.toggle("hidden", !show);
       banner.textContent = "";
       if (show) {
@@ -3411,7 +3425,12 @@ function sparringSection(plan) {
   function setView(view) {
     if (state.program === "adult" && (view === "plan" || view === "review")) view = "progress";
     if (view !== "checkin") stopCamera();
+    if (view !== "cards" && $("cardView")) {
+      state.cardLayout = "";
+      $("cardView").innerHTML = "";
+    }
     state.view = view;
+    document.body.dataset.staffView = view;
     document.body.classList.remove("menu-open");
     if ($("menuToggle")) $("menuToggle").setAttribute("aria-expanded", "false");
     document.querySelectorAll("#viewSwitch button").forEach((btn) => {
@@ -3503,14 +3522,20 @@ function sparringSection(plan) {
             return `<div class="kid-block"><strong>${esc(kid.name)}</strong><div class="level-row">${buttons}</div></div>`;
           })
           .join("");
-        return `<h3>${esc(tech.name)}${tech.position ? ` · ${esc(tech.position)}` : ""}</h3>${rows}`;
+        const markAll = `<div class="mark-all btn-row" role="group" aria-label="Mark every checked-in student for ${esc(tech.name)}">${P.LEVELS.map(
+          (id) =>
+            `<button type="button" class="ghost" data-mark-all="${esc(id)}" data-tech="${esc(tech.id)}">Mark all ${esc(LEVEL_LABEL[id])}</button>`
+        ).join("")}</div>`;
+        return `<h3>${esc(tech.name)}${tech.position ? ` · ${esc(tech.position)}` : ""}</h3>${markAll}${rows}`;
       })
       .join("");
     root.innerHTML = `
       <h2>Review class</h2>
       <p>Teacher ${esc(instructorName() || "the teacher")} · ${esc(classLabel(plan.settings.ageGroup))}${plan.theme ? ` · ${esc(plan.theme.reason)}` : ""}${date ? ` · ${esc(date)}` : ""}</p>
-      <h3>Who was here</h3>
-      <div class="chip-row">${chips}</div>
+      <div class="who-here">
+        <h3>Who was here</h3>
+        <div class="chip-row">${chips}</div>
+      </div>
       ${blocks}
       <div class="btn-row">
         <button class="primary tap" type="button" id="saveClassBtn">Save class</button>
@@ -4548,8 +4573,15 @@ function sparringSection(plan) {
     return canvas.toDataURL("image/png");
   }
 
+  function cardRoster() {
+    if (state.program === "adult") {
+      return (state.rosterAdults || []).slice().sort((a, b) => String(a.name || "").localeCompare(String(b.name || "")));
+    }
+    return P.sortByRank(state.roster);
+  }
+
   function kidsForCards() {
-    return P.sortByRank(state.roster).filter((kid) => state.cardPick[kid.id] !== false);
+    return cardRoster().filter((person) => state.cardPick[person.id] !== false);
   }
 
   function kidQrText(kid) {
@@ -4559,15 +4591,16 @@ function sparringSection(plan) {
     return origin + path;
   }
 
-  function cardInner(kid, qrSize) {
-    const group = groupForAge(kid.age);
-    const src = qrDataUrl(kidQrText(kid), qrSize);
-    return `<img class="qr" alt="QR code for ${esc(kid.name)}" src="${src}" />
+  function cardInner(person, qrSize) {
+    const adult = state.program === "adult" || person.program === "adult";
+    const src = qrDataUrl(kidQrText(person), qrSize);
+    const group = adult ? "" : groupText(groupForAge(person.age), person.age);
+    return `<img class="qr" alt="QR code for ${esc(person.name)}" src="${src}" />
       <div>
         <img class="mini-logo card-logo" src="${esc(LOGO)}" alt="" />
-        <h2>${esc(kid.name)}</h2>
-        <p>${esc(groupText(group, kid.age))}</p>
-        <p>${esc(P.beltLabel(kid.belt))} · ${esc(stripeText(kid))}</p>
+        <h2>${esc(person.name)}</h2>
+        <p>${esc(adult ? "Adult class" : group)}</p>
+        <p>${esc(P.beltLabel(person.belt))} · ${esc(stripeText(person))}</p>
       </div>`;
   }
 
@@ -4576,39 +4609,42 @@ function sparringSection(plan) {
     const root = $("cardView");
     const date = ($("checkinDate") && $("checkinDate").value) || $("date").value || "";
     if (layout === "progress") return;
-    const picks = P.sortByRank(state.roster)
-      .map((kid) => {
-        const on = state.cardPick[kid.id] === false ? "" : "checked";
-        return `<label class="check"><input type="checkbox" data-card-kid="${esc(kid.id)}" ${on} /> ${esc(kid.name)}</label>`;
+    const adult = state.program === "adult";
+    const roster = cardRoster();
+    const className = adult ? "Adult class" : classLabel(state.ageGroup);
+    const picks = roster
+      .map((person) => {
+        const on = state.cardPick[person.id] === false ? "" : "checked";
+        return `<label class="check"><input type="checkbox" data-card-kid="${esc(person.id)}" ${on} /> ${esc(person.name)}</label>`;
       })
       .join("");
     let body = "";
-    if (!state.roster.length) body = `<p>Add students before printing cards.</p>`;
+    if (!roster.length) body = `<p>${adult ? "Add adults before printing cards." : "Add students before printing cards."}</p>`;
     else if (layout === "signin") {
-      const rows = P.sortByRank(state.roster)
-        .map((kid) => {
-          const src = qrDataUrl(kidQrText(kid), 180);
-          return `<div class="signin-row"><span class="box"></span><div><strong>${esc(kid.name)}</strong><br>${esc(
-            P.beltLabel(kid.belt)
-          )} · ${esc(stripeText(kid))}</div><img class="qr" alt="" src="${src}" /></div>`;
+      const rows = roster
+        .map((person) => {
+          const src = qrDataUrl(kidQrText(person), 180);
+          const line = adult ? "Adult class" : groupText(groupForAge(person.age), person.age);
+          return `<div class="signin-row"><span class="box"></span><div><strong>${esc(person.name)}</strong><br>${esc(
+            line
+          )} · ${esc(P.beltLabel(person.belt))} · ${esc(stripeText(person))}</div><img class="qr" alt="" src="${src}" /></div>`;
         })
         .join("");
       body = `<article class="signin-sheet"><img class="sheet-logo" src="${esc(LOGO)}" alt="Grace Jiu-Jitsu" /><h2>Sign-in · ${esc(
-        date || "class"
-      )}</h2><p>${esc(classLabel(state.ageGroup))}. Check the box, or scan the code.</p>${rows}</article>`;
+        className
+      )} · ${esc(date || "class")}</h2><p>${esc(className)}. Check the box, or scan the code.</p>${rows}</article>`;
     } else if (layout === "full") {
       body = kidsForCards()
-        .map((kid) => `<article class="card-page">${cardInner(kid, 480)}</article>`)
+        .map((person) => `<article class="card-page">${cardInner(person, 480)}</article>`)
         .join("");
     } else {
       const cards = kidsForCards()
-        .map((kid) => `<article class="wallet-card">${cardInner(kid, 220)}</article>`)
+        .map((person) => `<article class="wallet-card">${cardInner(person, 220)}</article>`)
         .join("");
       body = `<div class="wallet-grid">${cards}</div>`;
     }
-    root.innerHTML = `<div class="no-print"><h2>${
-      layout === "signin" ? "Sign-in sheet" : layout === "full" ? "Full-page cards" : "Wallet cards"
-    }</h2><div class="pick-row">${layout === "signin" ? "" : picks}</div></div>${body}`;
+    const title = layout === "signin" ? "Sign-in sheet" : layout === "full" ? "Full-page cards" : "Wallet cards";
+    root.innerHTML = `<div class="no-print card-preview-bar"><h2>${esc(title)} · ${esc(className)}</h2><button type="button" class="ghost" data-close-cards>Close</button><div class="pick-row">${layout === "signin" ? "" : picks}</div></div>${body}`;
   }
 
   function openCheckinCard(person) {
@@ -4659,15 +4695,20 @@ function sparringSection(plan) {
     const label = next === "adult" ? "Adult class" : "Kids class";
     if ($("phoneClassLabel")) $("phoneClassLabel").textContent = label;
     if ($("brandTitle")) $("brandTitle").textContent = label;
+    if (document.body.dataset.station !== "scan") {
+      document.title = `${label} · Grace BJJ Staff`;
+    }
     try {
       sessionStorage.setItem("bjj-staff-program", next);
     } catch (err) {
       /* the choice still applies for this visit */
     }
     renderAdultRoster();
+    const cardsOpen = state.view === "cards";
     const kidsOnly = next === "adult" && (state.view === "plan" || state.view === "review");
     syncCalendarDefaults();
-    if (!keepView && kidsOnly) setView("progress");
+    if (cardsOpen) setView("checkin");
+    else if (!keepView && kidsOnly) setView("progress");
     else if (state.view === "progress") renderProgress();
     else if (state.view === "checkin") renderCheckinList();
     else if (state.view === "calendar") renderClassCalendar();
@@ -5444,18 +5485,44 @@ function sparringSection(plan) {
     }
   }
 
-  function cameraHelp() {
+  function cameraProblem() {
+    if (!window.isSecureContext) return "insecure";
+    if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) return "missing";
+    return "";
+  }
+
+  function cameraCopy(problem) {
+    const station = document.body.dataset.station === "scan";
+    if (problem === "insecure") {
+      return station
+        ? "The camera is unavailable. This page needs https before the browser will open the camera."
+        : "The camera needs https or localhost. Use a photo instead.";
+    }
+    if (problem === "missing") {
+      return station
+        ? "The camera is unavailable in this browser. Pick the class date to see who is checked in."
+        : "This browser has no camera access. Upload a photo of the cards instead.";
+    }
+    if (problem === "denied") {
+      return station
+        ? "The camera is unavailable. Allow the camera for this site, then press Start camera. You can still pick the class date and see who is checked in."
+        : "The camera is not available. Upload a photo of the cards instead.";
+    }
+    return station
+      ? "Point the camera at one card."
+      : "Point the camera at one card. A photo of a printed page can check in every card it finds.";
+  }
+
+  function cameraHelp(problem) {
     const el = $("cameraNote");
-    if (!el) return;
-    if (!window.isSecureContext) {
-      el.textContent = "The camera needs https or localhost. Use a photo instead.";
-      return;
+    const issue = problem || cameraProblem();
+    const text = cameraCopy(issue);
+    if (el) {
+      el.textContent = text;
+      el.classList.toggle("is-unavailable", !!issue);
     }
-    if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
-      el.textContent = "This browser has no camera access. Upload a photo of the cards instead.";
-      return;
-    }
-    el.textContent = "Point the camera at one card. A photo of a printed page can check in every card it finds.";
+    if (document.body.dataset.station === "scan" && issue) paintScanBanner(null, null, "The camera is unavailable.");
+    return text;
   }
 
   function payloadsFromCanvas(canvas) {
@@ -5579,15 +5646,13 @@ function sparringSection(plan) {
   }
 
   async function startCamera() {
-    cameraHelp();
-    if (!window.isSecureContext) {
-      $("checkinStatus").textContent = "The camera needs https or localhost. Use a photo instead.";
-      $("checkinStatus").className = "checkin-status dup";
-      return;
-    }
-    if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
-      $("checkinStatus").textContent = "No camera on this browser. Upload a photo instead.";
-      $("checkinStatus").className = "checkin-status dup";
+    const problem = cameraProblem();
+    const blocked = cameraHelp(problem);
+    if (problem) {
+      if ($("checkinStatus")) {
+        $("checkinStatus").textContent = blocked;
+        $("checkinStatus").className = document.body.dataset.station === "scan" ? "scan-sr" : "checkin-status dup";
+      }
       return;
     }
     try {
@@ -5599,12 +5664,18 @@ function sparringSection(plan) {
       cameraTimer = window.setInterval(() => {
         scanVideoFrame();
       }, 700);
-      $("checkinStatus").textContent = "Looking for a card…";
-      $("checkinStatus").className = "checkin-status";
+      if ($("checkinStatus")) {
+        $("checkinStatus").textContent = "Looking for a card…";
+        $("checkinStatus").className = document.body.dataset.station === "scan" ? "scan-sr" : "checkin-status";
+      }
+      if ($("cameraNote")) $("cameraNote").classList.remove("is-unavailable");
       if (document.body.dataset.station === "scan") paintScanBanner(null, null, "Looking for a card…");
     } catch (err) {
-      $("checkinStatus").textContent = "The camera is not available. Upload a photo of the cards instead.";
-      $("checkinStatus").className = "checkin-status dup";
+      const text = cameraHelp("denied");
+      if ($("checkinStatus")) {
+        $("checkinStatus").textContent = text;
+        $("checkinStatus").className = document.body.dataset.station === "scan" ? "scan-sr" : "checkin-status dup";
+      }
     }
   }
 
@@ -6458,6 +6529,28 @@ function sparringSection(plan) {
         attend.classList.toggle("on");
         return;
       }
+      const markAll = event.target.closest("[data-mark-all]");
+      if (markAll) {
+        const ids = [...document.querySelectorAll("#reviewView .chip.on")].map((btn) => btn.dataset.attend).filter(Boolean);
+        if (!ids.length) {
+          toast("Mark who was here first.");
+          return;
+        }
+        const techId = markAll.dataset.tech;
+        const levelId = markAll.dataset.markAll;
+        const keep = new Set(ids);
+        ids.forEach((kidId) => setLevel(kidId, techId, levelId));
+        renderReview(keep);
+        Promise.all(
+          ids.map((kidId) =>
+            window.BJJ_API.send("PUT", "/api/levels", { studentId: kidId, techId, level: levelId })
+          )
+        ).catch((err) => {
+          toast(err.message || "Could not save that level.");
+          resync().catch(() => {});
+        });
+        return;
+      }
       const level = event.target.closest("[data-level]");
       if (level) {
         const keep = new Set(
@@ -6644,6 +6737,11 @@ function sparringSection(plan) {
       state.cardPick[event.target.dataset.cardKid] = event.target.checked;
       renderCardSurface(state.cardLayout);
     });
+    $("cardView").addEventListener("click", (event) => {
+      if (!event.target.closest("[data-close-cards]")) return;
+      state.cardLayout = "";
+      setView("checkin");
+    });
     $("cameraBtn").addEventListener("click", () => startCamera());
     $("cameraStop").addEventListener("click", () => {
       stopCamera();
@@ -6753,6 +6851,8 @@ function sparringSection(plan) {
             await window.BJJ_API.send("DELETE", `/api/class-exceptions/${undo.dataset.calUndo}?program=${calendarProgram()}`);
           } else {
             const reasonInput = document.querySelector(`[data-skip-reason="${skip.dataset.calSkip}"]`);
+            const when = prettyDate(skip.dataset.calSkip);
+            if (!window.confirm(`Skip class on ${when}? The calendar will show no class that day.`)) return;
             await window.BJJ_API.send("POST", "/api/class-exceptions", {
               program: calendarProgram(),
               date: skip.dataset.calSkip,
@@ -7522,6 +7622,7 @@ function sparringSection(plan) {
     if (status === "unknown") return "Unknown card";
     if (status === "outside") return "Not in this class";
     if (status === "blank") return "New card";
+    if (status === "camera") return "No camera";
     return "OK";
   }
 
@@ -7558,6 +7659,10 @@ function sparringSection(plan) {
       status = "unknown";
       title = "Unknown card";
       meta = "That code is not a Grace card.";
+    } else if (message && /camera is unavailable/i.test(message)) {
+      status = "camera";
+      title = "Camera unavailable";
+      meta = "Allow the camera for this site, or use a device with a camera. Pick the class date to see who is here.";
     } else if (message) {
       status = /new card/i.test(message) ? "blank" : /looking|camera/i.test(message) ? "ok" : "unknown";
       title = message;
@@ -7701,21 +7806,39 @@ function sparringSection(plan) {
     paintDayNote();
   }
 
+  function meetingLine(info, name) {
+    if (!info || (!info.meets && !info.skipped)) return "";
+    const when = info.start && info.end ? `, ${clockLabel(info.start)}–${clockLabel(info.end)}` : "";
+    if (info.meets && info.extra) return `${name} make-up class${when}${info.reason ? ` (${info.reason})` : ""}`;
+    if (info.meets) return `${name} meets${when}`;
+    return `${name} is skipped${info.reason ? `: ${info.reason}` : ""}`;
+  }
+
   function paintDayNote() {
     const note = $("scanDayNote");
     const input = $("checkinDate");
     if (!note || !input || !input.value) return;
+    const pretty = prettyDate(input.value);
+    const today = input.value === pacificTodayIso();
     const days = window.GRACE_CLASS_DAYS;
     const parts = input.value.split("-").map(Number);
     if (!days || typeof days.forProgram !== "function" || parts.length !== 3) {
-      note.textContent = "";
+      note.className = "scan-day";
+      note.textContent = `Checking in for ${pretty}.`;
       return;
     }
     const kids = days.forProgram("kids").meeting(parts[0], parts[1], parts[2], state.classExceptions || []);
     const adult = days.forProgram("adult").meeting(parts[0], parts[1], parts[2], state.adultExceptions || []);
-    const kidText = kids.meets ? (kids.extra ? "Kids make-up class" : "Kids class meets") : kids.skipped ? "Kids class skipped" : "No kids class";
-    const adultText = adult.meets ? (adult.extra ? "Adult make-up class" : "Adult class meets") : adult.skipped ? "Adult class skipped" : "No adult class";
-    note.textContent = `${kidText} · ${adultText}`;
+    const lines = [meetingLine(kids, "Kids class"), meetingLine(adult, "Adult class")].filter(Boolean);
+    if (!lines.length) {
+      note.className = "scan-day is-empty";
+      note.textContent = today
+        ? `No class today (${pretty}). Pick the class date to check in a different day.`
+        : `No class on ${pretty}. Pick the class date to check in a different day.`;
+      return;
+    }
+    note.className = "scan-day";
+    note.textContent = `${today ? "Today" : "Checking in for"}, ${pretty}. ${lines.join(". ")}.`;
   }
 
   function clearWaiverFeedback() {
