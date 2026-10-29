@@ -46,6 +46,13 @@ WAIVER_GOALS = (
     "Fun",
 )
 MAX_BODY = 3_000_000
+SKIP_REASONS = ("time", "different", "needed", "other")
+SKIP_REASON_LABELS = {
+    "time": "Ran out of time",
+    "different": "Class ran differently",
+    "needed": "Kids needed something else",
+    "other": "Other",
+}
 LOGIN_LIMIT = 8
 LOGIN_WINDOW_MIN = 15
 SESSION_DAYS = 14
@@ -471,25 +478,87 @@ class Api:
             "after": parsed(row["after_json"]),
         }
 
+    def _truthy_flag(self, value):
+        return value is True or value == 1
+
     def sanitize_techniques(self, raw):
-        out = []
+        planned = []
+        off_script = []
         if not isinstance(raw, list):
-            return out
-        for item in raw[:12]:
+            return []
+        for item in raw:
             if not isinstance(item, dict):
                 continue
             tid = clean_id(item.get("id"))
             name = clip(item.get("name"), 80)
-            if tid and name:
-                out.append(
-                    {
-                        "id": tid,
-                        "name": name,
-                        "position": clip(item.get("position"), 40),
-                        "theme": clip(item.get("theme"), 32).lower(),
-                    }
-                )
-        return out
+            if not tid or not name:
+                continue
+            base = {
+                "id": tid,
+                "name": name,
+                "position": clip(item.get("position"), 40),
+                "theme": clip(item.get("theme"), 32).lower(),
+            }
+            if self._truthy_flag(item.get("offScript")):
+                if len(off_script) >= 8:
+                    continue
+                note = clip(item.get("note"), 160)
+                row = dict(base)
+                row["offScript"] = True
+                if note:
+                    row["note"] = note
+                off_script.append(row)
+                continue
+            if len(planned) >= 12:
+                continue
+            reason = item.get("skipReason") if item.get("skipReason") in SKIP_REASONS else ""
+            note = clip(item.get("skipNote"), 160)
+            skipped = self._truthy_flag(item.get("skipped"))
+            if skipped and reason == "other" and not note:
+                raise ValueError("Add a note for Other.")
+            row = dict(base)
+            if skipped and reason:
+                row["skipped"] = True
+                row["skipReason"] = reason
+                if reason == "other":
+                    row["skipNote"] = note
+            planned.append(row)
+        planned_ids = {row["id"] for row in planned}
+        kept = []
+        seen = set()
+        for row in off_script:
+            if row["id"] in planned_ids or row["id"] in seen:
+                continue
+            seen.add(row["id"])
+            kept.append(row)
+        return planned + kept
+
+    def kids_class_label(self, age_group):
+        names = {"mite": "Mighty Mites", "upper": "Pee Wees", "toddler": "Toddler"}
+        parts = [names.get(part, part) for part in str(age_group or "").split("+") if part]
+        return " + ".join(parts) if parts else "Kids class"
+
+    def review_snapshot(self, techniques):
+        skipped = []
+        off_script = []
+        for tech in techniques or []:
+            if not isinstance(tech, dict):
+                continue
+            if tech.get("offScript"):
+                item = {"name": tech.get("name") or ""}
+                if tech.get("note"):
+                    item["note"] = tech["note"]
+                off_script.append(item)
+                continue
+            if tech.get("skipped"):
+                item = {
+                    "name": tech.get("name") or "",
+                    "reason": SKIP_REASON_LABELS.get(tech.get("skipReason"), ""),
+                }
+                if tech.get("skipNote"):
+                    item["note"] = tech["skipNote"]
+                skipped.append(item)
+        return {"skipped": skipped, "offScript": off_script}
 
     def sanitize_class(self, raw):
         date = clip(raw.get("date"), 10)
@@ -672,11 +741,12 @@ class Api:
         }
         return self.sanitize_student(payload)
 
-    def save_class(self, conn, entry, merge):
+    def save_class(self, conn, entry, merge, user=None):
         current = conn.execute(
             "SELECT * FROM classes WHERE date = ? AND age_group = ?",
             (entry["date"], entry["ageGroup"]),
         ).fetchone()
+        before_techniques = self.json_list(current["techniques"]) if current else []
         attended = entry["attended"]
         if current and merge:
             try:
@@ -722,7 +792,22 @@ class Api:
             "SELECT * FROM classes WHERE date = ? AND age_group = ?",
             (entry["date"], entry["ageGroup"]),
         ).fetchone()
-        return self.class_json(row)
+        saved = self.class_json(row)
+        if user is not None:
+            before_snap = self.review_snapshot(before_techniques)
+            after_snap = self.review_snapshot(saved["techniques"])
+            if before_snap != after_snap:
+                label = self.kids_class_label(saved["ageGroup"])
+                self.append_change(
+                    conn,
+                    user,
+                    "",
+                    f"{label} · {saved['date']}",
+                    "class_review",
+                    {"date": saved["date"], "ageGroup": saved["ageGroup"], **before_snap},
+                    {"date": saved["date"], "ageGroup": saved["ageGroup"], **after_snap},
+                )
+        return saved
 
     def keep_class_attendance(self, conn, age_group, attended):
         parts = [part for part in str(age_group or "").split("+") if part]
@@ -989,7 +1074,7 @@ class Api:
                 return self.send(handler, 403, {"error": "An admin re-links cards."})
             return self.relink_card(handler, conn, card_match.group(1))
         if path == "/api/classes" and method == "PUT":
-            saved = self.save_class(conn, self.sanitize_class(self.read_json(handler)), merge=False)
+            saved = self.save_class(conn, self.sanitize_class(self.read_json(handler)), merge=False, user=user)
             conn.commit()
             return self.send(handler, 200, saved)
         class_match = re.match(r"^/api/classes/([A-Za-z0-9_-]{1,40})$", path)
@@ -1002,7 +1087,7 @@ class Api:
             return self.send(handler, 200, {"ok": True})
         if path == "/api/attendance" and method == "POST":
             body = self.read_json(handler)
-            saved = self.save_class(conn, self.sanitize_class(body), merge=True)
+            saved = self.save_class(conn, self.sanitize_class(body), merge=True, user=user)
             conn.commit()
             return self.send(handler, 200, saved)
         if path == "/api/levels" and method == "PUT":

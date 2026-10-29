@@ -395,4 +395,56 @@ const singleSaved = P.sanitizeProgress({
 });
 assert.strictEqual(singleSaved.classes[0].ageGroup, "upper");
 
+const storedReview = P.sanitizeProgress({
+  classes: [
+    {
+      id: "k-review",
+      date: "2026-10-27",
+      ageGroup: "mite",
+      taught: true,
+      techniques: [
+        { id: "ls-upa", name: "Upa", position: "Guard", theme: "Guard", skipped: true, skipReason: "time", skipNote: "ignore" },
+        { id: "ls-bridge", name: "Bridge", skipped: true, skipReason: "other" },
+        { id: "ls-arm", name: "Armbar", skipped: true, skipReason: "other", skipNote: "They rolled away" },
+        { id: "off-shrimp", name: "Shrimp", offScript: true, note: "Extra" },
+        { id: "ls-upa", name: "Dup", offScript: true },
+      ],
+    },
+    {
+      id: "k-next",
+      date: "2026-11-10",
+      ageGroup: "mite",
+      taught: true,
+      techniques: [{ id: "ls-trap", name: "Trap", skipped: true, skipReason: "needed" }],
+    },
+    {
+      id: "k-upper",
+      date: "2026-11-24",
+      ageGroup: "upper",
+      taught: true,
+      techniques: [{ id: "ls-pass", name: "Pass", skipped: true, skipReason: "different" }],
+    },
+  ],
+});
+const reviewed = storedReview.classes.find((entry) => entry.date === "2026-10-27");
+assert.strictEqual(reviewed.techniques.find((tech) => tech.id === "ls-upa").skipReason, "time");
+assert.strictEqual(reviewed.techniques.find((tech) => tech.id === "ls-upa").skipNote, undefined);
+assert.strictEqual(reviewed.techniques.find((tech) => tech.id === "ls-bridge").skipped, undefined);
+assert.strictEqual(reviewed.techniques.find((tech) => tech.id === "ls-arm").skipNote, "They rolled away");
+assert.strictEqual(reviewed.techniques.find((tech) => tech.id === "off-shrimp").note, "Extra");
+assert.strictEqual(reviewed.techniques.filter((tech) => tech.offScript && tech.id === "ls-upa").length, 0);
+assert.deepStrictEqual(P.skippedLastClassIds(storedReview.classes, "mite", "2026-11-10"), ["ls-upa", "ls-arm"]);
+assert.deepStrictEqual(P.skippedLastClassIds(storedReview.classes, "mite", "2026-11-24"), ["ls-trap"]);
+assert.deepStrictEqual(P.skippedLastClassIds(storedReview.classes, "upper", ""), ["ls-pass"]);
+assert.deepStrictEqual(P.skippedLastClassIds(storedReview.classes, "mite", "2026-10-27"), []);
+assert.strictEqual(P.levelAfterSkip("introduced", "", false), "");
+assert.strictEqual(P.levelAfterSkip("mastered", "drilled", false), "drilled");
+assert.strictEqual(P.levelAfterSkip("introduced", "introduced", false), "");
+assert.strictEqual(P.levelAfterSkip("introduced", "introduced", true), "introduced");
+assert.strictEqual(P.levelAfterSkip("drilled", "drilled", false), "drilled");
+assert.strictEqual(P.techniqueCountsForProgress({ id: "ls-upa", skipped: true }), false);
+assert.strictEqual(P.techniqueCountsForProgress({ id: "off-shrimp", offScript: true }), false);
+assert.strictEqual(P.techniqueCountsForProgress({ id: "ls-upa" }), true);
+assert.strictEqual(P.skipReasonLabel("needed"), "Kids needed something else");
+
 console.log("plan-math tests passed");

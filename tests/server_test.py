@@ -3977,6 +3977,184 @@ class ApiTest(unittest.TestCase):
                 conn.close()
 
 
+    def test_review_skip_off_script_and_change_log(self):
+        admin = self.client()
+        status, me = admin.login("dakota", "correct-horse")
+        self.assertEqual(status, 200, me)
+        teacher = self.client()
+        status, alex = teacher.login("alex", "correct-horse")
+        self.assertEqual(status, 200, alex)
+        alex_id = alex["user"]["id"]
+        status, kid = admin.call(
+            "POST",
+            "/api/students",
+            {"name": "Review Kid", "age": 6, "belt": "white", "stripes": 0},
+        )
+        self.assertEqual(status, 201, kid)
+        status, adult = admin.call(
+            "POST",
+            "/api/students",
+            {"name": "Linked Coach", "age": 30, "belt": "blue", "stripes": 0, "program": "adult"},
+        )
+        self.assertEqual(status, 201, adult)
+        created = [kid["id"], adult["id"]]
+        class_ids = []
+        try:
+            status, linked = admin.call("PUT", f"/api/users/{alex_id}/member", {"studentId": adult["id"]})
+            self.assertEqual(status, 200, linked)
+            status, blocked = teacher.call(
+                "PUT",
+                "/api/levels",
+                {"studentId": adult["id"], "techId": "ls-upa", "level": "introduced"},
+            )
+            self.assertEqual(status, 403, blocked)
+            self.assertIn("another staff member", blocked["error"].lower())
+
+            tech = {"id": "ls-upa", "name": "Upa", "position": "Guard", "theme": "guard"}
+            status, missing = teacher.call(
+                "PUT",
+                "/api/classes",
+                {
+                    "date": "2026-10-13",
+                    "ageGroup": "mite",
+                    "theme": "guard",
+                    "themeLabel": "Guard",
+                    "techniques": [{**tech, "skipped": True, "skipReason": "other", "skipNote": ""}],
+                    "attended": [kid["id"]],
+                    "taught": True,
+                },
+            )
+            self.assertEqual(status, 400, missing)
+            self.assertIn("note", missing["error"].lower())
+
+            status, saved = teacher.call(
+                "PUT",
+                "/api/classes",
+                {
+                    "date": "2026-10-13",
+                    "ageGroup": "mite",
+                    "theme": "guard",
+                    "themeLabel": "Guard",
+                    "techniques": [
+                        {**tech, "skipped": True, "skipReason": "time"},
+                        {
+                            "id": "off-shrimp",
+                            "name": "Shrimp",
+                            "position": "",
+                            "theme": "",
+                            "offScript": True,
+                            "note": "They asked",
+                        },
+                    ],
+                    "attended": [kid["id"]],
+                    "taught": True,
+                    "game": "",
+                },
+            )
+            self.assertEqual(status, 200, saved)
+            class_ids.append(saved["id"])
+            skipped = next(item for item in saved["techniques"] if item["id"] == "ls-upa")
+            self.assertTrue(skipped["skipped"])
+            self.assertEqual(skipped["skipReason"], "time")
+            self.assertNotIn("skipNote", skipped)
+            off = next(item for item in saved["techniques"] if item.get("offScript"))
+            self.assertEqual(off["name"], "Shrimp")
+            self.assertEqual(off["note"], "They asked")
+
+            status, bad = teacher.call(
+                "PUT",
+                "/api/classes",
+                {
+                    "date": "2026-10-14",
+                    "ageGroup": "mite",
+                    "techniques": [{**tech, "skipped": True, "skipReason": "nope"}],
+                    "attended": [],
+                    "taught": True,
+                },
+            )
+            self.assertEqual(status, 200, bad)
+            class_ids.append(bad["id"])
+            plain = bad["techniques"][0]
+            self.assertNotIn("skipped", plain)
+
+            status, level = teacher.call(
+                "PUT",
+                "/api/levels",
+                {"studentId": kid["id"], "techId": "ls-upa", "level": "introduced"},
+            )
+            self.assertEqual(status, 200, level)
+
+            status, again = teacher.call(
+                "PUT",
+                "/api/classes",
+                {
+                    "date": "2026-10-13",
+                    "ageGroup": "mite",
+                    "theme": "guard",
+                    "themeLabel": "Guard",
+                    "techniques": saved["techniques"],
+                    "attended": [kid["id"]],
+                    "taught": True,
+                },
+            )
+            self.assertEqual(status, 200, again)
+
+            status, log = admin.call("GET", "/api/change-log")
+            self.assertEqual(status, 200, log)
+            reviews = [entry for entry in log["entries"] if entry["action"] == "class_review"]
+            self.assertEqual(len(reviews), 1)
+            self.assertEqual(reviews[0]["studentId"], "")
+            self.assertIn("Ran out of time", json.dumps(reviews[0]["after"]))
+            self.assertIn("Shrimp", json.dumps(reviews[0]["after"]))
+            self.assertIn("Mighty Mites", reviews[0]["studentName"])
+
+            status, boot = teacher.call("GET", "/api/bootstrap")
+            self.assertEqual(status, 200, boot)
+            row = next(entry for entry in boot["classes"] if entry["date"] == "2026-10-13")
+            self.assertTrue(any(item.get("skipped") and item["id"] == "ls-upa" for item in row["techniques"]))
+            self.assertEqual(boot["levels"][kid["id"]]["ls-upa"], "introduced")
+
+            status, cleared = teacher.call(
+                "PUT",
+                "/api/classes",
+                {
+                    "date": "2026-10-13",
+                    "ageGroup": "mite",
+                    "theme": "guard",
+                    "themeLabel": "Guard",
+                    "techniques": [tech],
+                    "attended": [kid["id"]],
+                    "taught": True,
+                },
+            )
+            self.assertEqual(status, 200, cleared)
+            self.assertNotIn("skipped", cleared["techniques"][0])
+            self.assertFalse(any(item.get("offScript") for item in cleared["techniques"]))
+            status, log_again = admin.call("GET", "/api/change-log")
+            undone = [
+                entry
+                for entry in log_again["entries"]
+                if entry["action"] == "class_review" and entry["after"].get("date") == "2026-10-13"
+            ]
+            self.assertGreaterEqual(len(undone), 1)
+            self.assertEqual(undone[0]["after"]["skipped"], [])
+            self.assertEqual(undone[0]["after"]["offScript"], [])
+        finally:
+            admin.call("DELETE", f"/api/users/{alex_id}/member")
+            for class_id in class_ids:
+                admin.call("DELETE", f"/api/classes/{class_id}")
+            for sid in created:
+                admin.call("DELETE", f"/api/students/{sid}")
+            conn = connect(self.api.cfg["db_path"])
+            try:
+                conn.execute("DELETE FROM change_log WHERE action = 'class_review'")
+                conn.execute("DELETE FROM change_log WHERE student_id = ?", (adult["id"],))
+                conn.execute("DELETE FROM change_log WHERE student_id = ?", (kid["id"],))
+                conn.commit()
+            finally:
+                conn.close()
+
+
 class DemoIsolationTest(unittest.TestCase):
     def test_demo_cookie_is_not_the_production_cookie(self):
         obj = Api.__new__(Api)

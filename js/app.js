@@ -66,6 +66,9 @@
     savedPlans: [],
     classExceptions: [],
     adultExceptions: [],
+    reviewDraft: null,
+    reviewBaseline: null,
+    reviewFocus: null,
   };
 
   let cameraStream = null;
@@ -976,7 +979,10 @@ function pickGraceLessons(age, count) {
   const already = new Set();
   state.progress.classes.forEach((entry) => {
     if (!entry.taught || !P.ageKeyIncludes(entry.ageGroup, age) || entry.theme !== choice.id) return;
-    (entry.techniques || []).forEach((tech) => already.add(tech.id));
+    (entry.techniques || []).forEach((tech) => {
+      if (!tech || tech.skipped) return;
+      already.add(tech.id);
+    });
   });
   const resume = themed.length ? already.size % themed.length : 0;
   const seq = P.takeSequence(themed, count, resume + state.themeOffset);
@@ -1414,7 +1420,7 @@ function bodyHtml(item) {
       .map((activity) => {
         return `<article class="pick-row">
           <div class="pick-copy">
-            <strong>${esc(activity.name || "")}</strong>
+            <strong>${esc(activity.name || "")}${skippedFlagHtml(section, activity.id)}</strong>
             <p>${esc(blurbOf(activity))}</p>
           </div>
           ${planToggleButton(section, activity.id, activity.name, false)}
@@ -1427,7 +1433,7 @@ function bodyHtml(item) {
         const name = activity.name || "item";
         return `<article class="pick-row is-out-of-age">
           <div class="pick-copy">
-            <strong>${esc(activity.name || "")}</strong>
+            <strong>${esc(activity.name || "")}${skippedFlagHtml(section, activity.id)}</strong>
             <p>${esc(blurbOf(activity))}</p>
             <p class="age-limit">${esc(P.ageLimitLabel(activity.ages))}</p>
           </div>
@@ -1558,6 +1564,7 @@ function bodyHtml(item) {
           <strong class="name-live">${esc(name)}</strong>
           <strong class="name-print">${esc(displayName(item))}</strong>
           ${item.ageOverride ? `<span class="age-override">Age override</span>` : ""}
+          ${skippedFlagHtml(section, item.id)}
           ${picker ? `<span class="in-plan-mark no-print">In plan</span>` : ""}
           ${repsCtrl(item, section)}
           ${shuffleBtn(section, item.id)}
@@ -1897,6 +1904,7 @@ function sparringSection(plan) {
             </section>`
           : ""
       }
+      ${classSummarySection(plan)}
       <section class="block">
         <h2 class="block-title">Class rules</h2>
         <div class="item">
@@ -2979,7 +2987,13 @@ function sparringSection(plan) {
       .filter(Boolean);
     state.roster = incoming
       .filter((kid) => !(kid && kid.program === "adult") && !(kid && Number(kid.age) > 17))
-      .map((kid) => P.sanitizeRosterKid(kid))
+      .map((kid) => {
+        const clean = P.sanitizeRosterKid(kid);
+        if (!clean) return null;
+        const link = staffLinkOf(kid);
+        if (link) clean.staffLink = link;
+        return clean;
+      })
       .filter(Boolean);
     state.adultChecks = body.adultChecks && typeof body.adultChecks === "object" ? body.adultChecks : {};
     state.adultAttendance = Array.isArray(body.adultAttendance) ? body.adultAttendance : [];
@@ -3395,11 +3409,394 @@ function sparringSection(plan) {
 
   function applyIntroduced(entry) {
     (entry.techniques || []).forEach((tech) => {
+      if (!P.techniqueCountsForProgress(tech)) return;
       entry.attended.forEach((kidId) => {
+        if (isOwnRecord(state.roster.find((kid) => kid.id === kidId))) return;
         const have = state.progress.levels[kidId] && state.progress.levels[kidId][tech.id];
         if (!have) setLevel(kidId, tech.id, "introduced");
       });
     });
+  }
+
+  function reviewKey(date, age) {
+    return `${date || ""}|${age || ""}`;
+  }
+
+  function skipIsActive(skip) {
+    if (!skip || !P.SKIP_REASONS.includes(skip.reason)) return false;
+    if (skip.reason === "other" && !String(skip.note || "").trim()) return false;
+    return true;
+  }
+
+  function captureBaseline(techId) {
+    if (!state.reviewBaseline || !techId || state.reviewBaseline.levels[techId]) return;
+    const levels = {};
+    state.roster.forEach((kid) => {
+      const level = (state.progress.levels[kid.id] || {})[techId] || "";
+      if (level) levels[kid.id] = level;
+    });
+    state.reviewBaseline.levels[techId] = levels;
+  }
+
+  function ensureReviewSession(date, age, planned) {
+    const key = reviewKey(date, age);
+    if (!state.reviewBaseline || state.reviewBaseline.key !== key) {
+      state.reviewBaseline = { key, levels: {} };
+    }
+    (planned || []).forEach((tech) => captureBaseline(tech.id));
+    if (!state.reviewDraft || state.reviewDraft.key !== key) {
+      const entry = classFor(date, age);
+      const skips = {};
+      const offScript = [];
+      const plannedIds = new Set((planned || []).map((tech) => tech.id));
+      ((entry && entry.techniques) || []).forEach((tech) => {
+        if (!tech) return;
+        if (tech.offScript) {
+          offScript.push({
+            id: tech.id,
+            name: tech.name,
+            position: tech.position || "",
+            theme: tech.theme || "",
+            note: tech.note || "",
+          });
+          captureBaseline(tech.id);
+          return;
+        }
+        if (plannedIds.has(tech.id) && tech.skipped && P.SKIP_REASONS.includes(tech.skipReason)) {
+          skips[tech.id] = { reason: tech.skipReason, note: tech.skipNote || "" };
+        }
+      });
+      state.reviewDraft = { key, skips, offScript };
+    }
+  }
+
+  function techniqueTaughtElsewhere(techId, kidId, date, age) {
+    return state.progress.classes.some((entry) => {
+      if (!entry || !entry.taught) return false;
+      if (entry.date === date && entry.ageGroup === age) return false;
+      if (!Array.isArray(entry.attended) || !entry.attended.includes(kidId)) return false;
+      return (entry.techniques || []).some((tech) => tech && tech.id === techId && !tech.skipped && !tech.offScript);
+    });
+  }
+
+  async function writeReviewLevel(kidId, techId, level) {
+    if (level) {
+      await window.BJJ_API.send("PUT", "/api/levels", { studentId: kidId, techId, level });
+      setLevel(kidId, techId, level);
+      return;
+    }
+    await window.BJJ_API.send("DELETE", "/api/levels", { studentId: kidId, techId });
+    if (state.progress.levels[kidId]) {
+      delete state.progress.levels[kidId][techId];
+      if (!Object.keys(state.progress.levels[kidId]).length) delete state.progress.levels[kidId];
+    }
+    renderHome();
+  }
+
+  async function releaseSkippedProgress(techId, opts) {
+    const plan = state.plan;
+    if (!plan || !plan.settings || !techId) return;
+    const date = plan.settings.date || "";
+    const age = plan.settings.ageGroup;
+    const base = (state.reviewBaseline && state.reviewBaseline.levels[techId]) || {};
+    const revertIntroduced = !opts || opts.revertIntroduced !== false;
+    let blocked = false;
+    for (const kid of state.roster) {
+      const had = base[kid.id] || "";
+      const now = (state.progress.levels[kid.id] || {})[techId] || "";
+      const elsewhere = revertIntroduced ? techniqueTaughtElsewhere(techId, kid.id, date, age) : true;
+      const target = P.levelAfterSkip(now, had, elsewhere);
+      if (target === (P.canonicalLevel(now) || "")) continue;
+      if (isOwnRecord(kid)) {
+        blocked = true;
+        continue;
+      }
+      try {
+        await writeReviewLevel(kid.id, techId, target);
+      } catch (err) {
+        const message = err && err.message ? err.message : "";
+        if (/another staff member/i.test(message)) {
+          blocked = true;
+          continue;
+        }
+        throw err;
+      }
+    }
+    if (blocked) toast("Ask another staff member to update your record.");
+  }
+
+  function techniquesForReviewSave(plan) {
+    const draft = state.reviewDraft || { skips: {}, offScript: [] };
+    const planned = techniquesOf(plan).map((tech) => {
+      const skip = draft.skips[tech.id];
+      const row = { id: tech.id, name: tech.name, position: tech.position || "", theme: tech.theme || "" };
+      if (skipIsActive(skip)) {
+        row.skipped = true;
+        row.skipReason = skip.reason;
+        if (skip.reason === "other") row.skipNote = String(skip.note || "").trim().slice(0, 160);
+      }
+      return row;
+    });
+    const off = (draft.offScript || [])
+      .map((item) => {
+        const row = {
+          id: item.id,
+          name: String(item.name || "").trim().slice(0, 80),
+          position: item.position || "",
+          theme: item.theme || "",
+          offScript: true,
+        };
+        const note = String(item.note || "").trim().slice(0, 160);
+        if (note) row.note = note;
+        return row;
+      })
+      .filter((item) => item.id && item.name);
+    return planned.concat(off);
+  }
+
+  function incompleteOtherSkip(plan) {
+    const draft = state.reviewDraft;
+    if (!draft) return false;
+    return techniquesOf(plan).some((tech) => {
+      const skip = draft.skips[tech.id];
+      return skip && skip.reason === "other" && !String(skip.note || "").trim();
+    });
+  }
+
+  function classReviewLines(entry) {
+    if (!entry) return [];
+    const skipped = [];
+    const off = [];
+    (entry.techniques || []).forEach((tech) => {
+      if (!tech || !tech.name) return;
+      if (tech.offScript) off.push(tech);
+      else if (tech.skipped) skipped.push(tech);
+    });
+    const lines = [];
+    if (skipped.length) {
+      const bits = skipped.map((tech) => {
+        const why = P.skipReasonLabel(tech.skipReason) || "Skipped";
+        const note = tech.skipReason === "other" && tech.skipNote ? `: ${tech.skipNote}` : "";
+        return `${tech.name} (${why}${note})`;
+      });
+      lines.push(`Skipped: ${bits.join("; ")}.`);
+    }
+    if (off.length) {
+      const bits = off.map((tech) => (tech.note ? `${tech.name} — ${tech.note}` : tech.name));
+      lines.push(`Off script: ${bits.join("; ")}.`);
+    }
+    return lines;
+  }
+
+  function classSummarySection(plan) {
+    if (!plan || !plan.settings || plan.mode !== "grace") return "";
+    const lines = classReviewLines(classFor(plan.settings.date, plan.settings.ageGroup));
+    if (!lines.length) return "";
+    return `<section class="block class-summary">
+      <h2 class="block-title">Class summary</h2>
+      ${lines.map((line) => `<p>${esc(line)}</p>`).join("")}
+    </section>`;
+  }
+
+  function skippedFlagHtml(section, id) {
+    if (section !== "lesson" || !id || !state.plan || !state.plan.settings || state.plan.mode !== "grace") return "";
+    const ids = P.skippedLastClassIds(state.progress.classes, state.plan.settings.ageGroup, state.plan.settings.date || "");
+    if (!ids.includes(String(id))) return "";
+    return `<span class="skipped-flag">Skipped last class</span>`;
+  }
+
+  function restoreReviewFocus() {
+    const focus = state.reviewFocus;
+    state.reviewFocus = null;
+    if (!focus) return;
+    let el = null;
+    if (focus.kind === "off-text") el = $("offScriptText");
+    else if (focus.id) {
+      const safe = String(focus.id).replace(/[^A-Za-z0-9_-]/g, "");
+      if (focus.kind === "skip-note") el = document.querySelector(`#reviewView [data-skip-note="${safe}"]`);
+      else if (focus.kind === "off-note") el = document.querySelector(`#reviewView [data-off-note="${safe}"]`);
+      else if (focus.kind === "skip") el = document.querySelector(`#reviewView [data-skip-tech="${safe}"]`);
+    }
+    if (!el) return;
+    el.focus();
+    if (focus.kind === "skip-note" || focus.kind === "off-note") {
+      const pos = Number(focus.pos);
+      if (Number.isFinite(pos)) {
+        try { el.setSelectionRange(pos, pos); } catch (err) { /* a replaced input can reject a range */ }
+      }
+    }
+  }
+
+  function reviewKidRows(techId, classKids) {
+    return classKids
+      .map((kid) => {
+        const level = (state.progress.levels[kid.id] || {})[techId] || "";
+        const own = isOwnRecord(kid);
+        const buttons = P.LEVELS.map((id) => {
+          const locked = own ? " disabled" : "";
+          const title = own ? ` title="Ask another staff member to update your record."` : "";
+          return `<button type="button" class="${level === id ? "on" : ""}"${locked}${title} data-level="${id}" data-kid="${esc(
+            kid.id
+          )}" data-tech="${esc(techId)}">${esc(LEVEL_LABEL[id])}</button>`;
+        }).join("");
+        return `<div class="kid-block"><strong>${esc(kid.name)}</strong><div class="level-row">${buttons}</div></div>`;
+      })
+      .join("");
+  }
+
+  function markAllHtml(tech) {
+    return `<div class="mark-all btn-row" role="group" aria-label="Mark every checked-in student for ${esc(tech.name)}">${P.LEVELS.map(
+      (id) =>
+        `<button type="button" class="ghost" data-mark-all="${esc(id)}" data-tech="${esc(tech.id)}">Mark all ${esc(LEVEL_LABEL[id])}</button>`
+    ).join("")}</div>`;
+  }
+
+  function skipControlsHtml(tech, skip) {
+    const reason = skip && skip.reason ? skip.reason : "";
+    const active = skipIsActive(skip);
+    const options = [["", "Taught"]]
+      .concat(P.SKIP_REASONS.map((id) => [id, P.skipReasonLabel(id)]))
+      .map(([id, label]) => `<option value="${esc(id)}"${id === reason ? " selected" : ""}>${esc(label)}</option>`)
+      .join("");
+    const note =
+      reason === "other"
+        ? `<input type="text" maxlength="160" data-skip-note="${esc(tech.id)}" value="${esc(
+            (skip && skip.note) || ""
+          )}" placeholder="Note" aria-label="Note for ${esc(tech.name)}" />`
+        : "";
+    const undo = active
+      ? `<button type="button" class="ghost" data-undo-skip="${esc(tech.id)}">Undo skip</button>`
+      : "";
+    const why = active ? P.skipReasonLabel(reason) : "";
+    const noteBit = active && reason === "other" && skip && skip.note ? `: ${skip.note}` : "";
+    return `<div class="review-controls">
+        <label>Status
+          <select data-skip-tech="${esc(tech.id)}" aria-label="Skip ${esc(tech.name)}">${options}</select>
+        </label>
+        ${note}
+        ${undo}
+      </div>
+      ${active ? `<p class="hint">Skipped · ${esc(why)}${esc(noteBit)}. This does not move anyone's progress.</p>` : ""}`;
+  }
+
+  function offScriptSectionHtml(classKids, age, plannedIds) {
+    const items = (state.reviewDraft && state.reviewDraft.offScript) || [];
+    const used = new Set(items.map((item) => item.id));
+    const library = pool("lesson", age).filter((item) => item && !plannedIds.has(item.id) && !used.has(item.id));
+    const options =
+      `<option value="">Library</option>` +
+      library.map((item) => `<option value="${esc(item.id)}">${esc(item.name)}</option>`).join("");
+    const cards = items
+      .map(
+        (item) => `<article class="off-card">
+          <div class="off-head">
+            <strong>${esc(item.name)}${item.position ? ` · ${esc(item.position)}` : ""}</strong>
+            <button type="button" class="ghost" data-off-remove="${esc(item.id)}">Remove</button>
+          </div>
+          <label class="off-note">Note
+            <input type="text" maxlength="160" data-off-note="${esc(item.id)}" value="${esc(item.note || "")}" placeholder="Optional" aria-label="Note for ${esc(item.name)}" />
+          </label>
+          ${reviewKidRows(item.id, classKids)}
+        </article>`
+      )
+      .join("");
+    return `<section class="off-script">
+        <h3>Off script</h3>
+        <p class="hint">What you taught that was not on the plan. A level is optional.</p>
+        ${cards}
+        <div class="off-add">
+          <input type="text" id="offScriptText" maxlength="80" placeholder="Technique name" aria-label="Off script technique" />
+          <button type="button" class="ghost" id="offScriptAdd">Add</button>
+          <select id="offScriptLibrary" aria-label="Technique from the library">${options}</select>
+          <button type="button" class="ghost" id="offScriptLibraryAdd">Add from library</button>
+        </div>
+      </section>`;
+  }
+
+  function addOffScript(item) {
+    const draft = state.reviewDraft;
+    if (!draft || !item || !item.id || !item.name) return;
+    if (draft.offScript.some((row) => row.id === item.id)) return;
+    if (draft.offScript.length >= 8) {
+      toast("Eight off-script techniques is the limit for one class.");
+      return;
+    }
+    captureBaseline(item.id);
+    draft.offScript.push(item);
+    renderReview();
+  }
+
+  function addOffScriptText() {
+    const input = $("offScriptText");
+    const name = input ? input.value.trim() : "";
+    if (!name) {
+      toast("Type the technique you taught.");
+      state.reviewFocus = { kind: "off-text" };
+      renderReview();
+      return;
+    }
+    addOffScript({
+      id: `off-${Math.random().toString(36).slice(2, 10)}`,
+      name: name.slice(0, 80),
+      position: "",
+      theme: "",
+      note: "",
+    });
+  }
+
+  function addOffScriptFromLibrary() {
+    const select = $("offScriptLibrary");
+    const id = select ? select.value : "";
+    if (!id) {
+      toast("Pick a technique from the library.");
+      return;
+    }
+    const act = findActivity(id);
+    if (!act) return;
+    const planned = new Set(techniquesOf(state.plan).map((tech) => tech.id));
+    if (planned.has(act.id)) {
+      toast("That technique is already on the plan.");
+      return;
+    }
+    addOffScript({
+      id: act.id,
+      name: act.name,
+      position: act.position || "",
+      theme: act.theme || "",
+      note: "",
+    });
+  }
+
+  async function setSkipReason(techId, reason) {
+    const draft = state.reviewDraft;
+    if (!draft) return;
+    const prev = draft.skips[techId] || { reason: "", note: "" };
+    const was = skipIsActive(prev);
+    if (!reason) {
+      delete draft.skips[techId];
+    } else {
+      prev.reason = reason;
+      if (reason !== "other") prev.note = "";
+      draft.skips[techId] = prev;
+    }
+    const now = skipIsActive(draft.skips[techId]);
+    state.reviewFocus = { kind: reason === "other" ? "skip-note" : "skip", id: techId };
+    if (!was && now) await releaseSkippedProgress(techId);
+    renderReview();
+  }
+
+  async function setSkipNote(techId, note, pos) {
+    const draft = state.reviewDraft;
+    if (!draft) return;
+    const prev = draft.skips[techId] || { reason: "", note: "" };
+    const was = skipIsActive(prev);
+    prev.note = note;
+    draft.skips[techId] = prev;
+    const now = skipIsActive(prev);
+    if (was === now) return;
+    state.reviewFocus = { kind: "skip-note", id: techId, pos };
+    if (now) await releaseSkippedProgress(techId);
+    renderReview();
   }
 
   function stripeHint(kid) {
@@ -3492,6 +3889,8 @@ function sparringSection(plan) {
       return;
     }
     const date = plan.settings.date || "";
+    const techs = techniquesOf(plan);
+    ensureReviewSession(date, plan.settings.ageGroup, techs);
     const entry = classFor(date, plan.settings.ageGroup);
     const attendedIds = entry && Array.isArray(entry.attended) ? entry.attended : [];
     const classKids = P.sortByRank(state.roster).filter(
@@ -3499,7 +3898,6 @@ function sparringSection(plan) {
     );
     const attended =
       attendOverride || new Set(attendedIds.length ? attendedIds : classKids.map((kid) => kid.id));
-    const techs = techniquesOf(plan);
     const chips = classKids.length
       ? classKids
           .map((kid) => {
@@ -3510,25 +3908,22 @@ function sparringSection(plan) {
       : `<p>Add the roster, then check them in or tap who was here.</p>`;
     const blocks = techs
       .map((tech) => {
-        const rows = classKids
-          .map((kid) => {
-            const level = (state.progress.levels[kid.id] || {})[tech.id] || "";
-            const buttons = P.LEVELS.map(
-              (id) =>
-                `<button type="button" class="${level === id ? "on" : ""}" data-level="${id}" data-kid="${esc(
-                  kid.id
-                )}" data-tech="${esc(tech.id)}">${esc(LEVEL_LABEL[id])}</button>`
-            ).join("");
-            return `<div class="kid-block"><strong>${esc(kid.name)}</strong><div class="level-row">${buttons}</div></div>`;
-          })
-          .join("");
-        const markAll = `<div class="mark-all btn-row" role="group" aria-label="Mark every checked-in student for ${esc(tech.name)}">${P.LEVELS.map(
-          (id) =>
-            `<button type="button" class="ghost" data-mark-all="${esc(id)}" data-tech="${esc(tech.id)}">Mark all ${esc(LEVEL_LABEL[id])}</button>`
-        ).join("")}</div>`;
-        return `<h3>${esc(tech.name)}${tech.position ? ` · ${esc(tech.position)}` : ""}</h3>${markAll}${rows}`;
+        const skip = state.reviewDraft.skips[tech.id];
+        const active = skipIsActive(skip);
+        const mark = active ? `<span class="skip-mark">Skipped</span>` : "";
+        const body = active ? "" : `${markAllHtml(tech)}${reviewKidRows(tech.id, classKids)}`;
+        return `<article class="review-tech${active ? " is-skipped" : ""}">
+          <h3>${esc(tech.name)}${tech.position ? ` · ${esc(tech.position)}` : ""}${mark}</h3>
+          ${skipControlsHtml(tech, skip)}
+          ${body}
+        </article>`;
       })
       .join("");
+    const age = curriculumAge(plan.settings.ageGroup, plan.mode);
+    const summaryLines = classReviewLines({ techniques: techniquesForReviewSave(plan) });
+    const summary = summaryLines.length
+      ? `<h3>Class summary</h3>${summaryLines.map((line) => `<p>${esc(line)}</p>`).join("")}`
+      : "";
     root.innerHTML = `
       <h2>Review class</h2>
       <p>Teacher ${esc(instructorName() || "the teacher")} · ${esc(classLabel(plan.settings.ageGroup))}${plan.theme ? ` · ${esc(plan.theme.reason)}` : ""}${date ? ` · ${esc(date)}` : ""}</p>
@@ -3537,10 +3932,13 @@ function sparringSection(plan) {
         <div class="chip-row">${chips}</div>
       </div>
       ${blocks}
+      ${offScriptSectionHtml(classKids, age, new Set(techs.map((tech) => tech.id)))}
+      ${summary}
       <div class="btn-row">
         <button class="primary tap" type="button" id="saveClassBtn">Save class</button>
       </div>
-      <p class="hint">Save marks the class taught and sets Introduced for anyone still blank. A higher level you already tapped stays.</p>`;
+      <p class="hint">Save marks the class taught and sets Introduced for anyone still blank. A higher level you already tapped stays. Skipped techniques do not move progress.</p>`;
+    restoreReviewFocus();
   }
 
   async function saveReviewedClass() {
@@ -3551,27 +3949,45 @@ function sparringSection(plan) {
       toast("Put a date on the class first.");
       return;
     }
-    const entry = ensureClass(date, plan.settings.ageGroup);
-    entry.id = plan.sessionId || entry.id;
-    entry.theme = plan.theme?.id || "";
-    entry.themeLabel = plan.theme?.label || "";
-    entry.techniques = techniquesOf(plan);
-    entry.game = gameName(plan);
-    entry.taught = true;
-    entry.attended = [...document.querySelectorAll("#reviewView .chip.on")].map((btn) => btn.dataset.attend);
-    applyIntroduced(entry);
+    const techs = techniquesOf(plan);
+    ensureReviewSession(date, plan.settings.ageGroup, techs);
+    if (incompleteOtherSkip(plan)) {
+      toast("Add a note for Other.");
+      return;
+    }
+    const keep = new Set(
+      [...document.querySelectorAll("#reviewView .chip.on")].map((btn) => btn.dataset.attend)
+    );
     try {
+      for (const tech of techs) {
+        if (skipIsActive(state.reviewDraft.skips[tech.id])) await releaseSkippedProgress(tech.id);
+      }
+      const entry = ensureClass(date, plan.settings.ageGroup);
+      entry.id = plan.sessionId || entry.id;
+      entry.theme = plan.theme?.id || "";
+      entry.themeLabel = plan.theme?.label || "";
+      entry.techniques = techniquesForReviewSave(plan);
+      entry.game = gameName(plan);
+      entry.taught = true;
+      entry.attended = [...keep];
+      applyIntroduced(entry);
       await pushClass(entry, false);
       (entry.techniques || []).forEach((tech) => {
+        if (!P.techniqueCountsForProgress(tech)) return;
         entry.attended.forEach((kidId) => {
+          if (isOwnRecord(state.roster.find((kid) => kid.id === kidId))) return;
           const level = state.progress.levels[kidId] && state.progress.levels[kidId][tech.id];
           if (level === "introduced") {
-            window.BJJ_API.send("PUT", "/api/levels", { studentId: kidId, techId: tech.id, level: "introduced" }).catch(() => {});
+            window.BJJ_API.send("PUT", "/api/levels", { studentId: kidId, techId: tech.id, level: "introduced" }).catch((err) => {
+              toast(err.message || "Could not save that level.");
+              resync().catch(() => {});
+            });
           }
         });
       });
-      toast("Class saved. Attended techniques are at least Introduced.");
-      renderReview();
+      toast("Class saved. Taught techniques are at least Introduced. Skipped ones stay off progress.");
+      if (state.plan) renderPlan();
+      renderReview(keep);
     } catch (err) {
       toast(err.message || "Could not save that class.");
       resync().catch(() => {});
@@ -3677,11 +4093,13 @@ function sparringSection(plan) {
     if (!classes.length) return `<p>No classes logged yet.</p>`;
     return classes
       .map((entry) => {
-        const names = (entry.techniques || []).map((tech) => tech.name).filter(Boolean);
+        const taught = (entry.techniques || []).filter((tech) => tech && tech.name && !tech.skipped && !tech.offScript);
+        const names = taught.map((tech) => tech.name);
+        const lines = classReviewLines(entry);
         const count = entry.taught ? "Counts toward the stripe hint." : "Checked in, not marked taught yet.";
         return `<article class="past-log">
           <h3>${esc(entry.date)} · ${esc(pastAgeLabel(entry.ageGroup))}${entry.themeLabel ? ` · ${esc(entry.themeLabel)}` : ""}</h3>
-          <p>${esc(count)}${names.length ? ` ${esc(names.join(", "))}` : ""}</p>
+          <p>${esc(count)}${names.length ? ` ${esc(names.join(", "))}.` : ""}${lines.length ? ` ${esc(lines.join(" "))}` : ""}</p>
           ${attendanceChips(entry.attended, (kid) => `data-class-kid="${esc(kid.id)}" data-class-id="${esc(entry.id)}"`, entry.ageGroup)}
           <div class="btn-row">
             <button class="primary" type="button" data-save-attend="${esc(entry.id)}">Save attendance</button>
@@ -3739,9 +4157,28 @@ function sparringSection(plan) {
       .filter(Boolean);
     const attended = [...document.querySelectorAll("#pastAttend .chip.on")].map((btn) => btn.getAttribute("data-past-kid"));
     const entry = ensureClass(date, age);
+    const previous = Array.isArray(entry.techniques) ? entry.techniques : [];
+    const skipById = {};
+    previous.forEach((tech) => {
+      if (tech && tech.skipped && !tech.offScript && tech.id) skipById[tech.id] = tech;
+    });
+    techniques.forEach((tech) => {
+      const prev = skipById[tech.id];
+      if (!prev) return;
+      tech.skipped = true;
+      tech.skipReason = prev.skipReason;
+      if (prev.skipNote) tech.skipNote = prev.skipNote;
+    });
+    const seen = new Set(techniques.map((tech) => tech.id));
+    const offScript = [];
+    previous.forEach((tech) => {
+      if (!tech || !tech.offScript || !tech.id || seen.has(tech.id)) return;
+      seen.add(tech.id);
+      offScript.push(tech);
+    });
     entry.theme = themeId;
     entry.themeLabel = theme ? theme.label : "";
-    entry.techniques = techniques;
+    entry.techniques = techniques.concat(offScript);
     entry.game = entry.game || "";
     entry.taught = true;
     entry.attended = attended.filter(Boolean);
@@ -6529,6 +6966,31 @@ function sparringSection(plan) {
         attend.classList.toggle("on");
         return;
       }
+      const undo = event.target.closest("[data-undo-skip]");
+      if (undo) {
+        setSkipReason(undo.dataset.undoSkip, "");
+        return;
+      }
+      const removeOff = event.target.closest("[data-off-remove]");
+      if (removeOff) {
+        const id = removeOff.dataset.offRemove;
+        if (state.reviewDraft) state.reviewDraft.offScript = state.reviewDraft.offScript.filter((item) => item.id !== id);
+        releaseSkippedProgress(id, { revertIntroduced: false })
+          .catch((err) => {
+            toast(err.message || "Could not update progress.");
+            resync().catch(() => {});
+          })
+          .then(() => renderReview());
+        return;
+      }
+      if (event.target.closest("#offScriptAdd")) {
+        addOffScriptText();
+        return;
+      }
+      if (event.target.closest("#offScriptLibraryAdd")) {
+        addOffScriptFromLibrary();
+        return;
+      }
       const markAll = event.target.closest("[data-mark-all]");
       if (markAll) {
         const ids = [...document.querySelectorAll("#reviewView .chip.on")].map((btn) => btn.dataset.attend).filter(Boolean);
@@ -6537,12 +6999,20 @@ function sparringSection(plan) {
           return;
         }
         const techId = markAll.dataset.tech;
+        if (skipIsActive(state.reviewDraft && state.reviewDraft.skips[techId])) return;
         const levelId = markAll.dataset.markAll;
+        const own = ids.filter((kidId) => isOwnRecord(state.roster.find((kid) => kid.id === kidId)));
+        const allowed = ids.filter((kidId) => !own.includes(kidId));
+        if (!allowed.length) {
+          toast("Ask another staff member to update your record.");
+          return;
+        }
+        if (own.length) toast("Ask another staff member to update your record.");
         const keep = new Set(ids);
-        ids.forEach((kidId) => setLevel(kidId, techId, levelId));
+        allowed.forEach((kidId) => setLevel(kidId, techId, levelId));
         renderReview(keep);
         Promise.all(
-          ids.map((kidId) =>
+          allowed.map((kidId) =>
             window.BJJ_API.send("PUT", "/api/levels", { studentId: kidId, techId, level: levelId })
           )
         ).catch((err) => {
@@ -6553,6 +7023,12 @@ function sparringSection(plan) {
       }
       const level = event.target.closest("[data-level]");
       if (level) {
+        const kid = state.roster.find((item) => item.id === level.dataset.kid);
+        if (isOwnRecord(kid)) {
+          toast("Ask another staff member to update your record.");
+          return;
+        }
+        if (skipIsActive(state.reviewDraft && state.reviewDraft.skips[level.dataset.tech])) return;
         const keep = new Set(
           [...document.querySelectorAll("#reviewView .chip.on")].map((btn) => btn.dataset.attend)
         );
@@ -6569,6 +7045,34 @@ function sparringSection(plan) {
         return;
       }
       if (event.target.closest("#saveClassBtn")) saveReviewedClass();
+    });
+    $("reviewView").addEventListener("change", (event) => {
+      const select = event.target.closest("[data-skip-tech]");
+      if (!select) return;
+      setSkipReason(select.dataset.skipTech, select.value).catch((err) => {
+        toast(err.message || "Could not update that skip.");
+        resync().catch(() => {});
+      });
+    });
+    $("reviewView").addEventListener("input", (event) => {
+      const skipNote = event.target.closest("[data-skip-note]");
+      if (skipNote) {
+        setSkipNote(skipNote.dataset.skipNote, skipNote.value, skipNote.selectionStart).catch((err) => {
+          toast(err.message || "Could not update that skip.");
+          resync().catch(() => {});
+        });
+        return;
+      }
+      const offNote = event.target.closest("[data-off-note]");
+      if (!offNote || !state.reviewDraft) return;
+      const item = state.reviewDraft.offScript.find((row) => row.id === offNote.dataset.offNote);
+      if (item) item.note = offNote.value;
+    });
+    $("reviewView").addEventListener("keydown", (event) => {
+      if (event.key === "Enter" && event.target.id === "offScriptText") {
+        event.preventDefault();
+        addOffScriptText();
+      }
     });
     $("progressView").addEventListener("change", async (event) => {
       const beltPick = event.target.dataset.rankBelt;
@@ -7246,6 +7750,19 @@ function sparringSection(plan) {
 
   function changeValue(value) {
     if (!value || typeof value !== "object") return "";
+    if (Array.isArray(value.skipped) || Array.isArray(value.offScript)) {
+      const skipped = (value.skipped || []).map((item) => {
+        const note = item.note ? `: ${item.note}` : "";
+        return `${item.name || "Technique"} (${item.reason || "Skipped"}${note})`;
+      });
+      const off = (value.offScript || []).map((item) =>
+        item.note ? `${item.name} — ${item.note}` : item.name || "Technique"
+      );
+      const parts = [];
+      if (skipped.length) parts.push(`Skipped ${skipped.join(", ")}`);
+      if (off.length) parts.push(`Off script ${off.join(", ")}`);
+      return parts.join(". ") || "No skips or off script";
+    }
     if (value.kind === "skip" || value.kind === "extra") {
       const label = value.kind === "skip" ? "No class" : "Make-up";
       const why = value.reason ? `: ${value.reason}` : "";
