@@ -46,9 +46,25 @@
       <p class="row btn-grid no-print"><button type="submit">Show this card</button></p>
     </form>
     <section id="card" hidden>
-      <h2 id="who"></h2>
+      <h2 id="who" tabindex="-1"></h2>
       <p id="group"></p>
-      <p id="rank"></p>
+      <dl class="card-facts">
+        <div>
+          <dt>Belt</dt>
+          <dd id="rank"></dd>
+        </div>
+        <div>
+          <dt>Attendance</dt>
+          <dd id="attendedCount"></dd>
+        </div>
+        <div class="wide">
+          <dt>Next class</dt>
+          <dd id="nextClass"></dd>
+        </div>
+      </dl>
+      <h2 id="learnedHeading">Recent techniques</h2>
+      <ul id="learned" class="learned" aria-labelledby="learnedHeading"></ul>
+      <p id="learnedEmpty" hidden>No techniques recorded yet.</p>
       <h2>Progress</h2>
       <p id="progress"></p>
       <p id="recent"></p>
@@ -117,29 +133,66 @@
           });
       });
 
+      function classWord(count) {
+        return count === 1 ? "1 class" : count + " classes";
+      }
+
       function paint(profile, month, day) {
         gate.hidden = true;
         card.hidden = false;
-        document.getElementById("who").textContent = profile.firstName || "";
+        document.getElementById("lead").hidden = true;
+        var who = document.getElementById("who");
+        who.textContent = profile.firstName || "";
         document.getElementById("group").textContent = profile.ageGroup || "";
         document.getElementById("rank").textContent =
           (profile.beltLabel || "White") + " belt, " + (profile.stripesLabel || "no stripes");
         var progress = profile.progress || {};
         var attended = progress.classes || 0;
+        document.getElementById("attendedCount").textContent = classWord(attended);
+        var next = profile.nextClass || {};
+        var nextEl = document.getElementById("nextClass");
+        nextEl.replaceChildren();
+        if (next.label && next.time) {
+          if (next.makeUp) nextEl.appendChild(document.createTextNode("Make-up class: "));
+          var dateLine = document.createElement("span");
+          dateLine.textContent = next.label;
+          var timeLine = document.createElement("span");
+          timeLine.className = "next-time";
+          timeLine.textContent = next.time;
+          nextEl.appendChild(dateLine);
+          nextEl.appendChild(timeLine);
+        } else {
+          nextEl.textContent = "No upcoming class is on the calendar.";
+        }
+        var learned = Array.isArray(progress.recentTechniques) ? progress.recentTechniques : [];
+        var list = document.getElementById("learned");
+        var empty = document.getElementById("learnedEmpty");
+        list.replaceChildren();
+        learned.forEach(function (item) {
+          if (!item || !item.name) return;
+          var li = document.createElement("li");
+          li.textContent = item.words ? item.name + ", " + item.words : item.name;
+          list.appendChild(li);
+        });
+        var shown = list.children.length > 0;
+        list.hidden = !shown;
+        empty.hidden = shown;
         var attendedLine = attended + (attended === 1 ? " class attended." : " classes attended.");
         var progressLine;
+        var techniqueCount = progress.techniques || 0;
         if (progress.classesTotal && (profile.belt || "white") === "white") {
           progressLine = (progress.classesDone || 0) + " of " + progress.classesTotal + " curriculum classes mastered toward blue belt.";
         } else if (progress.classesTotal) {
           progressLine = attendedLine;
         } else {
-          progressLine = (progress.techniques || 0) + " techniques checked off. " + attendedLine;
+          progressLine = techniqueCount + (techniqueCount === 1 ? " technique checked off." : " techniques checked off.");
         }
         document.getElementById("progress").textContent = progressLine;
         var recent = Array.isArray(progress.recentAttendance) ? progress.recentAttendance : [];
         document.getElementById("recent").textContent = recent.length
           ? "Recent attendance: " + recent.join(", ")
           : "No attendance recorded yet.";
+        who.focus();
         var waiver = profile.waiver || {};
         var sign = document.getElementById("signLink");
         var printBtn = document.getElementById("printWaiver");

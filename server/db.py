@@ -316,6 +316,100 @@ def is_adult_class_day(value):
     return when.weekday() in (1, 3)
 
 
+def _add_iso_days(iso_date, count):
+    when = datetime.strptime(iso_date, "%Y-%m-%d") + timedelta(days=count)
+    return when.date().isoformat()
+
+
+def format_clock_range(start, end):
+    """Plain clock range such as 5:30–6:15 PM PT. Same meridian shares one suffix."""
+
+    def one(value):
+        hour_text, minute_text = str(value).split(":")
+        hour = int(hour_text)
+        minute = int(minute_text)
+        suffix = "AM" if hour < 12 else "PM"
+        hour12 = hour % 12 or 12
+        return f"{hour12}:{minute:02d}", suffix
+
+    left, left_suffix = one(start)
+    right, right_suffix = one(end)
+    if left_suffix == right_suffix:
+        return f"{left}–{right} {right_suffix} PT"
+    return f"{left} {left_suffix}–{right} {right_suffix} PT"
+
+
+def next_class_meeting(program, today, exceptions):
+    """Next class on or after today, after skips and make-up dates.
+
+    Kids meet on the 2nd and 4th Tuesday, 5:30–6:15 PM PT, on or after
+    October 27, 2026. Adults meet every Tuesday and Thursday, 6:30–8:00 PM PT.
+    `exceptions` uses date, kind (skip or extra), and optional start and end.
+    Reasons are ignored so a parent page cannot repeat a staff note.
+    `today` is a YYYY-MM-DD date in America/Los_Angeles.
+    """
+    kids = program != "adult"
+    not_before = "2026-10-27" if kids else ""
+    default_start, default_end = ("17:30", "18:15") if kids else ("18:30", "20:00")
+    by_date = {}
+    for item in exceptions or []:
+        if not isinstance(item, dict):
+            continue
+        date, _when = _calendar_date(item.get("date"))
+        kind = item.get("kind")
+        if not date or kind not in ("skip", "extra"):
+            continue
+        start = str(item.get("start") or item.get("start_time") or "") or default_start
+        end = str(item.get("end") or item.get("end_time") or "") or default_end
+        if not re_clock(start) or not re_clock(end):
+            start, end = default_start, default_end
+        by_date[date] = {"kind": kind, "start": start, "end": end}
+
+    def meets(iso_date):
+        regular = is_class_day(iso_date) if kids else is_adult_class_day(iso_date)
+        hit = by_date.get(iso_date)
+        if hit and hit["kind"] == "skip" and regular:
+            return None
+        if hit and hit["kind"] == "extra" and not regular:
+            return {"extra": True, "start": hit["start"], "end": hit["end"]}
+        if regular:
+            return {"extra": False, "start": default_start, "end": default_end}
+        return None
+
+    cursor = str(today or "")
+    if not _calendar_date(cursor)[0]:
+        cursor = today_pacific()
+    if kids and not_before and cursor < not_before:
+        early = None
+        for date in sorted(by_date):
+            if by_date[date]["kind"] == "extra" and cursor <= date < not_before:
+                early = date
+                break
+        cursor = early or not_before
+    for _ in range(400):
+        info = meets(cursor)
+        if info:
+            when = datetime.strptime(cursor, "%Y-%m-%d")
+            return {
+                "date": cursor,
+                "label": f"{when.strftime('%A, %B')} {when.day}, {when.year}",
+                "time": format_clock_range(info["start"], info["end"]),
+                "makeUp": bool(info["extra"]),
+            }
+        cursor = _add_iso_days(cursor, 1)
+    return {"date": "", "label": "", "time": "", "makeUp": False}
+
+
+def re_clock(value):
+    text = str(value or "")
+    if len(text) != 5 or text[2] != ":":
+        return False
+    hour, minute = text.split(":")
+    if not (hour.isdigit() and minute.isdigit()):
+        return False
+    return 0 <= int(hour) <= 23 and 0 <= int(minute) <= 59
+
+
 def today_pacific():
     try:
         from zoneinfo import ZoneInfo

@@ -27,6 +27,7 @@ from server.db import (
     migrate,
     new_id,
     normalize_age_group,
+    next_class_meeting,
     order_lesson_plans,
     parse_iso,
     today_pacific,
@@ -3708,6 +3709,154 @@ class Api:
                 done += 1
         return done, len(level["classes"]), techniques, level.get("label") or ""
 
+    PLAIN_STAGE = {
+        "introduced": "started",
+        "drilled": "practicing",
+        "rolling": "can do it with help",
+        "mastered": "can do it on their own",
+    }
+
+    def technique_was_skipped(self, item):
+        """A planned technique the class did not teach. Progress must not count it."""
+        if not isinstance(item, dict):
+            return False
+        flag = item.get("skipped")
+        if flag is True or flag == 1:
+            return True
+        if isinstance(flag, str) and flag.strip().lower() in ("true", "yes", "1"):
+            return True
+        return str(item.get("kind") or "").strip().lower() == "skip"
+
+    def plain_technique_name(self, value):
+        text = " ".join(str(value or "").replace("\x00", "").split())
+        return text[:80]
+
+    def kids_technique_names(self):
+        """Curriculum id to the plain name families see. No student data."""
+        cached = getattr(self, "_kids_technique_names", None)
+        if cached is not None:
+            return cached
+        path = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "js", "curriculum.js")
+        names = {}
+        try:
+            with open(path, encoding="utf-8") as handle:
+                text = handle.read()
+        except OSError:
+            text = ""
+        pattern = re.compile(
+            r'tech\(\s*"([^"]+)"\s*,\s*"[^"]*"\s*,\s*\d+\s*,\s*"(?:[^"\\]|\\.)*"\s*,\s*"((?:[^"\\]|\\.)*)"',
+            re.M,
+        )
+        for tech_id, name in pattern.findall(text):
+            plain = self.plain_technique_name(name)
+            if tech_id and plain:
+                names[tech_id] = plain
+        self._kids_technique_names = names
+        return names
+
+    def kids_learned_techniques(self, conn, sid):
+        """This child's progress only, newest first, without skipped techniques.
+
+        Names come from classes this child attended, then the shared curriculum.
+        Another child's class row is never read for a name.
+        """
+        learned = {}
+        for row in conn.execute("SELECT tech_id, level FROM levels WHERE student_id = ?", (sid,)):
+            level = canonical_level(row["level"])
+            if level in LEVELS:
+                learned[row["tech_id"]] = level
+        names = {}
+        latest = {}
+        real = set()
+        skipped_only = set()
+        rows = conn.execute("SELECT date, techniques, attended FROM classes ORDER BY date").fetchall()
+        for row in rows:
+            if sid not in self.json_list(row["attended"]):
+                continue
+            for item in self.json_list(row["techniques"]):
+                if not isinstance(item, dict):
+                    continue
+                tech_id = str(item.get("id") or "").strip()
+                if not tech_id:
+                    continue
+                if self.technique_was_skipped(item):
+                    if tech_id not in real:
+                        skipped_only.add(tech_id)
+                    continue
+                real.add(tech_id)
+                skipped_only.discard(tech_id)
+                if row["date"]:
+                    latest[tech_id] = row["date"]
+                plain = self.plain_technique_name(item.get("name"))
+                if plain:
+                    names[tech_id] = plain
+        touched = {}
+        for row in conn.execute(
+            "SELECT at, after_json FROM change_log WHERE student_id = ? AND action = 'stage' ORDER BY id",
+            (sid,),
+        ):
+            try:
+                after = json.loads(row["after_json"] or "{}")
+            except json.JSONDecodeError:
+                continue
+            if not isinstance(after, dict):
+                continue
+            tech_id = str(after.get("techId") or "")
+            stage = canonical_level(after.get("stage"))
+            if tech_id and stage in LEVELS:
+                touched[tech_id] = row["at"] or ""
+        catalog = self.kids_technique_names()
+        items = []
+        for tech_id, level in learned.items():
+            if tech_id in skipped_only:
+                continue
+            name = names.get(tech_id) or catalog.get(tech_id) or ""
+            if not name:
+                continue
+            items.append((touched.get(tech_id) or latest.get(tech_id) or "", name.lower(), name, self.PLAIN_STAGE[level]))
+        items.sort(key=lambda item: item[1])
+        items.sort(key=lambda item: item[0], reverse=True)
+        return [{"name": name, "words": words} for _when, _sort, name, words in items]
+
+    def adult_learned_techniques(self, conn, sid):
+        names = {}
+        for level in self.adult_curriculum_public()["levels"]:
+            for item in level["classes"]:
+                for index, name in enumerate(item["techniques"]):
+                    names[(level["id"], item["number"], index)] = self.plain_technique_name(name)
+        rows = conn.execute(
+            """
+            SELECT level_id, class_number, technique_index, stage, checked_at
+            FROM adult_progress
+            WHERE student_id = ?
+            ORDER BY checked_at DESC, class_number DESC, technique_index ASC
+            """,
+            (sid,),
+        ).fetchall()
+        out = []
+        for row in rows:
+            stage = canonical_level(row["stage"])
+            if stage not in LEVELS:
+                continue
+            name = names.get((row["level_id"], int(row["class_number"]), int(row["technique_index"])), "")
+            if not name:
+                continue
+            out.append({"name": name, "words": self.PLAIN_STAGE[stage]})
+        return out
+
+    def parent_next_class(self, conn, program):
+        which = "adult" if program == "adult" else "kids"
+        exceptions = [
+            {
+                "date": row["date"],
+                "kind": row["kind"],
+                "start": row["start_time"],
+                "end": row["end_time"],
+            }
+            for row in self.list_exception_rows(conn, which)
+        ]
+        return next_class_meeting(which, today_pacific(), exceptions)
+
     def parent_progress(self, conn, sid):
         row = conn.execute("SELECT program FROM students WHERE id = ?", (sid,)).fetchone()
         if row and (row["program"] or "") == "adult":
@@ -3721,18 +3870,17 @@ class Api:
                 if entry["date"]:
                     recent.append(entry["date"])
             recent = list(reversed(recent))[:6]
+            learned = self.adult_learned_techniques(conn, sid)
             return {
                 "techniques": techniques,
                 "classes": classes,
                 "recentAttendance": recent,
+                "recentTechniques": learned[:8],
                 "classesDone": done,
                 "classesTotal": total,
                 "levelLabel": label,
             }
-        techniques = conn.execute(
-            "SELECT COUNT(*) AS n FROM levels WHERE student_id = ?",
-            (sid,),
-        ).fetchone()["n"]
+        learned = self.kids_learned_techniques(conn, sid)
         recent = []
         classes = 0
         rows = conn.execute("SELECT date, attended FROM classes ORDER BY date DESC").fetchall()
@@ -3742,7 +3890,12 @@ class Api:
             classes += 1
             if len(recent) < 6 and row["date"]:
                 recent.append(row["date"])
-        return {"techniques": int(techniques), "classes": classes, "recentAttendance": recent}
+        return {
+            "techniques": len(learned),
+            "classes": classes,
+            "recentAttendance": recent,
+            "recentTechniques": learned[:8],
+        }
 
     def parent_profile(self, conn, row):
         age = row["age"]
@@ -3752,6 +3905,7 @@ class Api:
         except (TypeError, ValueError):
             number = 0
         waiver = self.waiver_for_student(conn, row["id"])
+        program = self.cell(row, "program", "kids") or "kids"
         return {
             "firstName": self.first_name(row["name"]),
             "ageGroup": group,
@@ -3761,6 +3915,7 @@ class Api:
             "stripesLabel": self.stripes_words(row["stripes"]),
             "signForm": "kids" if 3 <= number <= 10 else "adult",
             "progress": self.parent_progress(conn, row["id"]),
+            "nextClass": self.parent_next_class(conn, program),
             "waiver": {
                 "signed": waiver["signed"],
                 "signedOn": waiver["signedOn"],
