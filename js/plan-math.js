@@ -740,6 +740,105 @@ function canonicalLevel(level) {
   return LEVEL_ALIASES[level] || "";
 }
 
+const SKIP_REASONS = ["time", "different", "needed", "other"];
+const SKIP_REASON_LABELS = {
+  time: "Ran out of time",
+  different: "Class ran differently",
+  needed: "Kids needed something else",
+  other: "Other",
+};
+
+function skipReasonLabel(reason) {
+  return SKIP_REASON_LABELS[reason] || "";
+}
+
+function levelRank(level) {
+  const index = LEVELS.indexOf(canonicalLevel(level));
+  return index < 0 ? 0 : index + 1;
+}
+
+/**
+ * A skipped technique does not raise progress.
+ * Levels tapped during this review fall back to the level from when review opened.
+ * Introduced is cleared when no other class taught the technique.
+ */
+function levelAfterSkip(current, baseline, taughtElsewhere) {
+  const now = canonicalLevel(current);
+  const had = canonicalLevel(baseline);
+  if (levelRank(now) > levelRank(had)) return had;
+  if (now === "introduced" && had === "introduced" && !taughtElsewhere) return "";
+  return now;
+}
+
+function techniqueCountsForProgress(tech) {
+  if (!tech || !tech.id) return false;
+  if (tech.offScript || tech.skipped) return false;
+  return true;
+}
+
+function sanitizeClassTechnique(tech) {
+  if (!tech || typeof tech !== "object") return null;
+  const id = cleanId(tech.id);
+  const name = sanitizeText(tech.name, 80);
+  if (!id || !name) return null;
+  const row = {
+    id,
+    name,
+    position: sanitizeText(tech.position, 40),
+    theme: sanitizeTheme(tech.theme),
+  };
+  if (tech.offScript === true || tech.offScript === 1) {
+    row.offScript = true;
+    const note = sanitizeText(tech.note, 160);
+    if (note) row.note = note;
+    return row;
+  }
+  const reason = SKIP_REASONS.includes(tech.skipReason) ? tech.skipReason : "";
+  const note = sanitizeText(tech.skipNote, 160);
+  if ((tech.skipped === true || tech.skipped === 1) && reason && (reason !== "other" || note)) {
+    row.skipped = true;
+    row.skipReason = reason;
+    if (reason === "other") row.skipNote = note;
+  }
+  return row;
+}
+
+function sanitizeStoredTechniques(raw) {
+  const planned = [];
+  const offScript = [];
+  const seenOff = new Set();
+  (Array.isArray(raw) ? raw : []).forEach((tech) => {
+    const clean = sanitizeClassTechnique(tech);
+    if (!clean) return;
+    if (clean.offScript) {
+      if (offScript.length >= 8 || seenOff.has(clean.id)) return;
+      seenOff.add(clean.id);
+      offScript.push(clean);
+      return;
+    }
+    if (planned.length < 12) planned.push(clean);
+  });
+  const plannedIds = new Set(planned.map((tech) => tech.id));
+  return planned.concat(offScript.filter((tech) => !plannedIds.has(tech.id)));
+}
+
+function skippedLastClassIds(classes, ageGroup, beforeDate) {
+  const age = normalizeAgeKey(ageGroup);
+  const rows = (Array.isArray(classes) ? classes : [])
+    .filter((entry) => entry && entry.taught && entry.date && normalizeAgeKey(entry.ageGroup) === age)
+    .filter((entry) => !beforeDate || String(entry.date) < String(beforeDate))
+    .slice()
+    .sort((a, b) => (a.date < b.date ? 1 : a.date > b.date ? -1 : 0));
+  const last = rows[0];
+  if (!last) return [];
+  const ids = [];
+  (last.techniques || []).forEach((tech) => {
+    if (!tech || !tech.skipped || tech.offScript || !tech.id || ids.includes(tech.id)) return;
+    ids.push(tech.id);
+  });
+  return ids;
+}
+
 function sanitizeProgress(raw) {
   const progress = { classes: [], levels: {}, notes: {}, stripe: { own: 6, attend: 8 } };
   if (!raw || typeof raw !== "object") return progress;
@@ -749,15 +848,7 @@ function sanitizeProgress(raw) {
     let id = cleanId(entry.id);
     if (!id || seen.has(id)) id = newId();
     seen.add(id);
-    const techniques = (Array.isArray(entry.techniques) ? entry.techniques : [])
-      .slice(0, 12)
-      .map((tech) => ({
-        id: cleanId(tech && tech.id),
-        name: sanitizeText(tech && tech.name, 80),
-        position: sanitizeText(tech && tech.position, 40),
-        theme: sanitizeTheme(tech && tech.theme),
-      }))
-      .filter((tech) => tech.id && tech.name);
+    const techniques = sanitizeStoredTechniques(entry.techniques);
     progress.classes.push({
       id,
       date: parseISODate(entry.date) ? entry.date : "",
@@ -1489,6 +1580,13 @@ function sanitizeProgress(raw) {
     LEVEL_LABELS,
     LEVEL_ALIASES,
     canonicalLevel,
+    SKIP_REASONS,
+    SKIP_REASON_LABELS,
+    skipReasonLabel,
+    levelAfterSkip,
+    techniqueCountsForProgress,
+    sanitizeStoredTechniques,
+    skippedLastClassIds,
     sanitizeProgress,
     SHARE_FALLBACK_NOTE,
     planPdfFilename,
