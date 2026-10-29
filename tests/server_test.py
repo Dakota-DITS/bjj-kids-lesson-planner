@@ -19,6 +19,7 @@ from server.db import (
     iso,
     migrate,
     new_id,
+    next_class_meeting,
     normalize_age_group,
     today_pacific,
     utcnow,
@@ -1927,6 +1928,51 @@ class ApiTest(unittest.TestCase):
             conn.commit()
             conn.close()
 
+    def test_next_class_respects_skips_and_makeups(self):
+        early = next_class_meeting("kids", "2026-10-22", [])
+        self.assertEqual(early["date"], "2026-10-27")
+        self.assertEqual(early["label"], "Tuesday, October 27, 2026")
+        self.assertEqual(early["time"], "5:30–6:15 PM PT")
+        self.assertFalse(early["makeUp"])
+        self.assertNotIn("reason", early)
+        skipped = next_class_meeting(
+            "kids",
+            "2026-10-22",
+            [{"date": "2026-10-27", "kind": "skip", "reason": "Pastor Pierre Rosa"}],
+        )
+        self.assertEqual(skipped["date"], "2026-11-10")
+        self.assertNotIn("Pierre", json.dumps(skipped))
+        makeup = next_class_meeting(
+            "kids",
+            "2026-10-22",
+            [{"date": "2026-10-23", "kind": "extra", "reason": "Make-up for the Smiths", "start": "17:30", "end": "18:15"}],
+        )
+        self.assertEqual(makeup["date"], "2026-10-23")
+        self.assertTrue(makeup["makeUp"])
+        self.assertEqual(makeup["time"], "5:30–6:15 PM PT")
+        self.assertNotIn("Smith", json.dumps(makeup))
+        same_day = next_class_meeting("kids", "2026-10-27", [])
+        self.assertEqual(same_day["date"], "2026-10-27")
+        after = next_class_meeting("kids", "2026-10-28", [])
+        self.assertEqual(after["date"], "2026-11-10")
+        adult = next_class_meeting(
+            "adult",
+            "2026-10-24",
+            [
+                {"date": "2026-10-27", "kind": "skip", "reason": "Thanksgiving"},
+                {"date": "2026-10-29", "kind": "skip", "reason": "Thanksgiving"},
+            ],
+        )
+        self.assertEqual(adult["date"], "2026-11-03")
+        self.assertEqual(adult["time"], "6:30–8:00 PM PT")
+        open_mat = next_class_meeting(
+            "adult",
+            "2026-10-28",
+            [{"date": "2026-10-28", "kind": "extra", "reason": "Open mat", "start": "18:30", "end": "20:00"}],
+        )
+        self.assertEqual(open_mat["date"], "2026-10-28")
+        self.assertTrue(open_mat["makeUp"])
+
     def test_parent_card_hides_medical_notes(self):
         from datetime import date
 
@@ -1943,6 +1989,7 @@ class ApiTest(unittest.TestCase):
         dob_a = f"{year - 6}-04-04"
         dob_b = f"{year - 6}-05-05"
         created = []
+        skipped_dates = []
         try:
             status, kid = admin.call(
                 "POST",
@@ -1999,6 +2046,31 @@ class ApiTest(unittest.TestCase):
                 },
             )
             teacher.call("PUT", "/api/levels", {"studentId": kid["id"], "techId": "ls-upa", "level": "practicing"})
+            teacher.call("PUT", "/api/levels", {"studentId": kid["id"], "techId": "ls-bf-side", "level": "introduced"})
+            teacher.call("PUT", "/api/levels", {"studentId": twin["id"], "techId": "ls-bf-back", "level": "mastered"})
+            conn = connect(self.api.cfg["db_path"])
+            conn.execute(
+                "UPDATE classes SET techniques = ? WHERE date = ? AND age_group = ?",
+                (
+                    json.dumps(
+                        [
+                            {"id": "ls-upa", "name": "Bridge and roll (upa)", "position": "Mount", "theme": "mount"},
+                            {
+                                "id": "ls-bf-side",
+                                "name": "Side breakfall",
+                                "position": "Standing",
+                                "theme": "breakfalls",
+                                "skipped": True,
+                                "skipReason": "Pastor Pierre Rosa ran out of time",
+                            },
+                        ]
+                    ),
+                    "2026-10-27",
+                    "mite",
+                ),
+            )
+            conn.commit()
+            conn.close()
 
             status, bad_token = guest.call("POST", "/api/public/parent", {"token": "1", "month": 4, "day": 4})
             status_id, bad_id = guest.call(
@@ -2030,21 +2102,60 @@ class ApiTest(unittest.TestCase):
                     "stripesLabel",
                     "signForm",
                     "progress",
+                    "nextClass",
                     "waiver",
                 },
             )
             self.assertEqual(open_card["firstName"], "Ada")
+            self.assertIn("nextClass", open_card)
             self.assertEqual(open_card["ageGroup"], "3–6 Mighty Mites")
             self.assertEqual(open_card["beltLabel"], "Grey")
             self.assertEqual(open_card["stripesLabel"], "2 stripes")
             self.assertEqual(open_card["signForm"], "kids")
-            self.assertGreaterEqual(open_card["progress"]["techniques"], 1)
+            self.assertIn("nextClass", set(open_card))
+            self.assertEqual(open_card["progress"]["techniques"], 1)
             self.assertGreaterEqual(open_card["progress"]["classes"], 1)
             self.assertIn("2026-10-27", open_card["progress"]["recentAttendance"])
+            learned_names = [item["name"] for item in open_card["progress"]["recentTechniques"]]
+            self.assertEqual(learned_names, ["Bridge and roll (upa)"])
+            self.assertEqual(open_card["progress"]["recentTechniques"][0]["words"], "practicing")
+            self.assertNotIn("id", open_card["progress"]["recentTechniques"][0])
+            self.assertNotIn("Side breakfall", learned_names)
+            self.assertNotIn("Back breakfall", learned_names)
+            self.assertEqual(set(open_card["nextClass"]), {"date", "label", "time", "makeUp"})
+            self.assertIn("5:30–6:15 PM PT", open_card["nextClass"]["time"])
+            self.assertFalse(open_card["nextClass"]["makeUp"])
+            self.assertEqual(
+                open_card["nextClass"]["date"],
+                next_class_meeting("kids", today_pacific(), [])["date"],
+            )
             self.assertFalse(open_card["waiver"]["signed"])
             dumped = json.dumps(open_card)
-            for banned in (dob_a, "STAFF-NOTE-SECRET", "SECRET-MEDICAL-NOTE", token, twin_row["parentToken"], "waitlist"):
+            for banned in (
+                dob_a,
+                "STAFF-NOTE-SECRET",
+                "SECRET-MEDICAL-NOTE",
+                token,
+                twin_row["parentToken"],
+                "waitlist",
+                "ls-upa",
+                "ls-bf-side",
+                "ls-bf-back",
+                "Side breakfall",
+                "Back breakfall",
+                "Pierre",
+                "Rosa",
+                "instructor",
+                "skipReason",
+            ):
                 self.assertNotIn(banned, dumped)
+            status, listing = guest.call("GET", "/api/public/students")
+            self.assertIn(status, (401, 404), listing)
+            self.assertNotIn("Ada", json.dumps(listing))
+            self.assertNotIn("parentToken", json.dumps(listing))
+            status, listing_kids = guest.call("GET", "/api/public/children")
+            self.assertIn(status, (401, 404), listing_kids)
+            self.assertNotIn("Ada", json.dumps(listing_kids))
             self.assertNotEqual(guest.cookies.get("bjj_parent"), token)
             self.assertTrue(guest.cookies.get("bjj_parent"))
             status, again = guest.call("GET", "/api/public/parent")
@@ -2159,16 +2270,43 @@ class ApiTest(unittest.TestCase):
             self.assertEqual(status, 200, fresh)
             self.assertEqual(fresh["firstName"], "Ada")
             self.assertNotIn("SECRET-MEDICAL-NOTE", json.dumps(fresh))
+            first_day = fresh["nextClass"]["date"]
+            status, moved = admin.call(
+                "POST",
+                "/api/class-exceptions",
+                {"date": first_day, "kind": "skip", "reason": "Pastor Pierre Rosa is out"},
+            )
+            self.assertEqual(status, 200, moved)
+            skipped_dates.append(first_day)
+            status, after_skip = self.client().call(
+                "POST",
+                "/api/public/parent",
+                {"token": renewed["parentToken"], "month": 4, "day": 4},
+            )
+            self.assertEqual(status, 200, after_skip)
+            self.assertNotEqual(after_skip["nextClass"]["date"], first_day)
+            self.assertNotIn("Pierre", json.dumps(after_skip))
+            self.assertNotIn("instructor", json.dumps(after_skip).lower())
+            self.assertIn("Bridge and roll (upa)", [item["name"] for item in after_skip["progress"]["recentTechniques"]])
+            self.assertNotIn("Side breakfall", json.dumps(after_skip))
         finally:
             self.api.cfg["waiver_submissions_enabled"] = None
             self.api._waiver_posts = []
             self.api._parent_fails = []
             self.api._parent_grants = {}
+            for day in skipped_dates:
+                admin.call("DELETE", f"/api/class-exceptions/{day}")
             for sid in created:
                 admin.call("DELETE", f"/api/students/{sid}")
             conn = connect(self.api.cfg["db_path"])
             conn.execute("DELETE FROM waivers WHERE email LIKE 'token-view-%'")
             conn.execute("DELETE FROM students WHERE name IN ('Ada Token', 'Bea Token')")
+            if skipped_dates:
+                conn.execute(
+                    "DELETE FROM class_exceptions WHERE program = 'kids' AND date IN (%s)"
+                    % ",".join("?" for _ in skipped_dates),
+                    skipped_dates,
+                )
             conn.commit()
             conn.close()
 
@@ -2955,6 +3093,10 @@ class ApiTest(unittest.TestCase):
             )
             self.assertEqual(status, 200, kid_card)
             self.assertNotIn("classesTotal", kid_card["progress"])
+            self.assertEqual(kid_card["progress"]["recentTechniques"], [])
+            self.assertIn("5:30–6:15 PM PT", kid_card["nextClass"]["time"])
+            self.assertNotIn("Backward Roll", json.dumps(kid_card))
+            self.assertNotIn("Adult Pat", json.dumps(kid_card))
 
             status, kid_on_adult = guest.call(
                 "POST",
@@ -3043,9 +3185,14 @@ class ApiTest(unittest.TestCase):
                     "stripesLabel",
                     "signForm",
                     "progress",
+                    "nextClass",
                     "waiver",
                 },
             )
+            self.assertIn("6:30–8:00 PM PT", with_pin["nextClass"]["time"])
+            learned = [item["name"] for item in with_pin["progress"]["recentTechniques"]]
+            self.assertIn("Backward Roll", learned)
+            self.assertNotIn("Kid Card", json.dumps(with_pin))
             self.assertNotIn("2468", json.dumps(with_pin))
 
             status, collided = guest.call(

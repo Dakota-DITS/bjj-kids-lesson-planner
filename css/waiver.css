@@ -213,6 +213,47 @@ body[data-kind="adult"] .closed {
   border: 1px solid #a8a29e;
 }
 
+.card-facts {
+  display: grid;
+  gap: 12px;
+  margin: 16px 0 8px;
+}
+.card-facts div {
+  background: var(--card);
+  border: 2px solid var(--line);
+  border-radius: 12px;
+  padding: 12px 14px;
+}
+.card-facts dt {
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.95rem;
+  font-weight: 700;
+}
+.card-facts dd {
+  margin: 4px 0 0;
+  font-size: 1.15rem;
+  font-weight: 700;
+  overflow-wrap: break-word;
+}
+.next-time { display: block; white-space: nowrap; }
+/* The print and sign controls are never both shown. A hidden sibling
+   would otherwise leave the visible one in half of the phone grid. */
+#card .btn-grid > button,
+#card .btn-grid > a {
+  grid-column: 1 / -1;
+}
+.learned {
+  margin: 0 0 8px;
+  padding-left: 1.25rem;
+}
+.learned li { margin: 0 0 8px; overflow-wrap: break-word; }
+.learned[hidden], #learnedEmpty[hidden], #card[hidden], #lead[hidden] { display: none !important; }
+@media (min-width: 640px) {
+  .card-facts { grid-template-columns: 1fr 1fr; }
+  .card-facts .wide { grid-column: 1 / -1; }
+}
+
 @media print {
   .no-print { display: none !important; }
   body,
